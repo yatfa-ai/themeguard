@@ -1,0 +1,30 @@
+{
+  "name": "themeguard",
+  "version": "0.0.1",
+  "description": "Audits a project's CSS colour variables: value collisions between roles, dead tokens, and ramps that collapse between themes.",
+  "license": "MIT",
+  "homepage": "https://github.com/yatfa-ai/themeguard",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yatfa-ai/themeguard.git"
+  },
+  "bugs": {
+    "url": "https://github.com/yatfa-ai/themeguard/issues"
+  },
+  "keywords": [
+    "css",
+    "custom-properties",
+    "design-tokens",
+    "linter",
+    "theme",
+    "color"
+  ],
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "//": "0.0.1 is a name-reservation placeholder. It ships the README and nothing else — no entry point is declared because none exists.",
+  "files": [
+    "README.md"
+  ]
+}
