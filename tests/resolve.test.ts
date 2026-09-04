@@ -322,6 +322,63 @@ describe("a component scoped inside a theme is not that theme's global value", (
   });
 });
 
+describe("an element that merely CONTAINS a theme does not carry that theme's values", () => {
+  // REVERT PROBE — delete the `stripFunctionalArgs()` call from `classifyOne`
+  // and every test here fails, with nothing thrown, nothing `unresolved` and no
+  // `cycle`: the same healthy-looking report of wrong data the combinator check
+  // closes for `[data-theme="winter"] .code-block`, reached through `:has()`.
+  //
+  // `html:has([data-theme="winter"])` styles the element CONTAINING the winter
+  // root, not the winter root. Its declarations must not become winter's global
+  // values — which would corrupt `--chip`, flip `--pad` from inherited to
+  // declared, and erase a genuine absence.
+  const css = `:root                            { --chip: #1E293B; --pad: 8px; --ring: #334155; }
+               [data-theme="winter"]            { --chip: #F1F5F9; --ring: #CBD5E1; }
+               html:has([data-theme="winter"])  { --chip: #000000; --pad: 999px; --ring: #000000; }`;
+  const r = resolveCss(css);
+
+  it("keeps the theme's own value, not the containing element's", () => {
+    expect(r.token("--chip", "winter")?.resolvedValue).toBe("#F1F5F9");
+  });
+
+  it("still reports a token the theme genuinely lacks as inherited, and as an absence", () => {
+    const pad = r.token("--pad", "winter");
+    expect(pad?.origin).toBe("inherited");
+    expect(pad?.resolvedValue).toBe("8px");
+    expect(r.absences.filter((a) => a.theme === "winter").map((a) => a.name)).toEqual(["--pad"]);
+  });
+
+  it("does not group the containing element's values with the theme's", () => {
+    for (const theme of [ROOT_THEME, "winter"]) {
+      expect(r.collisionGroups(theme).map((g) => g.value)).not.toContain("#000000");
+    }
+  });
+
+  it("reports the corruption's absence as data, not as an error", () => {
+    // The defect this pins is SILENT: were it live, `--chip` and `--ring` would
+    // both read `#000000` in winter and nothing below would move. These
+    // assertions exist so a future reader knows the probe's failure mode is wrong
+    // VALUES, and cannot be found by looking for thrown errors.
+    expect(r.tokens.filter((t) => t.kind === "unresolved")).toHaveLength(0);
+    expect(r.tokens.filter((t) => t.kind === "cycle")).toHaveLength(0);
+    expect(r.tokensFor("winter").map((t) => t.resolvedValue)).toEqual([
+      "#F1F5F9",
+      "8px",
+      "#CBD5E1",
+    ]);
+  });
+
+  it("keeps the base scope's own value when the subject IS :root but has a themed descendant", () => {
+    const scoped = resolveCss(`:root                            { --chip: #1E293B; }
+                               [data-theme="winter"]            { --chip: #F1F5F9; }
+                               :root:has([data-theme="winter"]) { --pad: 4px; }`);
+    expect(scoped.token("--chip", ROOT_THEME)?.resolvedValue).toBe("#1E293B");
+    // `--pad` is declared on the base scope, so winter inherits it.
+    expect(scoped.token("--pad", ROOT_THEME)?.resolvedValue).toBe("4px");
+    expect(scoped.token("--pad", "winter")?.origin).toBe("inherited");
+  });
+});
+
 describe("unresolved references and cycles are represented, never thrown", () => {
   it("reports a var() pointing at nothing as unresolved, naming the missing property", () => {
     const r = resolveCss(`:root { --a: var(--nope); }`);

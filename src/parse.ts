@@ -22,9 +22,12 @@
  * CONTAINS one. `[data-theme="winter"] .code-block` is a component inside the
  * winter theme, not the winter theme, and its declarations belong to `other` —
  * merging them into winter's table would report a token narrowed to one subtree
- * as that theme's value everywhere. Conversely `:is(:root, [data-theme="dark"])`
- * IS both scopes, so the functional pseudo-classes that only group selectors
- * are looked through. See {@link classifyCompound}.
+ * as that theme's value everywhere. `html:has([data-theme="winter"])` merely
+ * contains one too, by a different route: a functional pseudo-class's argument
+ * names some other element, so it cannot classify the subject either. Conversely
+ * `:is(:root, [data-theme="dark"])` IS both scopes, so the functional
+ * pseudo-classes that only group selectors are looked through.
+ * See {@link classifyOne}.
  *
  * This file produces DATA and nothing else. It has no opinion about whether a
  * declaration is good.
@@ -261,6 +264,52 @@ function extractMatchesAny(compound: string): { rest: string; args: string[] } {
   }
 }
 
+/**
+ * Remove the ARGUMENTS of every remaining functional pseudo-class/element.
+ *
+ * Called AFTER {@link stripNegations} and {@link extractMatchesAny} have taken
+ * the three pseudo-classes whose arguments genuinely bear on the scope — `:not()`
+ * (a negation, so its contents must not classify) and `:is()`/`:where()` (pure
+ * grouping, so their contents ARE scopes in their own right). Everything left is
+ * a functional pseudo that describes a RELATIONSHIP or a POSITION, and its
+ * argument names some OTHER element — never the subject.
+ *
+ * `html:has([data-theme="winter"])` merely CONTAINS the winter root; it is not
+ * it. Reading `winter` out of that argument files a base-scope block under the
+ * winter theme, corrupting that theme's values and erasing genuine absences —
+ * the same silent-wrong-data defect the combinator check closes for
+ * `[data-theme="winter"] .code-block`, arriving by a different route.
+ *
+ * This strips by SHAPE rather than by name, so `:has()`, `:host-context()`,
+ * `::slotted()`, `:nth-child(… of …)` and any functional pseudo invented next
+ * year are all handled by construction — the two that provably ARE the scope are
+ * excepted above, and nothing else needs enumerating. A non-functional pseudo
+ * (`:root:hover`) carries no arguments and is untouched.
+ */
+function stripFunctionalArgs(compound: string): string {
+  let out = compound;
+  for (;;) {
+    const at = out.search(/::?[\w-]+\s*\(/);
+    if (at === -1) return out;
+    let depth = 0;
+    let i = out.indexOf("(", at);
+    let end = -1;
+    for (; i < out.length; i += 1) {
+      if (out[i] === "(") depth += 1;
+      else if (out[i] === ")") {
+        depth -= 1;
+        if (depth === 0) {
+          end = i;
+          break;
+        }
+      }
+    }
+    // An unclosed argument list runs to the end of the selector: drop the rest.
+    if (end === -1) return out.slice(0, at);
+    out = out.slice(0, at) + out.slice(end + 1);
+  }
+}
+
 /** Blank quoted string contents so a literal `:root` in an attribute value cannot classify. */
 function blankStrings(s: string): string {
   return s.replace(/(["'])(?:\\.|(?!\1).)*\1?/g, (m) => m[0] + " ".repeat(Math.max(0, m.length - 2)) + m[0]);
@@ -274,8 +323,11 @@ function blankStrings(s: string): string {
  * a recognised token anywhere". A selector with a combinator has a subject that
  * is something else — `[data-theme="winter"] .code-block` is a component inside
  * the winter theme — so it is `other`, and its declarations stay out of winter's
- * table. Within the subject compound the token may sit anywhere, which is what
- * makes `html:root` and `:root:not([data-theme])` classify `root`.
+ * table. A functional pseudo-class's ARGUMENT is likewise not the subject:
+ * `html:has([data-theme="winter"])` is an element that CONTAINS the winter root,
+ * not the winter root, so it is `other` too. Within the subject compound itself
+ * the token may sit anywhere, which is what makes `html:root`,
+ * `:root:not([data-theme])` and `:root:hover` classify `root`.
  */
 function classifyOne(
   selector: string,
@@ -288,7 +340,10 @@ function classifyOne(
   if (compounds.length !== 1) return [];
 
   const subject = stripNegations(compounds[0]);
-  const { rest, args } = extractMatchesAny(subject);
+  const { rest: grouped, args } = extractMatchesAny(subject);
+  // Whatever functional pseudo-classes remain describe a relationship or a
+  // position; their arguments name some other element, never the subject.
+  const rest = stripFunctionalArgs(grouped);
 
   const found: { kind: Exclude<ScopeKind, "other">; theme: string | null; matched: string }[] = [];
   const themeMatch = rest.match(DATA_THEME);

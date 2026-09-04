@@ -227,6 +227,62 @@ describe("a selector names a scope only when it IS one (audit YATFA-6991 round 2
   });
 });
 
+describe("a functional pseudo-class's ARGUMENT is not the subject (audit YATFA-6991 round 3)", () => {
+  // REVERT PROBE — delete the `stripFunctionalArgs()` call from `classifyOne`
+  // (or the function itself) and every test in this block fails.
+  //
+  // Same mechanism as the block above, arriving by a different route. The
+  // combinator check closes `[data-theme="winter"] .code-block`; containment can
+  // also be written INSIDE a compound, and then there is no combinator to see:
+  // `html:has([data-theme="winter"])` is one element that CONTAINS the winter
+  // root. Reading the theme out of that argument is the round-2 defect verbatim,
+  // with the same silence — nothing thrown, nothing `unresolved`.
+  //
+  // `:has()` is not hypothetical: it is baseline since 2023, it appears in this
+  // project's own calibration fixture (`.app-choice:has(:disabled)`, :1757), and
+  // `html:has([data-theme="dark"])` is a standard way to write theme detection.
+
+  it("does not let an element that merely CONTAINS a theme claim that theme", () => {
+    for (const sel of ['html:has([data-theme="dark"])', '.card:has([data-theme="winter"])']) {
+      const scopes = parseStylesheet(`${sel} { --x: 1px; }`).scopes;
+      expect(scopes.map((s) => `${s.kind}/${s.theme ?? "-"}`)).toEqual(["other/-"]);
+    }
+  });
+
+  it("does not let an element that merely CONTAINS :root claim the base scope", () => {
+    expect(parseStylesheet(".x:has(:root) { --x: 1px; }").scopes[0].kind).toBe("other");
+  });
+
+  it("classifies by the SUBJECT even when a :has() argument names another scope", () => {
+    // The subject here really IS `:root`; the `:has()` only narrows WHEN the rule
+    // applies. Filing it under `winter` is the round-1 defect: a base-scope block
+    // landing in a theme's table.
+    const scopes = parseStylesheet(':root:has([data-theme="winter"]) { --x: 1px; }').scopes;
+    expect(scopes.map((s) => `${s.kind}/${s.theme ?? "-"}`)).toEqual(["root/-"]);
+  });
+
+  it("strips by SHAPE, so every other functional pseudo is covered by construction", () => {
+    // Named individually only to record that they were measured — none of them
+    // has a special case in the source, and a pseudo-class invented next year is
+    // handled the same way.
+    for (const sel of [
+      ':host-context([data-theme="winter"])',
+      '::slotted([data-theme="winter"])',
+      ':nth-child(1 of [data-theme="winter"])',
+    ]) {
+      expect(parseStylesheet(`${sel} { --x: 1px; }`).scopes[0].kind).toBe("other");
+    }
+  });
+
+  it("leaves a NON-functional pseudo on the subject alone", () => {
+    // `:root:hover` carries no argument list; stripping must not touch it.
+    expect(parseStylesheet(":root:hover { --x: 1px; }").scopes[0].kind).toBe("root");
+    expect(parseStylesheet('[data-theme="winter"]:hover { --x: 1px; }').scopes[0].theme).toBe(
+      "winter",
+    );
+  });
+});
+
 describe("census of a minimal hand-written stylesheet", () => {
   // themeguard is not yatfa-specific: the same parser must work on any CSS.
   const css = `
