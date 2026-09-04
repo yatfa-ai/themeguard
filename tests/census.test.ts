@@ -366,6 +366,143 @@ describe("a grouping pseudo-class NESTED inside a containment one is not the sub
   });
 });
 
+describe("a NESTED rule's declarations belong to its own subject (audit YATFA-6991 round 5)", () => {
+  // REVERT PROBE J — remove the `blankNestedBlocks(rawBody)` call from
+  // `readDeclarations()` (parse it as `body = rawBody`) and every test in this
+  // block fails, as do five in `resolve.test.ts`.
+  //
+  // Every round before this one audited a block's PRELUDE. This is the block
+  // BODY, and it was depth-blind about braces in exactly the way
+  // `extractMatchesAny` was depth-blind about parens. Since CSS Nesting a body
+  // is declarations AND nested rules, so a `;` written inside a nested rule ends
+  // one of the ENCLOSING block's declarations. Two silent failures compound:
+  // the nested value is filed under the enclosing scope, and the nested rule's
+  // leftover prelude then absorbs the declaration after its closing brace,
+  // dropping it outright.
+  //
+  // Not a contrived shape, and not a feature request: CSS Nesting is Baseline
+  // across every major engine since 2023, `&[data-theme="winter"]` is exactly
+  // how a theme override is written inside `:root`, and this file's own header
+  // promises that anything else declaring custom properties is reported under
+  // `other` "so nothing is silently dropped". The calibration fixture happens
+  // not to use nesting, which is why four rounds of fixture-driven review did
+  // not reach it.
+
+  it("does not let a nested rule's declaration leak into the enclosing scope", () => {
+    const scopes = parseStylesheet(":root { --a: #111; .card { --a: #999; } --b: #222; }").scopes;
+    const root = scopes.filter((s) => s.kind === "root");
+    expect(root.flatMap((s) => s.declarations.map((d) => `${d.name}=${d.value}`))).toEqual([
+      "--a=#111",
+      "--b=#222",
+    ]);
+  });
+
+  it("does not let a nested rule's prelude swallow the declaration after it", () => {
+    // The declaration AFTER the closing brace is the one that disappears: the
+    // leftover prelude runs on until the next `;`, taking `--b` with it. This is
+    // the half a naive "skip the nested block" fix leaves live.
+    for (const css of [
+      ":root { --a: #111; .card { --a: #999; } --b: #222; }",
+      ":root { --a: #111; .x { --z: 1 } --b: #222 }",
+      ":root { --a: #111; .x{.y{.z{--q: 1;}}} --b: #222; }",
+    ]) {
+      const names = parseStylesheet(css)
+        .scopes.filter((s) => s.kind === "root")
+        .flatMap((s) => s.declarations.map((d) => d.name));
+      expect(names).toContain("--b");
+    }
+  });
+
+  it("reports a nested rule under its OWN subject rather than dropping it", () => {
+    // Taking the nested region out of the enclosing block must not throw it
+    // away — the header's promise is that nothing is silently dropped, not that
+    // nothing lands in the wrong place.
+    const scopes = parseStylesheet(":root { --a: #111; .card { --z: 1px; } }").scopes;
+    expect(scopes.map((s) => `${s.kind}/${s.theme ?? "-"}`)).toEqual(["root/-", "other/-"]);
+    expect(scopes[1].declarations.map((d) => d.name)).toEqual(["--z"]);
+  });
+
+  it("resolves `&` against the parent, so a nested theme override IS that theme", () => {
+    // `&[data-theme="winter"]` inside `:root` stands for
+    // `:root[data-theme="winter"]`, which is the winter scope — the same answer
+    // the flat form gets, from the same classifier.
+    const scopes = parseStylesheet(
+      ':root { --bg: #0F172A; &[data-theme="winter"] { --bg: #FFFFFF; } --border: #1E293B; }',
+    ).scopes;
+    expect(scopes.map((s) => `${s.kind}/${s.theme ?? "-"}`)).toEqual(["root/-", "theme/winter"]);
+    expect(scopes[0].declarations.map((d) => d.name)).toEqual(["--bg", "--border"]);
+    expect(scopes[1].declarations.map((d) => `${d.name}=${d.value}`)).toEqual(["--bg=#FFFFFF"]);
+  });
+
+  it("treats a nested selector with no `&` as the descendant it is", () => {
+    // A bare nested selector is an implicit DESCENDANT of the parent, so its
+    // subject is not the parent — `.card` inside `:root` is a component within
+    // the base scope, exactly as the flat `:root .card` is, and lands in `other`.
+    const nested = parseStylesheet(':root { .card { --z: 1px; } }').scopes;
+    const flat = parseStylesheet(':root .card { --z: 1px; }').scopes;
+    expect(nested.map((s) => `${s.kind}/${s.theme ?? "-"}`)).toEqual(
+      flat.map((s) => `${s.kind}/${s.theme ?? "-"}`),
+    );
+  });
+
+  it("tracks braces inside strings and comments, so a flat body is unchanged", () => {
+    // The depth counter must not desync on a brace or a quote that is DATA. The
+    // `url("a;b")` case is the regression that matters: the existing paren/string
+    // handling in `splitDeclarations` has to keep working through the new pass.
+    for (const [css, expected] of [
+      [':root { --a: #111; .x[t="}"] { --z: 1; } --b: #222; }', ["--a", "--b"]],
+      [':root { --a: #111; .x[t="a\\"b"] { --z: 1; } --b: #222; }', ["--a", "--b"]],
+      [':root { --a: url("a;b"); --b: #222; }', ["--a", "--b"]],
+      [":root { --a: #111; --b: #222; }", ["--a", "--b"]],
+    ] as const) {
+      const names = parseStylesheet(css)
+        .scopes.filter((s) => s.kind === "root")
+        .flatMap((s) => s.declarations.map((d) => d.name));
+      expect(names).toEqual(expected);
+    }
+  });
+
+  it("keeps line numbers true across a nested block", () => {
+    // `blankNestedBlocks` preserves byte positions and newlines for the same
+    // reason `blankComments` does: the declaration lines are read off the
+    // ORIGINAL offsets, and a census that cannot cite a line is not evidence.
+    const scopes = parseStylesheet(
+      ":root {\n  --a: #111;\n  .x {\n    --z: 1;\n  }\n  --b: #222;\n}",
+    ).scopes;
+    const root = scopes.find((s) => s.kind === "root");
+    expect(root?.declarations.map((d) => [d.name, d.line])).toEqual([
+      ["--a", 2],
+      ["--b", 6],
+    ]);
+  });
+
+  it("does not drop declarations written directly in a nested at-rule", () => {
+    // A nested `@media` is transparent to nesting: its own declarations belong
+    // to the parent rule's subject, conditionally. `:root { @media print { --p }}`
+    // must reach the same scope the flat `@media print { :root { --p } }` does.
+    const nested = parseStylesheet(":root { --a: #111; @media print { --p: #999; } --b: #222; }")
+      .scopes.filter((s) => s.kind === "root")
+      .flatMap((s) => s.declarations.map((d) => d.name));
+    expect(nested).toEqual(["--a", "--b", "--p"]);
+    expect(
+      parseStylesheet("@media print { :root { --p: #999; } }").scopes[0].kind,
+    ).toBe("root");
+  });
+
+  it("leaves the fixture census exactly where it was", () => {
+    // The calibration fixture uses no nesting, so a correct body parser must move
+    // NOTHING here. This is the cost check, asserted rather than promised.
+    const sheet = parseStylesheet(fixtureCss());
+    const count = (k: string, theme: string | null) =>
+      sheet.scopes
+        .filter((s) => s.kind === k && s.theme === theme)
+        .reduce((n, s) => n + s.declarations.length, 0);
+    expect(count("root", null)).toBe(CENSUS.root);
+    expect(count("theme", "winter")).toBe(CENSUS.winter);
+    expect(count("theme-inline", null)).toBe(CENSUS.themeInline);
+  });
+});
+
 describe("census of a minimal hand-written stylesheet", () => {
   // themeguard is not yatfa-specific: the same parser must work on any CSS.
   const css = `

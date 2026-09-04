@@ -447,6 +447,117 @@ describe("a theme wrapped in :is() inside a containment pseudo does not carry th
   });
 });
 
+describe("a theme override written as a NESTED rule is that theme's value, not the parent's", () => {
+  // REVERT PROBE J — remove the `blankNestedBlocks(rawBody)` call from
+  // `readDeclarations()` in `src/parse.ts` and every test here fails, as do
+  // eight in `census.test.ts`.
+  //
+  // Weighted to the resolver because wrong VALUES are what a later rule judges.
+  // But the row this block exists for is the LAST one: the resolver reports
+  // `winter:--chip` as an ABSENCE while winter demonstrably overrides `--chip`
+  // three lines up. That is a FABRICATED fact, and it is a genuinely new failure
+  // mode — every previous round's defect corrupted a value or dropped one, none
+  // of them INVENTED one. A dead-variable rule reading it concludes winter has
+  // no `--chip` override when it plainly does; a ramp rule then measures a ΔL*
+  // between two colours the stylesheet never puts side by side.
+  //
+  // Worth knowing why the obvious fix is not enough: merely skipping the nested
+  // region (so it is neither parsed nor reported) closes the dropped `--ring`
+  // and the corrupted `--chip`, and STILL leaves the fabricated absence live —
+  // winter's override is gone, so winter still "lacks" `--chip`. Only reporting
+  // the nested rule under its own subject closes all three, which is why the
+  // absence assertion below is the load-bearing one.
+  const css = `:root {
+                 --chip: #1E293B;
+                 --pad: 8px;
+                 &[data-theme="winter"] { --chip: #F1F5F9; }
+                 --ring: #334155;
+                 --cta: #22C55E;
+               }
+               [data-theme="winter"] { --pad: 4px; }`;
+  const r = resolveCss(css);
+
+  it("does not invent an absence for a token the theme demonstrably overrides", () => {
+    // THE row. `--chip` IS overridden by winter, in the source, in a nested
+    // rule. Reporting it as an absence hands a later rule a fact that is not in
+    // the stylesheet.
+    const winterAbsences = r.absences.filter((a) => a.theme === "winter").map((a) => a.name);
+    expect(winterAbsences).not.toContain("--chip");
+    expect(winterAbsences.sort()).toEqual(["--cta", "--ring"]);
+  });
+
+  it("gives the theme its own nested value, declared rather than inherited", () => {
+    const chip = r.token("--chip", "winter");
+    expect(chip?.resolvedValue).toBe("#F1F5F9");
+    expect(chip?.origin).toBe("declared");
+  });
+
+  it("does not let the nested value win in the ENCLOSING scope", () => {
+    // `tableFor()` takes the last declaration, so a nested value leaking into
+    // `:root` does not merely appear there — it WINS there.
+    expect(r.token("--chip", ROOT_THEME)?.resolvedValue).toBe("#1E293B");
+  });
+
+  it("keeps the declaration written after the nested rule's closing brace", () => {
+    // `--ring` follows the nested block, and is what the leftover prelude eats.
+    expect(r.token("--ring", ROOT_THEME)?.resolvedValue).toBe("#334155");
+    expect(r.token("--cta", ROOT_THEME)?.resolvedValue).toBe("#22C55E");
+  });
+
+  it("reports all of it as data, not as an error", () => {
+    // The same silence every previous round blocked on: were the defect live,
+    // NOTHING here would move. The failure mode is wrong data, and cannot be
+    // found by looking for thrown errors — so the quiet is asserted directly.
+    expect(r.tokens.filter((t) => t.kind === "unresolved")).toHaveLength(0);
+    expect(r.tokens.filter((t) => t.kind === "cycle")).toHaveLength(0);
+    expect(r.tokensFor("winter").map((t) => `${t.name}=${t.resolvedValue}`)).toEqual([
+      "--chip=#F1F5F9",
+      "--pad=4px",
+      "--ring=#334155",
+      "--cta=#22C55E",
+    ]);
+  });
+
+  it("does not invent a collision out of a leaked nested value", () => {
+    // A nested value filed under the enclosing scope sits in that scope's table
+    // alongside tokens it never shared a value with, so the collision data a
+    // later rule reads reports a group that is not in the stylesheet.
+    const leaked = resolveCss(
+      `:root { --a: #111111; --b: #222222; &[data-theme="winter"] { --b: #111111; } }`,
+    );
+    expect(leaked.collisionGroups(ROOT_THEME)).toEqual([]);
+    expect(leaked.collisionGroups("winter").map((g) => g.names)).toEqual([["--a", "--b"]]);
+  });
+
+  it("resolves a nested rule the same way as its flat equivalent", () => {
+    // The invariant rather than a hard-coded expectation: nesting is a way of
+    // WRITING a selector, never a different selector, so the two spellings must
+    // produce the same table.
+    const flat = resolveCss(
+      `:root { --chip: #1E293B; --pad: 8px; --ring: #334155; }
+       :root[data-theme="winter"] { --chip: #F1F5F9; }`,
+    );
+    const nest = resolveCss(
+      `:root { --chip: #1E293B; --pad: 8px; &[data-theme="winter"] { --chip: #F1F5F9; } --ring: #334155; }`,
+    );
+    const table = (s: typeof flat) =>
+      s.themes.map((t) => [t, s.tokensFor(t).map((k) => `${k.name}=${k.resolvedValue}`)]);
+    expect(table(nest)).toEqual(table(flat));
+    expect(nest.absences.map((a) => `${a.theme}:${a.name}`)).toEqual(
+      flat.absences.map((a) => `${a.theme}:${a.name}`),
+    );
+  });
+
+  it("leaves the calibration fixture's resolution exactly where it was", () => {
+    // The fixture uses no nesting, so a correct body parser moves nothing.
+    expect(sheet.absences.filter((a) => a.theme === "winter")).toHaveLength(
+      CENSUS.winterAbsences,
+    );
+    expect(sheet.tokens.filter((t) => t.kind === "unresolved")).toHaveLength(0);
+    expect(sheet.tokens.filter((t) => t.kind === "cycle")).toHaveLength(0);
+  });
+});
+
 describe("unresolved references and cycles are represented, never thrown", () => {
   it("reports a var() pointing at nothing as unresolved, naming the missing property", () => {
     const r = resolveCss(`:root { --a: var(--nope); }`);

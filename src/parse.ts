@@ -18,6 +18,21 @@
  * so nothing is silently dropped — but only the three shapes above take part
  * in theme resolution.
  *
+ * A block BODY is parsed depth-aware, because since CSS Nesting a body is
+ * declarations AND nested rules, and a nested rule's declarations belong to a
+ * DIFFERENT subject. Read flat, a `;` written inside a nested rule ends one of
+ * the ENCLOSING block's declarations — so the nested value is filed under the
+ * enclosing scope, and the nested rule's leftover prelude then absorbs the
+ * declaration after its closing brace, dropping it outright. Both failures are
+ * silent, and together they can report an ABSENCE that the stylesheet
+ * contradicts. So a nested region is taken out of its enclosing block by
+ * {@link blankNestedBlocks} and walked separately, its prelude resolved against
+ * the parent by {@link resolveNestedSelector} and then classified by exactly the
+ * same subject rule a top-level selector gets — `&[data-theme="winter"]` inside
+ * `:root` IS the winter scope, and `.card` inside `:root` is `other`, which is
+ * what their flat equivalents already resolve to. Nesting is a way of WRITING a
+ * selector, never a different selector.
+ *
  * A selector names a scope only when it IS that scope, never when it merely
  * CONTAINS one. `[data-theme="winter"] .code-block` is a component inside the
  * winter theme, not the winter theme, and its declarations belong to `other` —
@@ -429,6 +444,113 @@ function classifySelectors(
   return [{ kind: "other", theme: null, matchedSelector: prelude }];
 }
 
+/**
+ * Blank every NESTED `{ … }` region of a block body, preserving byte positions
+ * and newlines, and writing `;` in place of each nested block's closing brace.
+ *
+ * Since CSS Nesting a block body is declarations AND nested rules, and a nested
+ * rule's declarations belong to a DIFFERENT subject. Left in place they do two
+ * kinds of damage, both silent: a `;` written inside the nested block ends one
+ * of THIS block's declarations, so the nested value is filed under the enclosing
+ * scope; and the nested rule's leftover prelude then absorbs the declaration
+ * that follows its closing brace, dropping it outright. The substituted `;` is
+ * what stops that absorption — the prelude becomes a chunk of its own, which
+ * {@link readDeclarations} discards because it does not start with `--`.
+ *
+ * Byte positions are preserved for the same reason {@link blankComments}
+ * preserves them: the declaration line numbers are read off the ORIGINAL offsets.
+ *
+ * This only takes the nested region OUT of the enclosing block. It does not
+ * discard it — {@link parseStylesheet} walks the same region separately and
+ * reports its declarations under their own subject.
+ */
+function blankNestedBlocks(body: string): string {
+  let out = "";
+  let depth = 0;
+  let inString: string | null = null;
+  for (let i = 0; i < body.length; i += 1) {
+    const ch = body[i] as string;
+    if (inString) {
+      out += depth > 0 && ch !== "\n" ? " " : ch;
+      if (ch === "\\") {
+        const next = body[i + 1];
+        if (next !== undefined) out += depth > 0 && next !== "\n" ? " " : next;
+        i += 1;
+      } else if (ch === inString) inString = null;
+      continue;
+    }
+    if (ch === "{") {
+      depth += 1;
+      out += " ";
+      continue;
+    }
+    if (ch === "}") {
+      depth = Math.max(0, depth - 1);
+      // A separator, so the nested rule's prelude cannot swallow what follows.
+      out += depth === 0 ? ";" : " ";
+      continue;
+    }
+    if (depth === 0 && (ch === '"' || ch === "'")) inString = ch;
+    out += depth > 0 && ch !== "\n" ? " " : ch;
+  }
+  return out;
+}
+
+/** Index of the first top-level `&`, or -1. */
+function findAmpersand(selector: string): number {
+  return findTopLevel(selector, /^&/);
+}
+
+/**
+ * Resolve a NESTED rule's prelude against its parent, so it can be classified
+ * as the ordinary selector it stands for.
+ *
+ * CSS Nesting gives `&` the parent's meaning, and a nested selector that never
+ * writes `&` is an implicit DESCENDANT of the parent. Both are rewritten here
+ * into a flat selector, which {@link classifySelectors} then judges by exactly
+ * the same subject rule it applies to a top-level one — no second classifier,
+ * and no new notion of what a scope is.
+ *
+ * Two substitutions, and both are deliberately conservative:
+ *
+ *   - `&` becomes the parent selector when the parent is a single compound, so
+ *     `&[data-theme="winter"]` inside `:root` resolves to
+ *     `:root[data-theme="winter"]` — the winter scope, which is what it is.
+ *     `&:hover` inside `:root` resolves to `:root:hover`, classified `root`,
+ *     agreeing with the flat form.
+ *   - `&` becomes `*` when the parent is a LIST or carries a combinator. `&`
+ *     formally means `:is(parent)` there, and substituting that literally would
+ *     hand every scope in the parent list to the child: `&[data-theme="winter"]`
+ *     under `:root, [data-theme="dark"]` would claim `root` and `dark` as well
+ *     as `winter`. `*` keeps whatever the child itself names and claims nothing
+ *     it inherited — under-claiming, which for a data stage is the safe
+ *     direction, since an unclaimed block lands in `other` rather than
+ *     corrupting a theme's table.
+ *
+ * An implicit descendant is written `* <selector>`, which carries a combinator,
+ * so {@link classifyOne} rejects it as a subject — `.card` inside `:root` is a
+ * component within the base scope, not the base scope, exactly as the flat
+ * `:root .card` is.
+ */
+function resolveNestedSelector(prelude: string, parent: string): string {
+  const parentSelectors = splitSelectorList(parent);
+  const parentIsCompound =
+    parentSelectors.length === 1 && splitCombinators(parentSelectors[0] as string).length === 1;
+  const target = parentIsCompound ? (parentSelectors[0] as string) : "*";
+
+  return splitSelectorList(prelude)
+    .map((selector) => {
+      if (findAmpersand(selector) === -1) return `* ${selector}`;
+      let out = selector;
+      for (;;) {
+        const at = findAmpersand(out);
+        if (at === -1) return out;
+        out = out.slice(0, at) + target + out.slice(at + 1);
+      }
+    })
+    .join(", ");
+}
+
 /** Split a block body on top-level `;`, respecting parens and strings. */
 function splitDeclarations(body: string): { text: string; offset: number }[] {
   const out: { text: string; offset: number }[] = [];
@@ -455,10 +577,13 @@ function splitDeclarations(body: string): { text: string; offset: number }[] {
 }
 
 function readDeclarations(
-  body: string,
+  rawBody: string,
   bodyStart: number,
   lines: number[],
 ): Declaration[] {
+  // A nested rule's declarations have a different subject: take them out of
+  // this block, so they neither land here nor eat the declaration after them.
+  const body = blankNestedBlocks(rawBody);
   const decls: Declaration[] = [];
   for (const chunk of splitDeclarations(body)) {
     const trimmed = chunk.text.trim();
@@ -483,13 +608,24 @@ function readDeclarations(
  * Nested at-rules (`@media`, `@supports`, `@layer`) are recursed into, so a
  * `:root` inside a media query is found; `@theme` blocks are NOT recursed into
  * because their body is declarations, not rules.
+ *
+ * A block BODY is parsed depth-aware, because since CSS Nesting a body is
+ * declarations AND nested rules. A nested rule's declarations belong to a
+ * DIFFERENT subject, so they are taken out of the enclosing block by
+ * {@link blankNestedBlocks} and then walked separately: their prelude is
+ * resolved against the parent by {@link resolveNestedSelector} and classified by
+ * exactly the same subject rule a top-level selector gets. So
+ * `&[data-theme="winter"]` written inside `:root` is reported as the winter
+ * scope, and `.card` written inside `:root` is reported as `other` — the same
+ * two answers their flat equivalents get. Nothing is silently dropped, and
+ * nothing is filed under a subject that did not declare it.
  */
 export function parseStylesheet(source: string): Stylesheet {
   const css = blankComments(source);
   const lines = lineIndex(css);
   const scopes: Scope[] = [];
 
-  const walk = (from: number, to: number): void => {
+  const walk = (from: number, to: number, parent: string | null): void => {
     let i = from;
     let preludeStart = from;
     let depth = 0;
@@ -517,14 +653,44 @@ export function parseStylesheet(source: string): Stylesheet {
       if (ch === "}") {
         depth -= 1;
         if (depth === 0 && blockStart !== -1) {
-          const selector = css.slice(preludeStart, blockStart).trim().replace(/\s+/g, " ");
+          const rawSelector = css.slice(preludeStart, blockStart).trim().replace(/\s+/g, " ");
+          // Inside a parent rule this prelude is a NESTED selector: `&` carries
+          // the parent's meaning and a bare selector is an implicit descendant.
+          // Resolved here so one classifier judges every selector.
+          const selector =
+            parent !== null && !rawSelector.startsWith("@")
+              ? resolveNestedSelector(rawSelector, parent)
+              : rawSelector;
           const bodyStart = blockStart + 1;
           const body = css.slice(bodyStart, i);
           const matches = classifySelectors(selector);
           const isNestingAtRule =
             selector.startsWith("@") && matches[0].kind !== "theme-inline";
           if (isNestingAtRule) {
-            walk(bodyStart, i);
+            // An at-rule is transparent to nesting: its children still resolve
+            // against the at-rule's own parent, not against the at-rule.
+            walk(bodyStart, i, parent);
+            // Declarations written DIRECTLY in a nested at-rule body belong to
+            // the parent rule's subject, conditionally — `:root { @media print
+            // { --p: … } }` declares `--p` on `:root`. Reported under that
+            // parent, which is the same answer the flat `@media print { :root {
+            // --p: … } }` already gets; dropping them would be the silent loss
+            // this file's header promises against.
+            if (parent !== null) {
+              const conditional = readDeclarations(body, bodyStart, lines);
+              if (conditional.length > 0) {
+                for (const { kind, theme, matchedSelector } of classifySelectors(parent)) {
+                  scopes.push({
+                    kind,
+                    selector: parent,
+                    matchedSelector,
+                    theme,
+                    line: lines[blockStart] ?? 1,
+                    declarations: conditional,
+                  });
+                }
+              }
+            }
           } else {
             const declarations = readDeclarations(body, bodyStart, lines);
             if (declarations.length > 0) {
@@ -541,6 +707,8 @@ export function parseStylesheet(source: string): Stylesheet {
                 });
               }
             }
+            // Then the nested rules this body contains, under their own subject.
+            walk(bodyStart, i, selector);
           }
           preludeStart = i + 1;
           blockStart = -1;
@@ -556,6 +724,6 @@ export function parseStylesheet(source: string): Stylesheet {
     }
   };
 
-  walk(0, css.length);
+  walk(0, css.length, null);
   return { scopes };
 }
