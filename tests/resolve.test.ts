@@ -227,6 +227,53 @@ describe("same-resolved-value groups (the data rule 1 will judge)", () => {
   });
 });
 
+describe("the dark-default form `:root, [data-theme=\"dark\"]` resolves as BOTH scopes", () => {
+  // REVERT PROBE — let the whole prelude classify as one kind again (the
+  // `[data-theme=…]` branch winning for the list) and every test here fails:
+  // there is no root scope, `tokensFor("root")` is empty, no theme inherits
+  // anything, `absences` is empty — and NOTHING is thrown, no token is
+  // `unresolved`, none is a `cycle`. The resolver would report a perfectly
+  // healthy stylesheet whose base scope does not exist. That silent-wrong-data
+  // shape is exactly what this block exists to catch.
+  const css = `:root, [data-theme="dark"] {
+                 --bg: #020617; --fg: #F8FAFC; --border: #1E293B; --raised: #1E293B;
+               }
+               [data-theme="light"] { --bg: #FFFFFF; }`;
+  const r = resolveCss(css);
+
+  it("keeps the base scope: root carries all four tokens", () => {
+    expect(r.tokensFor(ROOT_THEME)).toHaveLength(4);
+    expect(r.token("--bg", ROOT_THEME)?.resolvedValue).toBe("#020617");
+    expect(r.token("--bg", ROOT_THEME)?.origin).toBe("declared");
+  });
+
+  it("names dark as a theme in its own right, alongside root", () => {
+    expect(r.themes).toEqual([ROOT_THEME, "dark", "light"]);
+    expect(r.token("--bg", "dark")?.origin).toBe("declared");
+    expect(r.token("--bg", "dark")?.resolvedValue).toBe("#020617");
+  });
+
+  it("lets another theme INHERIT from the base half of the list", () => {
+    const fg = r.token("--fg", "light");
+    expect(fg).toBeDefined();
+    expect(fg?.origin).toBe("inherited");
+    expect(fg?.resolvedValue).toBe("#F8FAFC");
+    expect(r.token("--bg", "light")?.origin).toBe("declared");
+  });
+
+  it("lists the three tokens light does not override as absences", () => {
+    const lightAbsences = r.absences.filter((a) => a.theme === "light").map((a) => a.name);
+    expect(lightAbsences.sort()).toEqual(["--border", "--fg", "--raised"]);
+  });
+
+  it("finds the value collision in the base scope, not only in dark", () => {
+    for (const theme of [ROOT_THEME, "dark"]) {
+      const g = r.collisionGroups(theme).find((x) => x.value === "#1E293B");
+      expect(g?.names).toEqual(["--border", "--raised"]);
+    }
+  });
+});
+
 describe("unresolved references and cycles are represented, never thrown", () => {
   it("reports a var() pointing at nothing as unresolved, naming the missing property", () => {
     const r = resolveCss(`:root { --a: var(--nope); }`);

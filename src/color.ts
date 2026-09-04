@@ -7,14 +7,17 @@
  *
  * The formulas are deliberately identical to the Ruby reference implementation
  * this package was calibrated against, `app/services/design_kit/color.rb` in
- * the yatfa repo (commit 961eef3):
+ * the yatfa repo (commit 961eef3). Methods are cited BY NAME rather than by
+ * line range: a range is wrong the moment a line is added above it, and a
+ * reader following a stale one lands in the wrong function.
  *
- *   - relative luminance : color.rb:186-192  (sRGB 0.03928 knee, /12.92,
- *                          ((s+0.055)/1.055)^2.4, 0.2126/0.7152/0.0722)
- *   - CIE L*             : color.rb:197-200  (L* = 116*Y^(1/3) - 16 above the
- *                          0.008856 knee, else 903.3*Y)
- *   - contrast ratio     : color.rb:204-209  ((hi + 0.05) / (lo + 0.05))
- *   - source-over        : color.rb:173-183
+ *   - relative luminance : DesignKit::Color#relative_luminance  (sRGB 0.03928
+ *                          knee, /12.92, ((s+0.055)/1.055)^2.4,
+ *                          0.2126/0.7152/0.0722)
+ *   - CIE L*             : DesignKit::Color#lstar  (L* = 116*Y^(1/3) - 16
+ *                          above the 0.008856 knee, else 903.3*Y)
+ *   - contrast ratio     : DesignKit::Color#contrast_with  ((hi+0.05)/(lo+0.05))
+ *   - source-over        : DesignKit::Color#over
  *
  * See tests/math.test.ts for the sampled cross-check against that oracle.
  *
@@ -183,7 +186,7 @@ function parseHsl(body: string): Color | null {
 }
 
 /**
- * HSL to quantized sRGB, matching `DesignKit::Color.from_hsl` (color.rb:56-72):
+ * HSL to quantized sRGB, matching `DesignKit::Color.from_hsl` (yatfa @ 961eef3):
  * channels are rounded to 0–255 HERE, so any L* measured on the result is a
  * measurement of the colour that will actually be shipped.
  */
@@ -215,7 +218,7 @@ export class TranslucentColorError extends Error {
   }
 }
 
-/** Source-over composite onto an opaque backdrop. Mirrors color.rb:173-183. */
+/** Source-over composite onto an opaque backdrop. Mirrors `DesignKit::Color#over` (yatfa @ 961eef3). */
 export function over(color: Color, backdrop: Color): Color {
   if (!isTranslucent(color)) return color;
   if (isTranslucent(backdrop)) {
@@ -225,7 +228,7 @@ export function over(color: Color, backdrop: Color): Color {
   return rgba(mix(color.r, backdrop.r), mix(color.g, backdrop.g), mix(color.b, backdrop.b), 1);
 }
 
-/** WCAG 2.1 relative luminance. Mirrors color.rb:186-192. */
+/** WCAG 2.1 relative luminance. Mirrors `DesignKit::Color#relative_luminance` (yatfa @ 961eef3). */
 export function relativeLuminance(c: Color): number {
   if (isTranslucent(c)) throw new TranslucentColorError(c, "Relative luminance");
   const lin = [c.r, c.g, c.b].map((channel) => {
@@ -236,7 +239,7 @@ export function relativeLuminance(c: Color): number {
 }
 
 /**
- * CIE L* (D65). Mirrors color.rb:197-200.
+ * CIE L* (D65). Mirrors `DesignKit::Color#lstar` (yatfa @ 961eef3).
  *
  * This is the right instrument for surface-against-surface steps, where a WCAG
  * ratio is the wrong one: two adjacent fills a whole visible step apart still
@@ -252,7 +255,7 @@ export function deltaLstar(from: Color, to: Color): number {
   return lstar(to) - lstar(from);
 }
 
-/** WCAG 2.1 contrast ratio. Mirrors color.rb:204-209. Both must be opaque. */
+/** WCAG 2.1 contrast ratio. Mirrors `DesignKit::Color#contrast_with` (yatfa @ 961eef3). Both must be opaque. */
 export function contrastRatio(a: Color, b: Color): number {
   const la = relativeLuminance(a);
   const lb = relativeLuminance(b);

@@ -93,6 +93,72 @@ describe("census of the vendored calibration stylesheet", () => {
   });
 });
 
+describe("a selector LIST opens every scope it names (audit YATFA-6991)", () => {
+  // REVERT PROBE — collapse `classifySelectors` back to classifying the whole
+  // prelude as one selector (i.e. let the `[data-theme=…]` branch win for the
+  // whole list) and every test in this block fails: the `:root` half is
+  // discarded silently, with nothing thrown and no scope reported for it.
+  const css = `:root, [data-theme="dark"] { --bg: #020617; --fg: #F8FAFC; }
+               [data-theme="light"] { --bg: #FFFFFF; }`;
+  const scopes = parseStylesheet(css).scopes;
+
+  it('reports :root, [data-theme="dark"] as BOTH a root scope and a dark theme scope', () => {
+    expect(scopes.map((s) => s.kind)).toEqual(["root", "theme", "theme"]);
+    expect(scopes.map((s) => s.theme)).toEqual([null, "dark", "light"]);
+  });
+
+  it("gives both halves the same declarations, and says which selector each came from", () => {
+    const root = scopes.find((s) => s.kind === "root");
+    const dark = scopes.find((s) => s.theme === "dark");
+    expect(root?.declarations.map((d) => d.name)).toEqual(["--bg", "--fg"]);
+    expect(dark?.declarations.map((d) => d.name)).toEqual(["--bg", "--fg"]);
+    expect(root?.matchedSelector).toBe(":root");
+    expect(dark?.matchedSelector).toBe('[data-theme="dark"]');
+    // The full prelude is preserved on both, so the list is still recoverable.
+    expect(root?.selector).toBe(':root, [data-theme="dark"]');
+    expect(dark?.selector).toBe(':root, [data-theme="dark"]');
+  });
+
+  it("does not depend on the order the list is written in", () => {
+    const reversed = parseStylesheet('[data-theme="dark"], :root { --a: #fff; }').scopes;
+    expect(reversed.map((s) => s.kind).sort()).toEqual(["root", "theme"]);
+  });
+
+  it("still reports an ordinary selector list as ONE scope", () => {
+    const ordinary = parseStylesheet(".card, .panel { --pad: 8px; }").scopes;
+    expect(ordinary).toHaveLength(1);
+    expect(ordinary[0].kind).toBe("other");
+  });
+
+  it("does not split a comma nested inside :is(), [attr] or a string", () => {
+    expect(parseStylesheet(":is(.a, .b) { --x: 1px; }").scopes).toHaveLength(1);
+    expect(parseStylesheet('[title="a,b"] { --x: 1px; }').scopes).toHaveLength(1);
+  });
+});
+
+describe(":not() says what a selector is NOT, so it never names the scope's theme", () => {
+  // A deliberate decision, not regex ordering: reading `winter` out of a
+  // negation would file DARK's declarations under the LIGHT theme.
+  it("classifies the dark-default idiom :root:not([data-theme]) as the ROOT scope", () => {
+    const scopes = parseStylesheet(":root:not([data-theme]) { --bg: #020617; }").scopes;
+    expect(scopes).toHaveLength(1);
+    expect(scopes[0].kind).toBe("root");
+    expect(scopes[0].theme).toBeNull();
+  });
+
+  it("does not read a theme name out of a negated attribute", () => {
+    const scopes = parseStylesheet(':root:not([data-theme="winter"]) { --bg: #020617; }').scopes;
+    expect(scopes[0].kind).toBe("root");
+    expect(scopes[0].theme).toBeNull();
+  });
+
+  it("still reads a theme name from a NON-negated attribute on the same selector", () => {
+    const scopes = parseStylesheet('[data-theme="winter"]:not(.print) { --bg: #fff; }').scopes;
+    expect(scopes[0].kind).toBe("theme");
+    expect(scopes[0].theme).toBe("winter");
+  });
+});
+
 describe("census of a minimal hand-written stylesheet", () => {
   // themeguard is not yatfa-specific: the same parser must work on any CSS.
   const css = `

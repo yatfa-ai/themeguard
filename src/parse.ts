@@ -8,6 +8,11 @@
  *   2. `[data-theme="winter"] { … }`  a theme override scope
  *   3. `@theme inline { … }`          Tailwind v4's alias namespace
  *
+ * A block's prelude is a selector LIST, so it can name more than one of these
+ * at once: `:root, [data-theme="dark"] { … }` — the usual way to write "dark is
+ * the default theme" — is genuinely both the base scope and the dark scope, and
+ * is reported as two scopes over the same declarations.
+ *
  * Anything else that declares custom properties (a component class, a
  * `@media` block) is still parsed and reported, under the scope kind `other`,
  * so nothing is silently dropped — but only the three shapes above take part
@@ -33,6 +38,16 @@ export interface Scope {
   readonly kind: ScopeKind;
   /** The selector or at-rule prelude, normalised to single spaces. */
   readonly selector: string;
+  /**
+   * The single selector WITHIN {@link selector} that gave this scope its kind.
+   *
+   * A CSS selector list is *n* selectors and a `Scope` carries one kind, so a
+   * block whose prelude is `:root, [data-theme="dark"]` yields TWO scopes over
+   * the same declarations — one `root`, one `theme`/`dark` — and this field is
+   * what says which half each came from. For a single-selector block it is just
+   * {@link selector} again.
+   */
+  readonly matchedSelector: string;
   /**
    * Theme name for `kind === "theme"` (e.g. `winter` from
    * `[data-theme="winter"]`), otherwise `null`.
@@ -104,13 +119,106 @@ function lineIndex(css: string): number[] {
   return lines;
 }
 
-function classify(selector: string): { kind: ScopeKind; theme: string | null } {
-  const s = selector.trim();
-  if (/^@theme\b/i.test(s)) return { kind: "theme-inline", theme: null };
+/**
+ * Split a selector LIST on its top-level commas, respecting `(`, `[` and
+ * strings so `:is(a, b)` and `[title="x,y"]` stay in one piece.
+ */
+function splitSelectorList(prelude: string): string[] {
+  const out: string[] = [];
+  let depth = 0;
+  let inString: string | null = null;
+  let start = 0;
+  for (let i = 0; i < prelude.length; i += 1) {
+    const ch = prelude[i];
+    if (inString) {
+      if (ch === "\\") i += 1;
+      else if (ch === inString) inString = null;
+      continue;
+    }
+    if (ch === '"' || ch === "'") inString = ch;
+    else if (ch === "(" || ch === "[") depth += 1;
+    else if (ch === ")" || ch === "]") depth = Math.max(0, depth - 1);
+    else if (ch === "," && depth === 0) {
+      out.push(prelude.slice(start, i).trim());
+      start = i + 1;
+    }
+  }
+  out.push(prelude.slice(start).trim());
+  return out.filter((s) => s.length > 0);
+}
+
+/**
+ * Remove `:not(…)` arguments before classifying.
+ *
+ * A negation says what an element is NOT, so the attribute inside it must not
+ * decide the scope's kind. `:root:not([data-theme="winter"])` is the base scope
+ * — reading `winter` out of it would file dark's declarations under the light
+ * theme. This is a deliberate decision, not regex ordering: the dark-default
+ * idiom `:root:not([data-theme])` classifies `root` for the same reason.
+ */
+function stripNegations(selector: string): string {
+  let out = selector;
+  for (;;) {
+    const at = out.search(/:not\s*\(/i);
+    if (at === -1) return out;
+    let depth = 0;
+    let i = out.indexOf("(", at);
+    let end = -1;
+    for (; i < out.length; i += 1) {
+      if (out[i] === "(") depth += 1;
+      else if (out[i] === ")") {
+        depth -= 1;
+        if (depth === 0) {
+          end = i;
+          break;
+        }
+      }
+    }
+    if (end === -1) return out.slice(0, at);
+    out = out.slice(0, at) + out.slice(end + 1);
+  }
+}
+
+/** Classify ONE selector (never a list — see {@link classifySelectors}). */
+function classifyOne(selector: string): { kind: ScopeKind; theme: string | null } {
+  const raw = selector.trim();
+  if (/^@theme\b/i.test(raw)) return { kind: "theme-inline", theme: null };
+  const s = stripNegations(raw);
   const themeMatch = s.match(DATA_THEME);
   if (themeMatch) return { kind: "theme", theme: themeMatch[1].trim() };
-  if (/(^|,)\s*:root\b/.test(s)) return { kind: "root", theme: null };
+  if (/^:root\b/.test(s)) return { kind: "root", theme: null };
   return { kind: "other", theme: null };
+}
+
+/**
+ * Classify a block's PRELUDE into the scopes it opens.
+ *
+ * A selector list is *n* selectors and a `Scope` carries one kind, so a prelude
+ * that names more than one recognised shape opens more than one scope over the
+ * same declarations. `:root, [data-theme="dark"] { … }` — the single most
+ * common way to write "dark is the default theme" — genuinely IS both the base
+ * scope and the dark theme's scope, and reporting only one of them would drop
+ * the other half's tokens while throwing nothing.
+ *
+ * Only when NO selector in the list names a recognised shape does the block
+ * collapse to a single `other` scope, so an ordinary rule stays one scope.
+ */
+function classifySelectors(
+  prelude: string,
+): { kind: ScopeKind; theme: string | null; matchedSelector: string }[] {
+  const selectors = splitSelectorList(prelude);
+  const matched: { kind: ScopeKind; theme: string | null; matchedSelector: string }[] = [];
+  const seen = new Set<string>();
+  for (const selector of selectors) {
+    const { kind, theme } = classifyOne(selector);
+    if (kind === "other") continue;
+    const key = `${kind}\u0000${theme ?? ""}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    matched.push({ kind, theme, matchedSelector: selector });
+  }
+  if (matched.length > 0) return matched;
+  return [{ kind: "other", theme: null, matchedSelector: prelude }];
 }
 
 /** Split a block body on top-level `;`, respecting parens and strings. */
@@ -204,20 +312,26 @@ export function parseStylesheet(source: string): Stylesheet {
           const selector = css.slice(preludeStart, blockStart).trim().replace(/\s+/g, " ");
           const bodyStart = blockStart + 1;
           const body = css.slice(bodyStart, i);
-          const { kind, theme } = classify(selector);
-          const isNestingAtRule = selector.startsWith("@") && kind !== "theme-inline";
+          const matches = classifySelectors(selector);
+          const isNestingAtRule =
+            selector.startsWith("@") && matches[0].kind !== "theme-inline";
           if (isNestingAtRule) {
             walk(bodyStart, i);
           } else {
             const declarations = readDeclarations(body, bodyStart, lines);
             if (declarations.length > 0) {
-              scopes.push({
-                kind,
-                selector,
-                theme,
-                line: lines[blockStart] ?? 1,
-                declarations,
-              });
+              // One scope per recognised selector in the list: a
+              // `:root, [data-theme="dark"]` block IS both scopes.
+              for (const { kind, theme, matchedSelector } of matches) {
+                scopes.push({
+                  kind,
+                  selector,
+                  matchedSelector,
+                  theme,
+                  line: lines[blockStart] ?? 1,
+                  declarations,
+                });
+              }
             }
           }
           preludeStart = i + 1;

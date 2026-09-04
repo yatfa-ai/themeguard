@@ -159,7 +159,7 @@ export function resolveStylesheet(sheet: Stylesheet): ResolvedStylesheet {
     theme: string,
   ): { value: string; line: number; origin: TokenOrigin } | null => {
     const own = themeTables.get(theme)?.declarations.get(name);
-    if (own) return { ...own, origin: theme === ROOT_THEME ? "declared" : "declared" };
+    if (own) return { ...own, origin: "declared" };
     if (theme !== ROOT_THEME) {
       const inherited = rootTable.get(name);
       if (inherited) return { ...inherited, origin: "inherited" };
