@@ -223,7 +223,37 @@ function splitCombinators(selector: string): string[] {
 }
 
 /**
- * Pull the argument lists out of every top-level `:is(…)` / `:where(…)` in a
+ * Index of the first match of `re` at nesting depth 0 — outside every paren,
+ * bracket and quoted string — or `-1`.
+ *
+ * `re` is tested against the SUFFIX starting at each candidate index, so it must
+ * be anchored with `^`. Depth-awareness is the whole point: a plain
+ * `String#search` finds a pseudo-class at ANY nesting depth, which is not the
+ * same question as "is this pseudo-class on the subject compound?".
+ */
+function findTopLevel(s: string, re: RegExp): number {
+  let depth = 0;
+  let inString: string | null = null;
+  for (let i = 0; i < s.length; i += 1) {
+    const ch = s[i];
+    if (inString) {
+      if (ch === "\\") i += 1;
+      else if (ch === inString) inString = null;
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      inString = ch;
+      continue;
+    }
+    if (depth === 0 && re.test(s.slice(i))) return i;
+    if (ch === "(" || ch === "[") depth += 1;
+    else if (ch === ")" || ch === "]") depth = Math.max(0, depth - 1);
+  }
+  return -1;
+}
+
+/**
+ * Pull the argument lists out of every TOP-LEVEL `:is(…)` / `:where(…)` in a
  * compound, returning the compound with those blocks removed plus the arguments
  * as selectors in their own right.
  *
@@ -234,12 +264,25 @@ function splitCombinators(selector: string): string[] {
  * form of the same thing, which is precisely why generated stylesheets reach for
  * it.) The arguments are classified as full selectors, so a combinator inside one
  * still disqualifies it.
+ *
+ * "Top-level" is enforced by {@link findTopLevel} and is load-bearing, not a
+ * tidiness note. A depth-blind search also matches a grouping pseudo-class nested
+ * INSIDE a containment one — `html:has(:is([data-theme="winter"]))` — and hoisting
+ * that argument out promotes it to a scope before {@link stripFunctionalArgs} can
+ * see the `:has()` that renders it irrelevant. That is the containment defect
+ * arriving by a second route: an element that merely CONTAINS the winter root
+ * would claim winter's global table. `:has(:is(a, b))` is exactly how a
+ * multi-theme detector is written, so this is a shape real stylesheets take, and
+ * wrapping a list in `:is()` must not change a classification the bare list gets
+ * right. A grouping pseudo-class nested inside ANOTHER grouping pseudo-class is
+ * unaffected: its parent's argument is recursed back through {@link classifyOne},
+ * where the inner one is itself top-level.
  */
 function extractMatchesAny(compound: string): { rest: string; args: string[] } {
   let rest = compound;
   const args: string[] = [];
   for (;;) {
-    const at = rest.search(/:(?:is|where|matches|-webkit-any|-moz-any)\s*\(/i);
+    const at = findTopLevel(rest, /^:(?:is|where|matches|-webkit-any|-moz-any)\s*\(/i);
     if (at === -1) return { rest, args };
     let depth = 0;
     let i = rest.indexOf("(", at);

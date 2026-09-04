@@ -379,6 +379,74 @@ describe("an element that merely CONTAINS a theme does not carry that theme's va
   });
 });
 
+describe("a theme wrapped in :is() inside a containment pseudo does not carry that theme's values", () => {
+  // REVERT PROBE — make `extractMatchesAny()`'s search depth-blind again (swap
+  // `findTopLevel(rest, /^:(?:is|where|…)\s*\(/i)` back for
+  // `rest.search(/:(?:is|where|…)\s*\(/i)`) and every test here fails.
+  //
+  // This is the block above's defect reached past the fix that closed it.
+  // `stripFunctionalArgs()` would strip this `:has()` correctly — but it never
+  // runs on it, because a depth-blind `:is()` search hoists the argument out
+  // first. So the theme escapes the containment check that exists to stop it,
+  // and the damage is byte-for-byte identical: `--chip` corrupted, `--pad`
+  // flipped from inherited to declared, a genuine absence erased.
+  //
+  // Pinned at the resolver level rather than only on `parse()` because the wrong
+  // VALUES are what a later rule would judge — a collision rule reading this
+  // table reports a collision that is not in the stylesheet, and a ramp rule
+  // measures a ΔL* between two colours no user ever sees together.
+  const css = `:root                                 { --chip: #1E293B; --pad: 8px; --ring: #334155; }
+               [data-theme="winter"]                 { --chip: #F1F5F9; --ring: #CBD5E1; }
+               html:has(:is([data-theme="winter"]))  { --chip: #000000; --pad: 999px; --ring: #000000; }`;
+  const r = resolveCss(css);
+
+  it("keeps the theme's own value, not the containing element's", () => {
+    expect(r.token("--chip", "winter")?.resolvedValue).toBe("#F1F5F9");
+  });
+
+  it("still reports a token the theme genuinely lacks as inherited, and as an absence", () => {
+    const pad = r.token("--pad", "winter");
+    expect(pad?.origin).toBe("inherited");
+    expect(pad?.resolvedValue).toBe("8px");
+    expect(r.absences.filter((a) => a.theme === "winter").map((a) => a.name)).toEqual(["--pad"]);
+  });
+
+  it("reports the corruption's absence as data, not as an error", () => {
+    // Same silence as the block above: were the defect live, `--chip` and
+    // `--ring` would both read `#000000` in winter and NOTHING here would move.
+    // Asserting the quiet directly is the point — the failure mode is wrong
+    // values, and cannot be found by looking for thrown errors.
+    expect(r.tokens.filter((t) => t.kind === "unresolved")).toHaveLength(0);
+    expect(r.tokens.filter((t) => t.kind === "cycle")).toHaveLength(0);
+    expect(r.tokensFor("winter").map((t) => t.resolvedValue)).toEqual([
+      "#F1F5F9",
+      "8px",
+      "#CBD5E1",
+    ]);
+  });
+
+  it("does not invent a collision between the container's value and the theme's", () => {
+    for (const theme of [ROOT_THEME, "winter"]) {
+      expect(r.collisionGroups(theme).map((g) => g.value)).not.toContain("#000000");
+    }
+  });
+
+  it("resolves a multi-theme detector to no theme at all", () => {
+    // `:has(:is(a, b))` — "contains any of these themes" — is the shape that
+    // makes this defect likely in a real stylesheet, and it must open NEITHER
+    // theme's table rather than both.
+    const many = resolveCss(
+      `:root { --chip: #1E293B; }
+       [data-theme="winter"] { --chip: #F1F5F9; }
+       [data-theme="midnight"] { --chip: #020617; }
+       html:has(:is([data-theme="winter"], [data-theme="midnight"])) { --chip: #000000; }`,
+    );
+    expect(many.token("--chip", "winter")?.resolvedValue).toBe("#F1F5F9");
+    expect(many.token("--chip", "midnight")?.resolvedValue).toBe("#020617");
+    expect(many.token("--chip", ROOT_THEME)?.resolvedValue).toBe("#1E293B");
+  });
+});
+
 describe("unresolved references and cycles are represented, never thrown", () => {
   it("reports a var() pointing at nothing as unresolved, naming the missing property", () => {
     const r = resolveCss(`:root { --a: var(--nope); }`);

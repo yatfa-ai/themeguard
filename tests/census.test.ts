@@ -283,6 +283,89 @@ describe("a functional pseudo-class's ARGUMENT is not the subject (audit YATFA-6
   });
 });
 
+describe("a grouping pseudo-class NESTED inside a containment one is not the subject (audit YATFA-6991 round 4)", () => {
+  // REVERT PROBE — make `extractMatchesAny()`'s search depth-blind again (swap
+  // `findTopLevel(rest, /^:(?:is|where|…)\s*\(/i)` back for
+  // `rest.search(/:(?:is|where|…)\s*\(/i)`) and every test in this block fails.
+  //
+  // `:is()` and `:where()` are looked THROUGH, because their arguments genuinely
+  // are scopes — but only when the grouping pseudo is on the subject compound. A
+  // depth-blind search also finds one nested inside a CONTAINMENT pseudo and
+  // hoists its argument out as a scope in its own right, before
+  // `stripFunctionalArgs()` ever sees the `:has()` that makes it irrelevant. The
+  // theme escapes past the mechanism placed to stop it, and
+  // `html:has(:is([data-theme="winter"]))` reproduces the round-2 defect exactly:
+  // an element that merely CONTAINS a themed subtree claiming the theme's table.
+  //
+  // Not a contrived shape. `:has(:is(a, b))` is how "contains any of these
+  // themes" is written, which is what a multi-theme detector looks like as soon
+  // as there are more than two themes — and the bare form
+  // `html:has([data-theme="dark"], [data-theme="midnight"])` is already correct,
+  // so wrapping the same list in `:is()` must not change the answer.
+
+  it("does not let :is() smuggle a theme out of a :has() argument", () => {
+    for (const sel of [
+      'html:has(:is([data-theme="winter"]))',
+      '.card:has(:where([data-theme="dark"]))',
+      'html:has(:is([data-theme="dark"], [data-theme="midnight"]))',
+    ]) {
+      const scopes = parseStylesheet(`${sel} { --x: 1px; }`).scopes;
+      expect(scopes.map((s) => `${s.kind}/${s.theme ?? "-"}`)).toEqual(["other/-"]);
+    }
+  });
+
+  it("classifies a wrapped list exactly as it classifies the bare list", () => {
+    // `:is()` changes specificity, never what the selector matches, so these two
+    // must agree. They are the same question asked twice.
+    const bare = parseStylesheet(
+      'html:has([data-theme="dark"], [data-theme="midnight"]) { --x: 1px; }',
+    ).scopes;
+    const wrapped = parseStylesheet(
+      'html:has(:is([data-theme="dark"], [data-theme="midnight"])) { --x: 1px; }',
+    ).scopes;
+    expect(wrapped.map((s) => `${s.kind}/${s.theme ?? "-"}`)).toEqual(
+      bare.map((s) => `${s.kind}/${s.theme ?? "-"}`),
+    );
+  });
+
+  it("does not let :is() smuggle :root out of a containment argument either", () => {
+    for (const sel of [".x:has(:is(:root))", ".x:has(:where(:root))"]) {
+      expect(parseStylesheet(`${sel} { --x: 1px; }`).scopes[0].kind).toBe("other");
+    }
+  });
+
+  it("covers containment pseudos other than :has() by the same construction", () => {
+    expect(
+      parseStylesheet('.x:nth-child(1 of :is([data-theme="winter"])) { --x: 1px; }').scopes[0].kind,
+    ).toBe("other");
+    expect(
+      parseStylesheet(':host-context(:is([data-theme="winter"])) { --x: 1px; }').scopes[0].kind,
+    ).toBe("other");
+  });
+
+  it("still classifies by the SUBJECT when the subject IS a scope", () => {
+    // The `:has(:is(…))` only narrows WHEN the rule applies; the subject is
+    // `:root`, so this is the base scope and nothing else.
+    const scopes = parseStylesheet(':root:has(:is([data-theme="winter"])) { --x: 1px; }').scopes;
+    expect(scopes.map((s) => `${s.kind}/${s.theme ?? "-"}`)).toEqual(["root/-"]);
+  });
+
+  it("still looks through a grouping pseudo that IS on the subject, nested or not", () => {
+    // The narrowing must not cost the feature it narrows. A `:is()` inside
+    // another `:is()` still resolves, because the outer one's argument is
+    // recursed back through the classifier, where the inner one is top-level.
+    expect(
+      parseStylesheet(':is(:root, [data-theme="dark"]) { --x: 1px; }').scopes.map(
+        (s) => `${s.kind}/${s.theme ?? "-"}`,
+      ),
+    ).toEqual(["root/-", "theme/dark"]);
+    expect(parseStylesheet(":is(:where(:root), .z) { --x: 1px; }").scopes[0].kind).toBe("root");
+    expect(
+      parseStylesheet(':where(:is([data-theme="winter"])) { --x: 1px; }').scopes[0].theme,
+    ).toBe("winter");
+  });
+});
+
 describe("census of a minimal hand-written stylesheet", () => {
   // themeguard is not yatfa-specific: the same parser must work on any CSS.
   const css = `
