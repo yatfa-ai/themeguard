@@ -159,6 +159,74 @@ describe(":not() says what a selector is NOT, so it never names the scope's them
   });
 });
 
+describe("a selector names a scope only when it IS one (audit YATFA-6991 round 2)", () => {
+  // REVERT PROBE — restore substring classification (test `[data-theme=…]` and
+  // `:root` against the WHOLE selector, with no combinator check and no
+  // `:is()`/`:where()` descent) and every test in this block fails.
+  //
+  // The failure shape is the same silent-wrong-data one the round-1 audit
+  // blocked on: nothing throws, nothing is `unresolved`, nothing is a `cycle`,
+  // and `absences` is empty — a healthy-looking report of wrong data. A
+  // component scoped INSIDE a theme is reported as that theme's global value,
+  // and a scope written inside `:is()` disappears entirely.
+
+  it("looks THROUGH :is() and :where(), which only group selectors", () => {
+    // `:is(:root, [data-theme="dark"])` matches exactly what
+    // `:root, [data-theme="dark"]` matches, so it genuinely IS both scopes.
+    // :where() is the zero-specificity form of the same thing, which is why
+    // generated stylesheets (Tailwind's own output included) reach for it.
+    for (const wrapper of ["is", "where"]) {
+      const scopes = parseStylesheet(
+        `:${wrapper}(:root, [data-theme="dark"]) { --bg: #020617; --fg: #F8FAFC; }`,
+      ).scopes;
+      expect(scopes.map((s) => `${s.kind}/${s.theme ?? "-"}`)).toEqual(["root/-", "theme/dark"]);
+      expect(scopes[0].declarations).toHaveLength(2);
+      expect(scopes[1].declarations).toHaveLength(2);
+    }
+  });
+
+  it("does NOT let a theme claim a component nested inside it", () => {
+    // `[data-theme="winter"] .code-block` is a component INSIDE the winter
+    // theme, not the winter theme. Merging its declarations into winter's table
+    // would report a token narrowed to one subtree as that theme's value
+    // everywhere — and would erase a genuine absence.
+    const scopes = parseStylesheet(
+      '[data-theme="winter"] .code-block { --chip: #FFFFFF; }',
+    ).scopes;
+    expect(scopes).toHaveLength(1);
+    expect(scopes[0].kind).toBe("other");
+    expect(scopes[0].theme).toBeNull();
+  });
+
+  it("rejects every combinator, not only the descendant space", () => {
+    for (const sel of [
+      '[data-theme="winter"] .code-block',
+      '[data-theme="winter"] > .code-block',
+      '[data-theme="winter"] + .sibling',
+      '[data-theme="winter"] ~ .sibling',
+      ":root .code-block",
+      ":root > main",
+    ]) {
+      const scopes = parseStylesheet(`${sel} { --x: 1px; }`).scopes;
+      expect(scopes.map((s) => s.kind)).toEqual(["other"]);
+    }
+  });
+
+  it("still classifies when the recognised token is not at the START of the subject", () => {
+    // The subject compound may carry anything: `html:root` is the base scope,
+    // and a class-qualified theme attribute is still that theme.
+    expect(parseStylesheet("html:root { --x: 1px; }").scopes[0].kind).toBe("root");
+    expect(parseStylesheet('body[data-theme="winter"] { --x: 1px; }').scopes[0].theme).toBe(
+      "winter",
+    );
+  });
+
+  it("does not classify off a :root written inside an attribute STRING", () => {
+    const scopes = parseStylesheet('[data-sel=":root"] { --x: 1px; }').scopes;
+    expect(scopes[0].kind).toBe("other");
+  });
+});
+
 describe("census of a minimal hand-written stylesheet", () => {
   // themeguard is not yatfa-specific: the same parser must work on any CSS.
   const css = `

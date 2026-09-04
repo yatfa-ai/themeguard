@@ -274,6 +274,54 @@ describe("the dark-default form `:root, [data-theme=\"dark\"]` resolves as BOTH 
   });
 });
 
+describe("a component scoped inside a theme is not that theme's global value", () => {
+  // REVERT PROBE — restore substring classification in `classifyOne` and every
+  // test here fails, with nothing thrown and nothing marked unresolved: a token
+  // narrowed to one subtree is reported as the theme's value everywhere, and a
+  // real absence vanishes. That is exactly the wrong data rules 1-3 would judge.
+  const css = `:root                             { --chip: #1E293B; --pad: 8px; }
+               [data-theme="winter"]             { --chip: #F1F5F9; }
+               [data-theme="winter"] .code-block { --chip: #FFFFFF; --pad: 999px; }
+               :root .code-block                 { --chip: #000000; }`;
+  const r = resolveCss(css);
+
+  it("keeps the base scope's own value, not the value of a component inside it", () => {
+    expect(r.token("--chip", ROOT_THEME)?.resolvedValue).toBe("#1E293B");
+  });
+
+  it("keeps the theme's own value, not the value of a component inside it", () => {
+    expect(r.token("--chip", "winter")?.resolvedValue).toBe("#F1F5F9");
+  });
+
+  it("still reports a token the theme genuinely lacks as inherited, and as an absence", () => {
+    const pad = r.token("--pad", "winter");
+    expect(pad?.origin).toBe("inherited");
+    expect(pad?.resolvedValue).toBe("8px");
+    expect(r.absences.filter((a) => a.theme === "winter").map((a) => a.name)).toEqual(["--pad"]);
+  });
+
+  it("does not group a subtree-scoped token with the global ones", () => {
+    // #FFFFFF and #000000 belong to `.code-block`, not to any theme, so they
+    // must not appear in either theme's collision data.
+    for (const theme of [ROOT_THEME, "winter"]) {
+      const values = r.collisionGroups(theme).map((g) => g.value);
+      expect(values).not.toContain("#FFFFFF");
+      expect(values).not.toContain("#000000");
+    }
+  });
+
+  it("resolves a scope written inside :is() as that scope", () => {
+    const wrapped = resolveCss(`:is(:root, [data-theme="dark"]) { --bg: #020617; --fg: #F8FAFC; }
+                                [data-theme="light"] { --bg: #FFFFFF; }`);
+    expect(wrapped.tokensFor(ROOT_THEME)).toHaveLength(2);
+    expect(wrapped.themes).toEqual([ROOT_THEME, "dark", "light"]);
+    expect(wrapped.token("--fg", "light")?.origin).toBe("inherited");
+    expect(wrapped.absences.filter((a) => a.theme === "light").map((a) => a.name)).toEqual([
+      "--fg",
+    ]);
+  });
+});
+
 describe("unresolved references and cycles are represented, never thrown", () => {
   it("reports a var() pointing at nothing as unresolved, naming the missing property", () => {
     const r = resolveCss(`:root { --a: var(--nope); }`);

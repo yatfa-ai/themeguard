@@ -18,6 +18,14 @@
  * so nothing is silently dropped — but only the three shapes above take part
  * in theme resolution.
  *
+ * A selector names a scope only when it IS that scope, never when it merely
+ * CONTAINS one. `[data-theme="winter"] .code-block` is a component inside the
+ * winter theme, not the winter theme, and its declarations belong to `other` —
+ * merging them into winter's table would report a token narrowed to one subtree
+ * as that theme's value everywhere. Conversely `:is(:root, [data-theme="dark"])`
+ * IS both scopes, so the functional pseudo-classes that only group selectors
+ * are looked through. See {@link classifyCompound}.
+ *
  * This file produces DATA and nothing else. It has no opinion about whether a
  * declaration is good.
  */
@@ -179,15 +187,117 @@ function stripNegations(selector: string): string {
   }
 }
 
-/** Classify ONE selector (never a list — see {@link classifySelectors}). */
-function classifyOne(selector: string): { kind: ScopeKind; theme: string | null } {
+/**
+ * Split a single selector on its TOP-LEVEL combinators — descendant (space),
+ * `>`, `+` and `~` — respecting parens, brackets and strings.
+ *
+ * The pieces are compound selectors; the LAST one is the selector's subject
+ * (the element the rule actually applies to). More than one piece therefore
+ * means the selector is not a scope but something INSIDE one.
+ */
+function splitCombinators(selector: string): string[] {
+  const out: string[] = [];
+  let depth = 0;
+  let inString: string | null = null;
+  let start = 0;
+  for (let i = 0; i < selector.length; i += 1) {
+    const ch = selector[i];
+    if (inString) {
+      if (ch === "\\") i += 1;
+      else if (ch === inString) inString = null;
+      continue;
+    }
+    if (ch === '"' || ch === "'") inString = ch;
+    else if (ch === "(" || ch === "[") depth += 1;
+    else if (ch === ")" || ch === "]") depth = Math.max(0, depth - 1);
+    else if (depth === 0 && (ch === " " || ch === ">" || ch === "+" || ch === "~")) {
+      out.push(selector.slice(start, i));
+      start = i + 1;
+    }
+  }
+  out.push(selector.slice(start));
+  return out.map((s) => s.trim()).filter((s) => s.length > 0);
+}
+
+/**
+ * Pull the argument lists out of every top-level `:is(…)` / `:where(…)` in a
+ * compound, returning the compound with those blocks removed plus the arguments
+ * as selectors in their own right.
+ *
+ * These two pseudo-classes only GROUP selectors — `:is(:root, [data-theme="dark"])`
+ * matches exactly what `:root, [data-theme="dark"]` matches — so a scope written
+ * inside one is genuinely that scope, and must be looked through the same way
+ * {@link stripNegations} looks past `:not(…)`. (`:where()` is the zero-specificity
+ * form of the same thing, which is precisely why generated stylesheets reach for
+ * it.) The arguments are classified as full selectors, so a combinator inside one
+ * still disqualifies it.
+ */
+function extractMatchesAny(compound: string): { rest: string; args: string[] } {
+  let rest = compound;
+  const args: string[] = [];
+  for (;;) {
+    const at = rest.search(/:(?:is|where|matches|-webkit-any|-moz-any)\s*\(/i);
+    if (at === -1) return { rest, args };
+    let depth = 0;
+    let i = rest.indexOf("(", at);
+    const open = i;
+    let end = -1;
+    for (; i < rest.length; i += 1) {
+      if (rest[i] === "(") depth += 1;
+      else if (rest[i] === ")") {
+        depth -= 1;
+        if (depth === 0) {
+          end = i;
+          break;
+        }
+      }
+    }
+    if (end === -1) {
+      args.push(...splitSelectorList(rest.slice(open + 1)));
+      return { rest: rest.slice(0, at), args };
+    }
+    args.push(...splitSelectorList(rest.slice(open + 1, end)));
+    rest = rest.slice(0, at) + rest.slice(end + 1);
+  }
+}
+
+/** Blank quoted string contents so a literal `:root` in an attribute value cannot classify. */
+function blankStrings(s: string): string {
+  return s.replace(/(["'])(?:\\.|(?!\1).)*\1?/g, (m) => m[0] + " ".repeat(Math.max(0, m.length - 2)) + m[0]);
+}
+
+/**
+ * Classify ONE selector (never a list — see {@link classifySelectors}) into the
+ * scopes it opens. Usually none or one; `:is(:root, [data-theme="dark"])` opens two.
+ *
+ * Classification is on the selector's SUBJECT, not on "does this string contain
+ * a recognised token anywhere". A selector with a combinator has a subject that
+ * is something else — `[data-theme="winter"] .code-block` is a component inside
+ * the winter theme — so it is `other`, and its declarations stay out of winter's
+ * table. Within the subject compound the token may sit anywhere, which is what
+ * makes `html:root` and `:root:not([data-theme])` classify `root`.
+ */
+function classifyOne(
+  selector: string,
+): { kind: Exclude<ScopeKind, "other">; theme: string | null; matched: string }[] {
   const raw = selector.trim();
-  if (/^@theme\b/i.test(raw)) return { kind: "theme-inline", theme: null };
-  const s = stripNegations(raw);
-  const themeMatch = s.match(DATA_THEME);
-  if (themeMatch) return { kind: "theme", theme: themeMatch[1].trim() };
-  if (/^:root\b/.test(s)) return { kind: "root", theme: null };
-  return { kind: "other", theme: null };
+  if (/^@theme\b/i.test(raw)) return [{ kind: "theme-inline", theme: null, matched: raw }];
+
+  const compounds = splitCombinators(raw);
+  // A combinator means the subject is not the scope but something within it.
+  if (compounds.length !== 1) return [];
+
+  const subject = stripNegations(compounds[0]);
+  const { rest, args } = extractMatchesAny(subject);
+
+  const found: { kind: Exclude<ScopeKind, "other">; theme: string | null; matched: string }[] = [];
+  const themeMatch = rest.match(DATA_THEME);
+  if (themeMatch) found.push({ kind: "theme", theme: themeMatch[1].trim(), matched: raw });
+  else if (/:root\b/.test(blankStrings(rest)))
+    found.push({ kind: "root", theme: null, matched: raw });
+
+  for (const arg of args) found.push(...classifyOne(arg).map((f) => ({ ...f, matched: arg })));
+  return found;
 }
 
 /**
@@ -210,12 +320,12 @@ function classifySelectors(
   const matched: { kind: ScopeKind; theme: string | null; matchedSelector: string }[] = [];
   const seen = new Set<string>();
   for (const selector of selectors) {
-    const { kind, theme } = classifyOne(selector);
-    if (kind === "other") continue;
-    const key = `${kind}\u0000${theme ?? ""}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    matched.push({ kind, theme, matchedSelector: selector });
+    for (const { kind, theme, matched: matchedSelector } of classifyOne(selector)) {
+      const key = `${kind}\u0000${theme ?? ""}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      matched.push({ kind, theme, matchedSelector });
+    }
   }
   if (matched.length > 0) return matched;
   return [{ kind: "other", theme: null, matchedSelector: prelude }];
