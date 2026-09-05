@@ -8,8 +8,11 @@
  *
  * ── This stage produces DATA, never verdicts ────────────────────────────────
  * Nothing here decides that two tokens holding the same colour is a defect, or
- * that an unresolved reference is an error. It reports what is there. The
- * rules that judge this data are a later stage of the package.
+ * that an unresolved reference is an error. It reports what is there. The rules
+ * that judge this data live in `rules/`, behind {@link audit} — and the split is
+ * load-bearing, not tidiness: `collisionGroups` returns 41 groups for this
+ * project's own calibration stylesheet, of which 2 are defects. Which is why
+ * the data stage must not pretend to know.
  *
  * ── Four things are represented EXPLICITLY rather than papered over ─────────
  *   1. Theme absence   — a token a theme does not override is `inherited`, and
@@ -103,8 +106,10 @@ export interface ResolvedStylesheet {
   token(name: string, theme: string): ResolvedToken | undefined;
   /**
    * Tokens that resolve to the same colour, per theme, grouped by canonical
-   * value. Groups of one are omitted. This is DATA — a collision rule will
-   * later decide which of these groups matter.
+   * value. Groups of one are omitted. This is DATA, and it is deliberately far
+   * wider than the defect set: most groups are a token beside its own
+   * `@theme inline` alias, or two names an author keeps equal on purpose.
+   * `rules/collision.ts` decides which of these groups matter.
    */
   collisionGroups(theme: string): ValueGroup[];
 }

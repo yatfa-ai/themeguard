@@ -588,3 +588,76 @@ describe("a brace inside a string in a NESTED body does not desync the depth (au
     expect(count("theme-inline", null)).toBe(CENSUS.themeInline);
   });
 });
+
+describe("every var() USE is collected, not only the ones in token values", () => {
+  // REVERT PROBE — restrict `readReferences` to custom-property declarations
+  // (`if (!property.startsWith("--")) continue`) and every test here fails, as
+  // do four in `rules.test.ts`.
+  //
+  // The distinction is not academic. A token can be USED by an ordinary
+  // property in a block that declares no custom property at all — `.app-sidebar
+  // { width: var(--sidebar-width) }` — which produces no `Scope`, so reading
+  // uses out of declaration values alone leaves that use invisible. Over this
+  // fixture that is the difference between 9 apparently-unreferenced tokens and
+  // the 2 that genuinely are: `--font-family`, `--sidebar-width`,
+  // `--app-focus-ring-width` and `--app-focus-ring-offset` are each used, and
+  // each used ONLY by an ordinary property. Reporting them as referenced by
+  // nothing is a false statement about the stylesheet, not a judgement call.
+  const sheet = parseStylesheet(fixtureCss());
+
+  it("collects 214 var() uses across the fixture", () => {
+    expect(sheet.references).toHaveLength(214);
+  });
+
+  it("finds the uses that no custom-property value contains", () => {
+    const use = (name: string) =>
+      sheet.references.filter((r) => r.name === name).map((r) => `${r.property}:${r.line}`);
+    expect(use("--sidebar-width")).toEqual(["width:881"]);
+    expect(use("--app-focus-ring-width")).toEqual(["outline:777"]);
+    expect(use("--font-family")).toEqual([
+      "font-family:756",
+      "font-family:2019",
+      "font-family:2147",
+    ]);
+  });
+
+  it("collects a use from a block that declares no custom property at all", () => {
+    // `.app-sidebar` declares nothing, so it is not among `scopes` — the use
+    // would be lost entirely if references rode on declarations.
+    const sidebar = sheet.references.find((r) => r.name === "--sidebar-width");
+    expect(sidebar?.kinds).toEqual(["other"]);
+    expect(
+      sheet.scopes.some((s) => s.declarations.some((d) => d.name === "--sidebar-width" && s.kind === "other")),
+    ).toBe(false);
+  });
+
+  it("records the scope kinds of the block a use was written in", () => {
+    // The `@theme inline` aliases are uses too — that is exactly what makes them
+    // the reference layer rather than a dead namespace.
+    const alias = sheet.references.filter((r) => r.kinds.includes("theme-inline"));
+    expect(alias).toHaveLength(CENSUS.themeInline);
+    // Every one is a `--<tailwind-namespace>-*: var(--app-*)` alias. Note the
+    // namespace is NOT always `--color-`: Tailwind keys the generated utility
+    // off it, so geometry aliases into `--radius-`/`--spacing-`/`--shadow-`.
+    // A rule that recognised the alias layer by a `--color-` name prefix rather
+    // than by its SCOPE would miss these six.
+    expect(alias.every((r) => /^--[\w-]+$/.test(r.property))).toBe(true);
+    const namespaces = new Set(alias.map((r) => (r.property.match(/^--([a-z]+)-/) ?? [])[1]));
+    expect([...namespaces].sort()).toEqual(["color", "radius", "shadow", "spacing"]);
+  });
+
+  it("counts both names in a var() with a fallback", () => {
+    const refs = parseStylesheet(":root { --a: var(--b, var(--c)); }").references;
+    expect(refs.map((r) => r.name)).toEqual(["--b", "--c"]);
+  });
+
+  it("does not read a var() out of a comment", () => {
+    const refs = parseStylesheet(":root { /* var(--ghost) */ --a: #fff; }").references;
+    expect(refs.map((r) => r.name)).toEqual([]);
+  });
+
+  it("attributes a use in a nested rule to that rule, not to the enclosing scope", () => {
+    const refs = parseStylesheet(":root { --a: #111; .card { color: var(--a); } }").references;
+    expect(refs.map((r) => `${r.name}/${r.kinds.join(",")}`)).toEqual(["--a/other"]);
+  });
+});

@@ -46,6 +46,13 @@
  *
  * This file produces DATA and nothing else. It has no opinion about whether a
  * declaration is good.
+ *
+ * Alongside the scopes it collects every `var()` USE, from EVERY declaration
+ * rather than only from the custom-property ones — see {@link Reference}. A
+ * token can be used by an ordinary property in a block that declares no custom
+ * property at all, which produces no `Scope`; reading uses out of declaration
+ * values alone therefore reports such a token as referenced by nothing, which
+ * is a false statement about the stylesheet rather than a judgement call.
  */
 
 /** Which of the recognised declaration shapes a block is. */
@@ -84,8 +91,51 @@ export interface Scope {
   readonly declarations: readonly Declaration[];
 }
 
+/**
+ * One `var(--name)` USE, anywhere in the stylesheet.
+ *
+ * Kept separately from {@link Scope} because a use and a declaration live in
+ * different places: `--sidebar-width` is declared in `:root` and used by
+ * `width: var(--sidebar-width)` on a component class that declares no custom
+ * property at all, so the block carrying the use produces no `Scope`.
+ *
+ * Collecting only the uses written in custom-property VALUES — which is all a
+ * scope's declarations can tell you — makes exactly those uses invisible, and
+ * over this project's own calibration fixture that is the difference between 9
+ * apparently-unreferenced tokens and the 2 that are genuinely unreferenced:
+ * `--font-family`, `--sidebar-width` and `--app-focus-ring-width` are each
+ * used, and used only by an ordinary property.
+ *
+ * This is still DATA. Nothing here decides that an unreferenced token is a
+ * defect, and the uses are reported whether or not anything declares the name.
+ */
+export interface Reference {
+  /** The custom property being referenced, including the leading `--`. */
+  readonly name: string;
+  /**
+   * The property whose value contains the `var()` — `width`, `color`, or
+   * another custom property's name when one token is defined in terms of
+   * another.
+   */
+  readonly property: string;
+  /** The full declared value text the `var()` was read from. */
+  readonly value: string;
+  /** The selector or at-rule prelude of the block containing the use. */
+  readonly selector: string;
+  /**
+   * The kinds {@link parseStylesheet} classified that block's prelude as. A
+   * list because a prelude is a selector list: `:root, [data-theme="dark"]` is
+   * genuinely two scopes, and a use written there belongs to both.
+   */
+  readonly kinds: readonly ScopeKind[];
+  /** 1-based line of the declaration the use was written in. */
+  readonly line: number;
+}
+
 export interface Stylesheet {
   readonly scopes: readonly Scope[];
+  /** Every `var()` use in the stylesheet, in source order. */
+  readonly references: readonly Reference[];
 }
 
 const DATA_THEME = /\[\s*data-theme\s*=\s*["']?([^"'\]]+)["']?\s*\]/;
@@ -585,30 +635,78 @@ function splitDeclarations(body: string): { text: string; offset: number }[] {
   return out;
 }
 
+/**
+ * Split a block body into `property: value` pairs with true line numbers.
+ *
+ * Shared by {@link readDeclarations} and {@link readReferences} so the two read
+ * the SAME chunks: a use and a declaration are the same syntax seen from two
+ * sides, and letting them disagree about where one declaration ends would let a
+ * token look unreferenced because its use fell in a chunk only one of them saw.
+ */
+function readPairs(
+  rawBody: string,
+  bodyStart: number,
+  lines: number[],
+): { property: string; value: string; line: number }[] {
+  // A nested rule's declarations have a different subject: take them out of
+  // this block, so they neither land here nor eat the declaration after them.
+  const body = blankNestedBlocks(rawBody);
+  const out: { property: string; value: string; line: number }[] = [];
+  for (const chunk of splitDeclarations(body)) {
+    const trimmed = chunk.text.trim();
+    const colon = trimmed.indexOf(":");
+    if (colon === -1) continue;
+    const leading = chunk.text.length - chunk.text.trimStart().length;
+    out.push({
+      property: trimmed.slice(0, colon).trim(),
+      value: trimmed.slice(colon + 1).trim(),
+      line: lines[bodyStart + chunk.offset + leading] ?? 1,
+    });
+  }
+  return out;
+}
+
 function readDeclarations(
   rawBody: string,
   bodyStart: number,
   lines: number[],
 ): Declaration[] {
-  // A nested rule's declarations have a different subject: take them out of
-  // this block, so they neither land here nor eat the declaration after them.
-  const body = blankNestedBlocks(rawBody);
-  const decls: Declaration[] = [];
-  for (const chunk of splitDeclarations(body)) {
-    const trimmed = chunk.text.trim();
-    if (!trimmed.startsWith("--")) continue;
-    const colon = trimmed.indexOf(":");
-    if (colon === -1) continue;
-    const name = trimmed.slice(0, colon).trim();
-    if (!/^--[\w-]+$/.test(name)) continue;
-    const leading = chunk.text.length - chunk.text.trimStart().length;
-    decls.push({
-      name,
-      value: trimmed.slice(colon + 1).trim(),
-      line: lines[bodyStart + chunk.offset + leading] ?? 1,
-    });
+  return readPairs(rawBody, bodyStart, lines)
+    .filter((p) => /^--[\w-]+$/.test(p.property))
+    .map(({ property, value, line }) => ({ name: property, value, line }));
+}
+
+const VAR_USE = /var\(\s*(--[\w-]+)/g;
+
+/**
+ * Every `var()` use written in a block body, from EVERY declaration — not only
+ * from the custom-property ones.
+ *
+ * That distinction is the whole reason this function exists. A token can be
+ * used by an ordinary property in a block that declares no custom property at
+ * all (`.app-sidebar { width: var(--sidebar-width); }`), which produces no
+ * `Scope` and therefore leaves no trace in the declaration data. Reading uses
+ * only out of custom-property values reports such a token as referenced by
+ * nothing, which is a false statement about the stylesheet rather than a
+ * judgement call.
+ *
+ * Fallbacks count as uses: in `var(--a, var(--b))` both `--a` and `--b` are
+ * named by the author, and `--b` is genuinely reachable.
+ */
+function readReferences(
+  rawBody: string,
+  bodyStart: number,
+  lines: number[],
+  selector: string,
+  kinds: readonly ScopeKind[],
+): Reference[] {
+  const out: Reference[] = [];
+  for (const { property, value, line } of readPairs(rawBody, bodyStart, lines)) {
+    for (const m of value.matchAll(VAR_USE)) {
+      out.push({ name: m[1] as string, property, value, selector, kinds, line });
+    }
   }
-  return decls;
+  return out;
 }
 
 /**
@@ -633,6 +731,7 @@ export function parseStylesheet(source: string): Stylesheet {
   const css = blankComments(source);
   const lines = lineIndex(css);
   const scopes: Scope[] = [];
+  const references: Reference[] = [];
 
   const walk = (from: number, to: number, parent: string | null): void => {
     let i = from;
@@ -687,8 +786,18 @@ export function parseStylesheet(source: string): Stylesheet {
             // this file's header promises against.
             if (parent !== null) {
               const conditional = readDeclarations(body, bodyStart, lines);
+              const parentMatches = classifySelectors(parent);
+              references.push(
+                ...readReferences(
+                  body,
+                  bodyStart,
+                  lines,
+                  parent,
+                  parentMatches.map((m) => m.kind),
+                ),
+              );
               if (conditional.length > 0) {
-                for (const { kind, theme, matchedSelector } of classifySelectors(parent)) {
+                for (const { kind, theme, matchedSelector } of parentMatches) {
                   scopes.push({
                     kind,
                     selector: parent,
@@ -702,6 +811,15 @@ export function parseStylesheet(source: string): Stylesheet {
             }
           } else {
             const declarations = readDeclarations(body, bodyStart, lines);
+            references.push(
+              ...readReferences(
+                body,
+                bodyStart,
+                lines,
+                selector,
+                matches.map((m) => m.kind),
+              ),
+            );
             if (declarations.length > 0) {
               // One scope per recognised selector in the list: a
               // `:root, [data-theme="dark"]` block IS both scopes.
@@ -734,5 +852,5 @@ export function parseStylesheet(source: string): Stylesheet {
   };
 
   walk(0, css.length, null);
-  return { scopes };
+  return { scopes, references };
 }
