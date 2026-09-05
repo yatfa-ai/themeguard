@@ -20,8 +20,9 @@
  * }
  * ```
  *
- * There is still no CLI and no entry point in the package manifest: this is a
- * library of functions, and running it from a terminal is a later stage.
+ * The same three rules are also a command: `themeguard <file.css>` (see
+ * `cli.ts`), which is I/O and presentation over exactly this `audit()` call and
+ * adds no judgement of its own.
  */
 
 export {
