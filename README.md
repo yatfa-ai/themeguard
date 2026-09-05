@@ -79,12 +79,19 @@ the calibration fixture:
 
 | Rule | Raw candidates | Reported | What the filtering removes |
 |---|---|---|---|
-| `collision` | 41 value groups (dark) | 11 across both themes | A token beside its own `@theme inline` alias; two names an author keeps equal in *every* theme; two members of one family (`--app-warning` / `--app-warning-border` is deliberate, and the fixture says so). |
+| `collision` | 41 value groups (dark) | 11 across both themes | A token beside its own `@theme inline` alias; two names another theme *re-declares* equal in its own right; two members of one family (`--app-warning` / `--app-warning-border` is deliberate, and the fixture says so). |
 | `dead-token` | 66 unreferenced names | 2 | The 64 `@theme inline` aliases, whose consumers are the utility classes Tailwind generates *from* them and so are unreachable to a source read by construction. |
 | `scale-collapse` | — | 2 | Pairing is derived from **declared interaction states** (`X` / `X-hover`), not by sorting a family by lightness: that alternative returns 25 findings, including all four twins the fixture documents as deliberate. |
 
-Two properties are worth stating because they are what the tests defend:
+Three properties are worth stating because they are what the tests defend:
 
+* **Silence is never read as intent.** A rule that treats "no evidence of a defect" as "evidence of no
+  defect" fails as a *clean report*, which reads as a pass. `collision` takes a pair to be a deliberate
+  identity only when another theme **declares** it equal in its own right — not when the other themes
+  merely say nothing. The earlier "equal in every theme" form was vacuously true on a single-theme
+  stylesheet and reported nothing at all, including on this README's own opening example; the fixture,
+  which has two themes that both override that pair, is structurally incapable of catching it, so the
+  case is pinned by hand-written stylesheets instead.
 * **A translucent colour is never composited against an invented backdrop.** `lstar()` and
   `relativeLuminance()` refuse one and say so; call `over(color, backdrop)` naming the surface it is
   actually painted on. A colour with alpha has no single value without one — measuring it against an

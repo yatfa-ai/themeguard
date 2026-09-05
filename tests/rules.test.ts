@@ -145,8 +145,16 @@ describe("rule 1 — value collision, over the vendored fixture", () => {
   // REVERT PROBE — delete filter 2 (lockstep classes) and this fails:
   // --app-border-focus is reported against --app-cta, which the fixture calls
   // deliberate at :196 ("the kit unifies the focus technique, it does not change
-  // the focus color") and which holds in BOTH themes.
-  it("does not report a pair that holds the same value in EVERY theme", () => {
+  // the focus color") and which BOTH themes declare equal in their own right.
+  it("does not report a pair a second theme independently re-declares equal", () => {
+    // Both names are `declared` (not inherited) in winter as well as root, and
+    // equal in both — the author restating the equality, which is filter 2's
+    // positive evidence of intent.
+    for (const t of ["root", "winter"]) {
+      for (const n of ["--app-border-focus", "--app-cta"]) {
+        expect(resolved.token(n, t)?.origin).toBe("declared");
+      }
+    }
     const focus = collisions.filter(
       (f) => f.tokens.includes("--app-border-focus") && f.tokens.includes("--app-cta"),
     );
@@ -159,8 +167,20 @@ describe("rule 1 — value collision, over the vendored fixture", () => {
     );
   });
 
-  it("carries the shared value and the group's full membership as evidence", () => {
-    const border = collisions.find(
+  // Every one of the fixture's 11 findings has real cross-theme proof: the
+  // other theme resolves the roles apart. That is why the ticket's premise —
+  // "they differ in another theme" — held for this stylesheet and why the
+  // vacuous-truth defect could hide behind it. Pinned so a finding that is
+  // reported WITHOUT that proof shows up as a change in this fixture rather
+  // than blending into the count.
+  it("has cross-theme proof for every collision it reports here", () => {
+    expect(collisions.map((f) => f.evidence.corroboration)).toEqual(
+      collisions.map((f) => (f.theme === "root" ? 'divergent in "winter"' : 'divergent in "root"')),
+    );
+    expect(collisions).toHaveLength(11);
+  });
+
+  it("carries the shared value and the group's full membership as evidence", () => {    const border = collisions.find(
       (f) => f.tokens.join() === "--app-border,--app-surface-raised",
     );
     expect(border?.theme).toBe("root");
@@ -172,6 +192,108 @@ describe("rule 1 — value collision, over the vendored fixture", () => {
       "--color-app-surface-raised",
     ]);
     expect(border?.message).toContain("#1E293B");
+  });
+});
+
+/**
+ * ── THE CASE THE CALIBRATION FIXTURE STRUCTURALLY CANNOT REACH ───────────────
+ *
+ * Everything above is measured against one stylesheet with two themes that both
+ * override the famous pair. A suite pinned entirely to that fixture proves the
+ * rule agrees with that fixture — not that the rule is correct — and filter 2
+ * is exactly where the difference bites: its evidence of deliberateness is a
+ * SECOND THEME saying something, and a stylesheet where no second theme says
+ * anything is invisible to every assertion above.
+ *
+ * These are hand-written for that reason. Each one is a stylesheet the fixture
+ * cannot be, and the first is this package's own headline example.
+ */
+describe("rule 1 — where the other themes say nothing (hand-written)", () => {
+  const only = (css: string) => collisionRule(resolveCss(css));
+
+  // REGRESSION — this returned ZERO findings until the corroboration fix.
+  // `themes.every(...)` over a one-element array is vacuously true, so every
+  // pair read as deliberate, every group collapsed to one lockstep class, and
+  // the rule went silent on the defect the package was built around. It failed
+  // as a CLEAN REPORT, which reads as a pass.
+  it("reports the README's own defect on a :root-only stylesheet", () => {
+    const findings = only(
+      `:root { --app-surface-raised: #1E293B; --app-border: #1E293B; }
+       .panel { background: var(--app-surface-raised); border: 1px solid var(--app-border); }`,
+    );
+    expect(findings.map((f) => f.tokens.join(" == "))).toEqual([
+      "--app-border == --app-surface-raised",
+    ]);
+    expect(findings[0]?.evidence.corroboration).toBe("unwitnessed");
+    // The message must not claim a divergence that was never observed.
+    expect(findings[0]?.message).toContain("no other theme declares them apart");
+  });
+
+  // The general form of the same defect, and the reason the fix is not just a
+  // `themes.length > 1` guard: the pair is declared ONCE in `:root` and
+  // inherited by every theme, so it never diverges no matter how many themes
+  // exist. Counting themes would still call this deliberate.
+  it("reports a pair declared once in :root when a second theme only inherits it", () => {
+    const findings = only(
+      `:root { --app-surface-raised: #1E293B; --app-border: #1E293B; --ink: #FFF; }
+       [data-theme="light"] { --ink: #000; }
+       .panel { background: var(--app-surface-raised); border: 1px solid var(--app-border); color: var(--ink); }`,
+    );
+    // Reported ONCE, in the theme that DECLARES the pair — not once per theme
+    // that inherits it. `light` carries the same colliding group (the resolver
+    // reports it there too), but root declaring both names equal is
+    // corroboration as far as `light` is concerned, so the inherited copy
+    // collapses. One defect, written in one place, reported in that place.
+    expect(findings.map((f) => `${f.theme} ${f.tokens.join(" == ")}`)).toEqual([
+      "root --app-border == --app-surface-raised",
+    ]);
+    expect(resolveCss(
+      `:root { --app-surface-raised: #1E293B; --app-border: #1E293B; --ink: #FFF; }
+       [data-theme="light"] { --ink: #000; }
+       .panel { background: var(--app-surface-raised); border: 1px solid var(--app-border); color: var(--ink); }`,
+    ).collisionGroups("light")).toHaveLength(1);
+    // Inheriting a value is `:root` being read again, not a second statement
+    // about the pair, so there is still nothing corroborating the equality.
+    expect(findings[0]?.evidence.corroboration).toBe("unwitnessed");
+  });
+
+  // The other side of the same predicate: filter 2 must still hold when the
+  // evidence genuinely exists, or the fix would simply be "report everything".
+  it("stays silent when a second theme DECLARES the pair equal again", () => {
+    expect(
+      only(
+        `:root { --focus: #22C55E; --cta: #22C55E; }
+         [data-theme="w"] { --focus: #16A34A; --cta: #16A34A; }
+         .x { outline: var(--focus); background: var(--cta); }`,
+      ),
+    ).toEqual([]);
+  });
+
+  it("reports, and says so, when a second theme declares the pair apart", () => {
+    const findings = only(
+      `:root { --focus: #22C55E; --cta: #22C55E; }
+       [data-theme="w"] { --focus: #16A34A; --cta: #DD0000; }
+       .x { outline: var(--focus); background: var(--cta); }`,
+    );
+    expect(findings.map((f) => `${f.theme} ${f.tokens.join(" == ")}`)).toEqual([
+      "root --cta == --focus",
+    ]);
+    expect(findings[0]?.evidence.corroboration).toBe('divergent in "w"');
+    expect(findings[0]?.message).toContain('theme "w" declares them apart');
+  });
+
+  // The cost of choosing this direction, stated rather than hidden: a pair that
+  // really is deliberate but is only ever written once is reported. That is the
+  // deliberate trade — a false positive a reader can dismiss, in exchange for
+  // not going silent on the defect class the package exists to find — and it is
+  // pinned here so a future change that flips the trade fails a test.
+  it("ACCEPTED FALSE POSITIVE: a deliberate identity written only once is reported", () => {
+    const findings = only(
+      `:root { --focus: #22C55E; --cta: #22C55E; }
+       .x { outline: var(--focus); background: var(--cta); }`,
+    );
+    expect(findings.map((f) => f.tokens.join(" == "))).toEqual(["--cta == --focus"]);
+    expect(findings[0]?.evidence.corroboration).toBe("unwitnessed");
   });
 });
 
