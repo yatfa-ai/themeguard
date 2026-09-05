@@ -519,3 +519,72 @@ describe("census of a minimal hand-written stylesheet", () => {
     expect(names.sort()).toEqual(["--a", "--a", "--b", "--c", "--color-a"]);
   });
 });
+
+describe("a brace inside a string in a NESTED body does not desync the depth (audit YATFA-6991 round 7)", () => {
+  // REVERT PROBE K — restore the `depth === 0 &&` guard on the string-open test
+  // in `blankNestedBlocks()` and every test here fails, as do six in
+  // `resolve.test.ts`.
+  //
+  // Round 5's fix added `blankNestedBlocks`, whose docstring cites
+  // `blankComments` as the technique it follows — and `blankComments` opens a
+  // string UNCONDITIONALLY. This one gated it on `depth === 0`, and by
+  // construction it is never at depth 0 inside the region it exists to blank, so
+  // it was string-blind precisely there. Same class as the round-4 "top-level"
+  // docstring over a depth-blind search: a comment quietly disagreeing with its
+  // implementation.
+  //
+  // Measured before the fix, over 18 awkward declaration bodies placed once in a
+  // nested body and once in a flat one: 7 of 18 lost a declaration nested, 2 of
+  // 18 flat (both pre-existing, unquoted `url(a}b)` and a `--x: "}"` value).
+
+  const rootNames = (css: string) =>
+    parseStylesheet(css)
+      .scopes.filter((s) => s.kind === "root")
+      .flatMap((s) => s.declarations.map((d) => d.name));
+
+  it("does not let a closing brace inside a nested body's string end the block early", () => {
+    expect(rootNames(':root { --a: #111; .x { content: "}"; --nested: #999; } --b: #222; --c: #333; }'))
+      .toEqual(["--a", "--b", "--c"]);
+  });
+
+  it("does not let an OPENING brace inside a nested body's string desync the other way", () => {
+    expect(rootNames(':root { --a: #111; .x { content: "{"; } --b: #222; --c: #333; }'))
+      .toEqual(["--a", "--b", "--c"]);
+  });
+
+  it("handles single quotes, escapes and url() the same way, at nested depth", () => {
+    for (const [css, expected] of [
+      [":root { --a: #111; .x { content: '}'; } --b: #222; }", ["--a", "--b"]],
+      [':root { --a: #111; .x { content: "a\\"}b"; } --b: #222; }', ["--a", "--b"]],
+      [':root { --a: #111; .x { background: url("a}b"); } --b: #222; }', ["--a", "--b"]],
+      [':root { --a: #111; .x { background: url("a{b"); } --b: #222; }', ["--a", "--b"]],
+      // Two levels down is still never depth 0.
+      [':root { --a: #111; .x { .y { content: "}"; } } --b: #222; }', ["--a", "--b"]],
+    ] as const) {
+      expect(rootNames(css)).toEqual(expected);
+    }
+  });
+
+  it("still reports the string-bearing nested rule under its own subject", () => {
+    // The declaration must not merely survive in `:root` — the nested rule's own
+    // declaration is still reported, under `other`, exactly as round 5 requires.
+    const scopes = parseStylesheet(
+      ':root { --a: #111; .x { content: "}"; --nested: #999; } --b: #222; }',
+    ).scopes;
+    expect(scopes.map((s) => `${s.kind}/${s.theme ?? "-"}`)).toEqual(["root/-", "other/-"]);
+    expect(scopes[1].declarations.map((d) => d.name)).toEqual(["--nested"]);
+  });
+
+  it("leaves the fixture census exactly where it was", () => {
+    // The cost check, asserted rather than promised: the calibration fixture uses
+    // no nesting, so a correct string scan must move NOTHING here.
+    const sheet = parseStylesheet(fixtureCss());
+    const count = (k: string, theme: string | null) =>
+      sheet.scopes
+        .filter((s) => s.kind === k && s.theme === theme)
+        .reduce((n, s) => n + s.declarations.length, 0);
+    expect(count("root", null)).toBe(CENSUS.root);
+    expect(count("theme", "winter")).toBe(CENSUS.winter);
+    expect(count("theme-inline", null)).toBe(CENSUS.themeInline);
+  });
+});

@@ -618,3 +618,117 @@ describe("the resolver works on CSS that has nothing to do with the calibration 
     expect(r.token("--ink", "high-contrast")?.resolvedValue).toBe("#FFFFFF");
   });
 });
+
+describe("a brace written inside a STRING in a nested body is text, not structure (audit YATFA-6991 round 7)", () => {
+  // REVERT PROBE K — restore the `depth === 0 &&` guard on the string-open test
+  // in `blankNestedBlocks()` (`src/parse.ts`) and every test here fails, as do
+  // four in `census.test.ts`.
+  //
+  // `blankNestedBlocks` spends its whole working life at depth > 0 — that is the
+  // region it exists to blank — so gating its string tracking on `depth === 0`
+  // made it string-blind exactly there. A `}` inside a string then counted as
+  // structure, the depth returned to 0 early, the real closing brace drove it to
+  // -1 (clamped) while emitting a second `;`, and everything from there to the
+  // end of the block landed in a chunk that no longer starts with `--`, which
+  // `readDeclarations` discards. An unmatched `{` desyncs it the other way; a
+  // string containing BOTH happens to balance, which is what made this quiet.
+  //
+  // Weighted to the resolver because the dropped declarations are what a later
+  // rule reads: the round-5 finding was a value in the wrong place, this one is
+  // a value that is not there at all — including a collision group that
+  // evaporates because one of its two members was silently dropped.
+  //
+  // Not a contrived shape. `content: "{"` is how a code-block renders a brace
+  // glyph, an SVG data-URI carrying an inline <style> does the same, and so does
+  // any url() whose path or query contains a brace.
+  const css = `:root {
+                 --chip: #1E293B;
+                 .icon::before { content: "}"; }
+                 --ring: #334155;
+                 --cta: #22C55E;
+               }
+               [data-theme="winter"] { --chip: #F1F5F9; --ring: #94A3B8; --cta: #16A34A; }`;
+  const r = resolveCss(css);
+
+  it("keeps every declaration written after the string-bearing nested rule", () => {
+    // Both are gone when the scan is string-blind: `--ring` to the leftover
+    // prelude, `--cta` to the desynced depth.
+    expect(r.token("--ring", ROOT_THEME)?.resolvedValue).toBe("#334155");
+    expect(r.token("--cta", ROOT_THEME)?.resolvedValue).toBe("#22C55E");
+    expect(r.token("--chip", ROOT_THEME)?.resolvedValue).toBe("#1E293B");
+  });
+
+  it("still reports the collision group those declarations are part of", () => {
+    // THE row for criterion 3: this is the resolver's own output. Drop one member
+    // of a shared-value pair and the group does not become wrong — it ceases to
+    // exist, so a collision rule reading this reports nothing at all.
+    const green = resolveCss(
+      `:root {
+         --cta: #22C55E;
+         .icon::before { content: "}"; }
+         --success: #22C55E;
+       }`,
+    );
+    expect(green.collisionGroups(ROOT_THEME).map((g) => g.names)).toEqual([["--cta", "--success"]]);
+  });
+
+  it("resolves a var() reference into a declaration that follows the nested rule", () => {
+    // With the target dropped, the reference resolves to `undefined` rather than
+    // to `unresolved` — so even the failure-mode representation never fires.
+    const ref = resolveCss(
+      `:root { --a: #111111; .x { content: "}"; } --b: #222222; --c: var(--b); }`,
+    );
+    expect(ref.token("--c", ROOT_THEME)?.resolvedValue).toBe("#222222");
+    expect(ref.token("--c", ROOT_THEME)?.kind).toBe("color");
+  });
+
+  it("still reports the theme absence of a token declared after the nested rule", () => {
+    // The other direction from round 5's FABRICATED absence: here the absence is
+    // real and goes MISSING. `--ring` and `--cta` are declared in `:root` after
+    // the string-bearing nested rule and are not overridden in winter, so winter
+    // genuinely lacks both. Drop them from `:root` and there is nothing left for
+    // winter to lack — a dead-variable rule reads a theme with no gaps at all.
+    const partial = resolveCss(
+      `:root {
+         --chip: #1E293B;
+         .icon::before { content: "}"; }
+         --ring: #334155;
+         --cta: #22C55E;
+       }
+       [data-theme="winter"] { --chip: #F1F5F9; }`,
+    );
+    expect(
+      partial.absences
+        .filter((a) => a.theme === "winter")
+        .map((a) => a.name)
+        .sort(),
+    ).toEqual(["--cta", "--ring"]);
+    // And the whole-block case: winter overrides all three, so it lacks nothing.
+    expect(r.absences.filter((a) => a.theme === "winter")).toEqual([]);
+  });
+
+  it("reports all of it as data, not as an error", () => {
+    // The same silence every previous round blocked on: were the defect live,
+    // NOTHING here would move — nothing thrown, nothing unresolved, no cycle.
+    expect(r.tokens.filter((t) => t.kind === "unresolved")).toHaveLength(0);
+    expect(r.tokens.filter((t) => t.kind === "cycle")).toHaveLength(0);
+    expect(r.tokensFor(ROOT_THEME).map((t) => `${t.name}=${t.resolvedValue}`)).toEqual([
+      "--chip=#1E293B",
+      "--ring=#334155",
+      "--cta=#22C55E",
+    ]);
+  });
+
+  it("agrees with the flat spelling of the same stylesheet", () => {
+    // The invariant, not a hard-coded answer: a string is text wherever it is
+    // written, so hoisting the nested rule out must change nothing.
+    const flat = resolveCss(
+      `:root { --chip: #1E293B; --ring: #334155; --cta: #22C55E; }
+       :root .icon::before { content: "}"; }
+       [data-theme="winter"] { --chip: #F1F5F9; --ring: #94A3B8; --cta: #16A34A; }`,
+    );
+    const table = (s: typeof flat) =>
+      s.themes.map((t) => [t, s.tokensFor(t).map((k) => `${k.name}=${k.resolvedValue}`)]);
+    expect(table(r)).toEqual(table(flat));
+  });
+});

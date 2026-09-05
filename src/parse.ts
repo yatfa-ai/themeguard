@@ -459,6 +459,10 @@ function classifySelectors(
  *
  * Byte positions are preserved for the same reason {@link blankComments}
  * preserves them: the declaration line numbers are read off the ORIGINAL offsets.
+ * Strings are tracked the same way {@link blankComments} tracks them too —
+ * UNCONDITIONALLY, at every depth. A brace written inside a string is text, not
+ * structure, and this scan spends its whole working life at depth > 0, so a
+ * depth-gated string scan would be blind exactly where it matters.
  *
  * This only takes the nested region OUT of the enclosing block. It does not
  * discard it — {@link parseStylesheet} walks the same region separately and
@@ -490,7 +494,12 @@ function blankNestedBlocks(body: string): string {
       out += depth === 0 ? ";" : " ";
       continue;
     }
-    if (depth === 0 && (ch === '"' || ch === "'")) inString = ch;
+    // Unconditionally, at EVERY depth — as every other string-tracking loop in
+    // this file does. Gating this on `depth === 0` would make the scan
+    // string-blind inside the very region it exists to blank, where the depth
+    // is never 0 by construction: a brace written inside a string there would
+    // be counted as structure and desync the depth.
+    if (ch === '"' || ch === "'") inString = ch;
     out += depth > 0 && ch !== "\n" ? " " : ch;
   }
   return out;
