@@ -1,6 +1,6 @@
 {
   "name": "themeguard",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Audits a project's CSS colour variables: value collisions between roles, dead tokens, and ramps that collapse between themes.",
   "license": "MIT",
   "homepage": "https://github.com/yatfa-ai/themeguard",
@@ -23,8 +23,19 @@
   "engines": {
     "node": ">=20"
   },
-  "//": "0.0.1 is a name-reservation placeholder. It ships the README and nothing else — no entry point is declared because none exists.",
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "//": "0.0.2 is still a name-reservation placeholder. It ships the foundation library source and its tests; no entry point, no bin and no build output are declared, so there is nothing here to install and run yet.",
   "files": [
-    "README.md"
-  ]
+    "README.md",
+    "src/",
+    "tests/"
+  ],
+  "devDependencies": {
+    "@types/node": "^20.19.20",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  }
 }

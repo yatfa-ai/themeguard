@@ -1,0 +1,2385 @@
+@import "tailwindcss";
+
+@import "xterm/css/xterm.css";
+@import "asciinema-player/dist/bundle/asciinema-player.css";
+@import "./actiontext.css";
+@plugin "daisyui" {
+  themes: dark --default, winter;
+}
+
+/* ============================================================
+   Design System Foundation — Yatfa Dark OLED Theme
+   ============================================================ */
+
+/* Plus Jakarta Sans loaded via <link> in layout to avoid @import ordering issues */
+
+/* Design tokens as CSS custom properties — prefixed with --app- to avoid DaisyUI v5 namespace collision */
+:root {
+  /* Core palette — Dark OLED */
+  --app-primary: #0F172A;
+  /* CHANGED by the UI kit state layer (YATFA-6648): was #1E293B, byte-identical
+     to --app-surface-raised in this theme — the button's hover:bg-app-secondary
+     over bg-app-surface-raised repainted the SAME fill, ΔL* 0.00, a hover to
+     nowhere (the dead-state shape YATFA-6285 fixed for :danger). #29364D is
+     the value this theme already uses for --app-surface-active, so the two
+     surface-step tones stay coherent; it steps the fill +6.07 ΔL* and keeps
+     the --app-text label at 11.61:1. Winter's #CBD5E1 was already correct
+     (step −11.49, label 12.02) and is untouched. */
+  --app-secondary: #29364D;
+  --app-cta: #22C55E;
+  --app-cta-hover: #16A34A;
+  --app-background: #020617;
+  --app-surface: #0F172A;
+  --app-surface-raised: #1E293B;
+  --app-text: #F8FAFC;
+  --app-text-secondary: #94A3B8;
+  /* CHANGED by the UI kit state layer (YATFA-5916): was #64748B, which measures
+     3.75:1 on --app-surface and 4.24:1 on --app-background — under WCAG AA for
+     the hint/caption text this token carries. #8091A6 clears 4.5:1 on both
+     (5.54:1 and 6.26:1). */
+  --app-text-muted: #8091A6;
+  --app-border: #1E293B;
+  --app-border-light: #334155;
+
+  /* Panel surface treatment (YATFA-3742) — a dedicated, clearly-visible panel
+     border + a subtle drop shadow so panels read as raised cards against the
+     page surface in BOTH themes. Panel-SCOPED rather than raising the global
+     --app-border: in dark that token is byte-identical to --app-surface-raised
+     (#1E293B), so a panel's 1px border is literally invisible. Keeping the
+     global border untouched limits the blast radius to panels only. */
+  --app-panel-border: #334155;
+  --app-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.45), 0 1px 2px -1px rgba(0, 0, 0, 0.35);
+
+  /* Semantic colors */
+  --app-success: #22C55E;
+  --app-warning: #F59E0B;
+  --app-error: #EF4444;
+  --app-info: #3B82F6;
+
+  /* Semantic surface colors (soft backgrounds for badges/alerts) */
+  --app-success-surface: rgba(34, 197, 94, 0.15);
+  --app-error-surface: rgba(239, 68, 68, 0.12);
+  --app-warning-surface: rgba(245, 158, 11, 0.15);
+  --app-info-surface: rgba(59, 130, 246, 0.15);
+  --app-neutral-surface: rgba(148, 163, 184, 0.15);
+
+  /* ------------------------------------------------------------------
+     Toast surfaces (YATFA-6428) — the OPAQUE twin of --app-*-surface.
+
+     A toast is NOT an alert. The #toasts container is mounted `fixed`
+     (application.html.erb), so a toast floats over ARBITRARY page content
+     while an in-flow alert sits on a known surface. The dark
+     --app-*-surface fills above are rgba() with alpha < 1, and that
+     translucency is safe only because the backdrop set is bounded. On an
+     overlay it is not: composited over --app-surface those fills give a
+     label contrast of 7.98/8.50/8.34/8.20, but over a white panel or an
+     image the SAME tokens give 1.53/1.63/1.49/1.52 — a AA failure that
+     depends on what happens to be underneath. So the toast cannot reuse
+     --app-*-surface directly.
+
+     It must still render the SAME COLOUR as the alert, or the same
+     semantic tone speaks two visual languages depending on whether it
+     arrived in-flow or as an overlay (before this, a dark success alert
+     was #123132 and a dark success toast was daisyUI's vivid #00D390 —
+     7.09:1 apart, i.e. not recognisably one design system).
+
+     Both at once = pre-compose the wash against --app-surface here, so
+     the value is FLAT rather than composited at paint time:
+
+       color-mix(in srgb, var(--app-success) 15%, var(--app-surface)) -> #123132
+       color-mix(in srgb, var(--app-error)   12%, var(--app-surface)) -> #2A1C2D
+       color-mix(in srgb, var(--app-warning) 15%, var(--app-surface)) -> #322B25
+       color-mix(in srgb, var(--app-info)    15%, var(--app-surface)) -> #162749
+
+     — byte-identical to what --app-*-surface resolves to over
+     --app-surface, but with no alpha channel, hence backdrop-independent.
+
+     DERIVED, not hard-coded, and the percentages are not new numbers:
+     each is exactly the alpha already shipped on its --app-*-surface
+     sibling (success/warning/info 0.15, error 0.12). Retune --app-success
+     and the toast follows the alert automatically; a pasted hex would
+     silently desynchronise from the alert it exists to match.
+     (color-mix is already in use in this stylesheet — grep aria-invalid.)
+
+     The LABEL stays --app-*-on-surface, which is what the 7.98/8.50/8.34/
+     8.20 figures were measured against — so label contrast carries over
+     unchanged, and now no longer depends on the backdrop.
+
+     WINTER does not mix: its --app-*-surface values are already opaque
+     (#dcfce7 …), so the override below simply points at them. */
+  --app-success-toast-surface: color-mix(in srgb, var(--app-success) 15%, var(--app-surface));
+  --app-error-toast-surface: color-mix(in srgb, var(--app-error) 12%, var(--app-surface));
+  --app-warning-toast-surface: color-mix(in srgb, var(--app-warning) 15%, var(--app-surface));
+  --app-info-toast-surface: color-mix(in srgb, var(--app-info) 15%, var(--app-surface));
+
+  /* ------------------------------------------------------------------
+     Interaction state layer (YATFA-5916, from VisualDraft YATFA-5725
+     "Unified token kit — forced state matrix").
+
+     These extend the existing --app-* system rather than introducing a
+     second palette. Before this block a control had a rest state, a focus
+     state and (sometimes) a disabled state — there was no token for hover,
+     no token for pressed, no border token that wasn't also a fill, and no
+     shared focus geometry, so every component invented its own. Values are
+     taken verbatim from the render's "New tokens" table.
+     ------------------------------------------------------------------ */
+
+  /* Interaction surfaces — the missing half of every control's state axis.
+
+     THESE TWO TOKENS ARE NOT ONE ELEMENT'S "hover then pressed" RAMP. They are
+     two independent interaction steps, each paired with the resting fill it is
+     used on top of. Read off the render's own rules, not from the names:
+
+       --app-surface-hover   pairs with --app-surface
+         .k-input (bg --app-surface)   :hover -> --app-surface-hover
+         .k-check/.k-radio             :hover -> --app-surface-hover
+
+       --app-surface-active  pairs with --app-surface-raised
+         .k-file::file-selector-button (bg --app-surface-raised)
+                                       :hover -> --app-surface-active
+         .k-pill (bg --app-surface-raised)
+                                       :hover -> --app-surface-active
+         .k-menu-item (transparent on a --app-surface-raised panel)
+                                       :hover -> --app-surface-active
+         .k-toggle track / .k-progress trough (a filled well, no text)
+
+     So the bar each one has to clear is a step away from ITS OWN base, and
+     "-active" never sits on --app-surface-hover or vice versa.
+
+     LIGHTNESS, not contrast ratio, is the right measure for one surface
+     against another: a WCAG ratio compares a mark to its backdrop, and two
+     adjacent fills that differ by a whole visible step still read as ~1.2:1.
+     These are therefore sized in CIE L*, where a step of >= 4 is comfortably
+     perceptible.
+
+       --app-surface-hover  L* 14.21   +6.25 over --app-surface (L* 7.96)
+       --app-surface-active L* 22.46   +6.07 over --app-surface-raised (L* 16.39)
+
+     The render shipped active at #1E293B — byte-identical to
+     --app-surface-raised, i.e. dL* 0.00 from its own base. Hovering a menu
+     item, a pill or a file button in the default theme changed nothing at all.
+     Raising it to #29364D is the same class of fix the border ladder below
+     received, applied to the pair that was missed. Direction is UP because the
+     render's pairing is an elevation step (raised -> active); a recessed value
+     would invert the language and, at dL* ~2 from --app-background, collide
+     with the page instead.
+
+     The CEILING on --app-surface-hover is hint text, not taste. `placeholder:
+     text-app-muted` (form_builder.rb:37) puts --app-text-muted on an input's
+     own fill, which BECOMES --app-surface-hover the moment a pointer enters
+     it, so that token must stay >= 4.5:1 there — #8091A6 measures 4.82, which
+     is what caps hover's climb. That ceiling does NOT apply to the -active
+     token, because no control in the render puts hint text on it (menu item,
+     pill-on-hover, clear button and file button all use --app-text; the
+     toggle and progress wells carry no text at all), so it is bounded instead
+     by --app-text-secondary, which it clears at 4.74:1. */
+  --app-surface-hover: #1A2438;
+  --app-surface-active: #29364D;
+
+  /* Border states — a weight ladder measured against the surface the edge sits
+     on, ordered neutral < hover < strong, every rung clearing the WCAG 1.4.11
+     3:1 bar for a non-text UI boundary on --app-surface, --app-background AND
+     --app-surface-raised (a control inside a panel is still a control).
+
+       --app-neutral-border  3.75 / 4.24 / 3.07   L* 48.34   quiet resting edge
+       --app-border-hover    4.96 / 5.61 / 4.07   L* 56.27   dL* +7.93
+       --app-border-strong   6.33 / 7.15 / 5.19   L* 63.54   dL* +7.27
+
+     The render prescribed #334155 / #475569 / #334155, which measured
+     1.72 / 2.36 / 1.72 — under the bar the ticket itself sets, and the hover
+     value was byte-identical to the resting --app-border-light, so hovering a
+     control changed its edge by literally nothing. Per the planner decision of
+     2026-08-17 acceptance criterion 3 governs over the render's exact hexes:
+     these stay in the render's slate hue family and keep its relative
+     ordering, and only lightness moved, as far as the measurement required.
+
+     --app-border-focus is deliberately EQUAL to --app-cta: the kit unifies the
+     focus technique, it does not change the focus color. */
+  --app-border-hover: #7A889D;
+  --app-border-strong: #8D9BB0;
+  --app-border-focus: #22C55E;
+
+  /* Semantic BORDER tokens. The semantic colors double as solid fills today,
+     so a separate border token lets an invalid input take a red edge without
+     borrowing a background color. The neutral member is the quietest of the
+     family by design — it only has to clear 3:1 (it measures 3.75 on
+     --app-surface, 3.07 on --app-surface-raised), where the saturated tones
+     land at 4.74-8.31. The render's #334155 measured 1.72 and was byte-
+     identical to --app-border-light. */
+  --app-success-border: #22C55E;
+  --app-error-border: #EF4444;
+  --app-warning-border: #F59E0B;
+  --app-info-border: #3B82F6;
+  --app-neutral-border: #64748B;
+
+  /* Semantic ON-SURFACE foregrounds — text/icon color for a tone laid on its
+     own soft *-surface fill. Separate from the solid tone color because a
+     solid fill and a fill-backed label need different luminance to pass AA
+     (winter --app-warning #F59E0B on --app-warning-surface #fef9c3 measures
+     2.0:1 — unreadable; this family is the fix). */
+  --app-success-on-surface: #4ADE80;
+  --app-warning-on-surface: #FBBF24;
+  --app-error-on-surface: #FCA5A5;
+  --app-info-on-surface: #93C5FD;
+  --app-neutral-on-surface: #CBD5E1;
+
+  /* Solid-tone hover — closes the `bg-app-error hover:bg-app-error`
+     hover-to-nowhere on the danger button. */
+  --app-error-hover: #DC2626;
+  --app-warning-hover: #D97706;
+
+  /* ------------------------------------------------------------------
+     SOLID-FILL BUTTON STATE FAMILY (YATFA-6285, roadmap YATFA-6240 slice 5).
+
+     Theme-INDEPENDENT by construction — declared here in :root and
+     deliberately NOT overridden under [data-theme="winter"]. That is the
+     whole property this family exists to carry, so a winter override would
+     be the bug, not the omission (spec/components/ui/button_component_spec.rb
+     asserts it).
+
+     WHY a separate family rather than the --app-*-hover pair directly above.
+     --app-error and --app-warning are theme-independent fills, but every
+     label token flips per theme (--app-text #F8FAFC/#0F172A,
+     --app-background #020617/#F8FAFC). A fixed fill under a flipping label is
+     correct in exactly one theme and wrong in the other, which is what
+     shipped: danger measured 3.60 in dark, warning 2.05 in winter.
+
+     A LIGHT label cannot rescue either — that ceiling is a fixed property of
+     the fills, not a tuning miss:
+        on --app-error   #EF4444 : pure BLACK 5.58 / pure WHITE 3.76
+        on --app-warning #F59E0B : pure BLACK 9.78 / pure WHITE 2.15
+     So the label pins to the dark end in BOTH themes. #020617 over #0F172A
+     because it carries more headroom on the tighter fill (danger 5.36 vs
+     4.74); the two are visually indistinguishable near-blacks.
+
+     And once the label is pinned dark, --app-error-hover / --app-warning-hover
+     become UNUSABLE here: they flip per theme and winter's are dark
+     (#B91C1C / #92400E), so they measure 3.12 and 2.85 under this label —
+     WORSE than the failures being fixed. The hover therefore moves LIGHTER,
+     the only colour axis left. Those two tokens are untouched and keep their
+     zero consumers.
+
+     Measured against the pinned label, identical in both themes:
+        --app-error            #EF4444  5.36   rest
+        --app-error-solid-hover  #F87171  7.29   hover   (dL* +9.16)
+        --app-warning          #F59E0B  9.39   rest
+        --app-warning-solid-hover #FBBF24 12.08  hover   (dL* +8.53)
+
+     YATFA-6409 — the CTA joins this family, for a DIFFERENT reason.
+     `primary` is not the danger/warning shape: --app-cta genuinely DOES flip
+     with its label (#22C55E dark / #16A34A winter), which is the arrangement
+     the other two lacked. It still shipped broken, because flipping together
+     is not the same as flipping ENOUGH — winter's rest pair measured 3.15
+     (dark 8.85), so the label was legible in exactly one theme anyway.
+
+     The naive repoint — pinning the label here as above and changing nothing
+     else — INVERTS the failure rather than removing it:
+        text-app-background  (shipped) winter: rest 3.15 FAIL / hover 4.79 PASS
+        text-app-solid-label (naive)   winter: rest 6.12 PASS / hover 4.02 FAIL
+     and no third label value rescues it, because the two winter fills sit
+     either side of the AA gap. Solving for the label luminance each needs:
+        winter rest  --app-cta       #16A34A  BLACK 6.37 / WHITE 3.30 -> wants DARK
+        winter hover --app-cta-hover #15803D  BLACK 4.19 / WHITE 5.02 -> wants LIGHT
+     The dark branch needs L <= -0.00348 and the light branch L >= 1.38367 —
+     both impossible. A dark label cannot reach 4.5 on that hover fill AT ALL;
+     its ceiling is 4.19 at pure black. So, exactly as above, the label pins
+     dark and the HOVER moves lighter.
+
+     ⚠️ But --app-cta-hover could NOT be repointed the way this comment's own
+     first section did for error/warning, and this is the whole reason a new
+     token exists: unlike --app-error-hover / --app-warning-hover (which have
+     zero consumers), --app-cta-hover is LOAD-BEARING — it backs the checkbox
+     and radio checked:hover fills further down this file, where the tick is
+     drawn in --app-background and a LIGHTER fill drives that reading DOWN.
+     Every candidate that fixes the button breaks all three control readings
+     (tick-on-fill 4.79 / fill-on-surface 5.02 / ring-on-surface-hover 4.45,
+     against a 3:1 non-text bar): #22C55E gives 2.18/2.28/2.02, #4ADE80 gives
+     1.67/1.74/1.55. So --app-cta-hover is left ALONE, keeps its per-theme
+     values, and keeps its controls; the solid-fill button gets its own token.
+
+     Measured under the pinned label — the rest fill still flips, and now
+     clears the bar in BOTH themes, which is what the shipped pairing did not:
+        --app-cta              #22C55E  8.85   rest  (dark)
+        --app-cta              #16A34A  6.12   rest  (winter)
+        --app-cta-solid-hover  #4ADE80 11.58   hover (both, dL* +8.96 / +20.35)
+     #4ADE80 is green-400 to --app-cta's green-500, the same 500->400 step
+     --app-error-solid-hover and --app-warning-solid-hover already take, so
+     the hover stays in the CTA's own hue rather than introducing a new one.
+     ------------------------------------------------------------------ */
+  --app-solid-label: #020617;
+  --app-error-solid-hover: #F87171;
+  --app-warning-solid-hover: #FBBF24;
+  --app-cta-solid-hover: #4ADE80;
+
+  /* Scrim behind a modal. */
+  --app-overlay: rgba(2, 6, 23, 0.72);
+
+  /* ------------------------------------------------------------------
+     TRI-HUE TOKEN SET (YATFA-6817, roadmap YATFA-6762 slice 2).
+
+     Introduced ALONGSIDE the existing palette — zero consumers have moved
+     yet (slice 3 re-classifies the ~216 accent call sites onto this set).
+     Every token above and below is byte-unchanged; the 48 -> 25 collapse
+     completes at slice 10.
+
+     Sources are the logo's own hues, measured from the mark: #0062FC
+     (hue 217, 49% of its saturated pixels), #0AD17B (hue 154 — today's
+     --app-cta #22C55E is hue 142, the drift this set corrects), #01BAD5
+     (hue 188). Values are GENERATED by DesignKit::Color (YATFA-6770/6775),
+     not pasted: solved fills are binary-searched to a 4.7:1 target so 8-bit
+     quantization cannot dip under the 4.5 bar, and the soft fills are each
+     tone composited over THIS theme's --app-surface.
+     spec/assets/design_tokens_spec.rb recomputes every value below from the
+     same documented inputs and asserts byte-equality — a hand-edit that
+     drifts from the generator fails the spec, not the eye.
+
+       accent         #0062FC  literal — the brand bright value (dots,
+                              icons, the showpiece gradient member)
+       accent-solid   #0B4FD0  solid primary fill under a WHITE label;
+                              re-measured 6.90:1, kept (>= 4.5)
+       accent-ink     #6AA2F9  the accent AS text and focus ring — solved
+                              at hue 217, saturation 0.92 (= min(0.92,
+                              accent-sat + 0.06), the kit's chroma ceiling),
+                              :lighter against --app-surface-active #29364D,
+                              the lightest dark surface: 4.71:1 there,
+                              6.02-7.83:1 on every other dark surface
+       accent-ink-hover #7CADFA the ink's hover/active companion (YATFA-6879,
+                              slice 3a) — the rest ink stepped one visible
+                              notch LIGHTER: solve_contrast :lighter against
+                              the REST INK itself at 1.13:1, same hue and
+                              chroma ceiling. 1.13 is the largest step that
+                              keeps WINTER's hover >= the 4.7 solve target on
+                              its worst landing surface (--app-surface-raised:
+                              rest 5.31 there, 5.31/4.7 = 1.13); dark has no
+                              such ceiling — lighter only improves contrast on
+                              dark surfaces — so it inherits the same step for
+                              a uniform affordance. dL* +3.90 here; >= 5.33:1
+                              on EVERY dark surface incl. surface-active.
+       warning-solid  #A1670B  white label 4.71:1 — SOLVED at the hue of
+                              #F0A020 (36.92). No amber literal passes
+                              (#F0A020 itself measures 2.15:1 vs white)
+       error-solid    #E5131A  white label 4.73:1 — SOLVED at the hue of
+                              #F0484E (357.86)
+       {tone}-soft    the tone over --app-surface #0F172A at alpha 0.15,
+                              pre-composited OPAQUE (backdrop-independent —
+                              the property the dark *-toast-surface twins
+                              needed color-mix() for). INTERIM names: §F's
+                              final --app-*-surface names are live today
+                              with other values and other consumers; slice 4
+                              collapses the pair. Honest record, no pass bar
+                              in this slice: today's --app-*-on-surface
+                              labels measure 7.73-8.27:1 on these fills.
+     ------------------------------------------------------------------ */
+  --app-accent: #0062FC;
+  --app-accent-solid: #0B4FD0;
+  --app-accent-ink: #6AA2F9;
+  --app-accent-ink-hover: #7CADFA;
+  --app-warning-solid: #A1670B;
+  --app-error-solid: #E5131A;
+  --app-success-soft: #0E3336;
+  --app-warning-soft: #312C28;
+  --app-error-soft: #311E2F;
+  --app-info-soft: #0D2F44;
+
+  /* Focus ring geometry — declared once so an input and a button cannot
+     diverge again. Consumed by the global :focus-visible rule below. */
+  --app-focus-ring-width: 2px;
+  --app-focus-ring-offset: 2px;
+
+  /* Control geometry. Heights match UI::ButtonComponent SIZE_CLASSES
+     (h-8 / h-10 / h-12) so an input and a button on one row line up;
+     --app-radius-control matches the existing rounded-lg on both.
+     Theme-independent — no winter override. */
+  --app-control-h-sm: 32px;
+  --app-control-h-md: 40px;
+  --app-control-h-lg: 48px;
+  --app-radius-control: 8px;
+  --app-radius-pill: 9999px;
+
+  /* Sidebar */
+  --sidebar-width: 256px;
+  --sidebar-collapsed-width: 68px;
+  --topbar-height: 56px;
+
+  /* Transitions */
+  --transition-fast: 150ms;
+  --transition-normal: 200ms;
+  --transition-slow: 300ms;
+
+  /* Font */
+  --font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+}
+
+/* Light theme overrides — DaisyUI "winter" */
+[data-theme="winter"] {
+  --app-primary: #E2E8F0;
+  --app-secondary: #CBD5E1;
+  --app-cta: #16A34A;
+  --app-cta-hover: #15803D;
+  --app-background: #F8FAFC;
+  --app-surface: #FFFFFF;
+  --app-surface-raised: #F1F5F9;
+  --app-text: #0F172A;
+  --app-text-secondary: #475569;
+  /* CHANGED by the UI kit state layer (YATFA-5916): was #94A3B8, which
+     measures 2.56:1 on the white --app-surface and 2.45:1 on the
+     --app-background — far under WCAG AA.
+
+     Set to #596779 rather than the #64748B this PR first carried: #64748B
+     clears AA on white (4.76) and on --app-background (4.55) but only reaches
+     4.34 on --app-surface-raised and 3.86 on --app-surface-active, and this
+     token is the placeholder/hint color (`placeholder:text-app-muted`,
+     form_builder.rb:37) — so it lands on a raised panel or a pressed control
+     constantly. #596779 clears AA on EVERY surface it can sit on:
+     white 5.77, --app-background 5.51, raised 5.26, surface-hover 5.12,
+     surface-active 4.68. It stays lighter than --app-text-secondary (#475569),
+     so the text hierarchy is unchanged. */
+  --app-text-muted: #596779;
+  --app-border: #E2E8F0;
+  --app-border-light: #CBD5E1;
+
+  /* Panel surface treatment overrides (YATFA-3742) — softer slate-tinted
+     shadow on the light surface. */
+  --app-panel-border: #CBD5E1;
+  --app-shadow: 0 1px 3px 0 rgba(15, 23, 42, 0.10), 0 1px 2px -1px rgba(15, 23, 42, 0.06);
+
+  /* Semantic surface overrides for light theme */
+  --app-success-surface: #dcfce7;
+  --app-error-surface: #fee2e2;
+  --app-warning-surface: #fef9c3;
+  --app-info-surface: #dbeafe;
+  --app-neutral-surface: #f1f5f9;
+
+  /* Toast surface overrides (YATFA-6428). Winter's --app-*-surface values are
+     already OPAQUE hexes, so the backdrop-independence the dark color-mix()
+     buys is free here — the toast simply resolves to the same fill its
+     in-flow alert sibling already uses. Declared explicitly rather than left
+     to the :root color-mix, which would otherwise mix over winter's WHITE
+     --app-surface and produce a fill the alert does not use. */
+  --app-success-toast-surface: var(--app-success-surface);
+  --app-error-toast-surface: var(--app-error-surface);
+  --app-warning-toast-surface: var(--app-warning-surface);
+  --app-info-toast-surface: var(--app-info-surface);
+
+  /* Interaction state layer overrides (YATFA-5916). Only the theme-dependent
+     half is repeated here — the focus geometry and control geometry tokens in
+     :root are theme-independent and deliberately have no winter value.
+
+     Same two measures as the dark block, mirrored for a light theme (a state
+     surface gets DARKER, a heavier border gets DARKER), and the same pairing:
+     -hover is a step from --app-surface, -active a step from
+     --app-surface-raised. In CIE L*:
+
+       --app-surface-hover  L* 95.26   -4.74 from --app-surface (L* 100)
+       --app-surface-active L* 91.76   -4.58 from --app-surface-raised (L* 96.35)
+
+     Both already clear their own base here, so winter needs no value change in
+     this round — the render's collapse was dark-only. (The render's winter
+     hover #F1F5F9 WAS byte-identical to --app-surface-raised and was raised in
+     the previous round.) Hint text stays AA on both (see the --app-text-muted
+     note above).
+
+     Winter has less headroom than dark and is the theme that will fail first:
+     --app-surface is pure white and --app-text-muted bottoms out at L* ~90.3,
+     so the whole usable band is under 10 L* wide. That is why -hover cannot
+     also be 4 from --app-surface-raised (it is 1.09) and does not need to be:
+     the controls that use it are opaque and rest on --app-surface. */
+  --app-surface-hover: #EDF2F7;
+  --app-surface-active: #E2E8F0;
+
+  /* Border ladder, neutral < hover < strong, measured against
+     --app-surface / --app-background / --app-surface-raised:
+
+       --app-neutral-border  3.46 / 3.31 / 3.16   L* 57.39
+       --app-border-hover    4.24 / 4.05 / 3.87   L* 51.58   dL* +5.81
+       --app-border-strong   5.41 / 5.17 / 4.94   L* 44.80   dL* +6.78
+
+     The render prescribed #CBD5E1 / #94A3B8 / #64748B — 1.48 / 2.56 / 4.76,
+     so two of the three sat under the 1.4.11 bar. Hue family and ordering are
+     unchanged; only lightness moved. */
+  --app-border-hover: #6E7C91;
+  --app-border-strong: #5D6B80;
+  /* NOTE, thin margin: --app-border-focus and --app-success-border are the
+     same #16A34A here, and on --app-surface-raised they measure 3.01:1 — one
+     hundredth over the 1.4.11 bar. Any future darkening of winter
+     --app-surface-raised (#F1F5F9) drops this pair below 3:1 first, before
+     anything else in the ladder. Re-measure these two if that token moves. */
+  --app-border-focus: #16A34A;
+
+  --app-success-border: #16A34A;
+  --app-error-border: #DC2626;
+  --app-warning-border: #B45309;
+  --app-info-border: #2563EB;
+  --app-neutral-border: #7D8B9F;
+
+  --app-success-on-surface: #15803D;
+  --app-warning-on-surface: #B45309;
+  --app-error-on-surface: #B91C1C;
+  --app-info-on-surface: #1D4ED8;
+  --app-neutral-on-surface: #475569;
+
+  --app-error-hover: #B91C1C;
+  --app-warning-hover: #92400E;
+
+  /* TRI-HUE TOKEN SET (YATFA-6817, roadmap YATFA-6762 slice 2) — the winter
+     half. Every member is declared EXPLICITLY, the theme-independent ones
+     included, per this codebase's own rule: a winter omission would silently
+     inherit the dark value.
+
+     accent / accent-solid / warning-solid / error-solid repeat their :root
+     values — their solve target is the WHITE label, not a surface, so they
+     are theme-independent by construction. accent-ink re-solves at hue 217,
+     saturation 0.92, :darker against winter's --app-surface-active #E2E8F0,
+     the darkest winter surface: 4.72:1 there, 5.17-5.82:1 on every other
+     winter surface. accent-ink-hover (YATFA-6879, slice 3a) is the same
+     one-notch-lighter step as :root's — solve_contrast :lighter against
+     THIS theme's rest ink at 1.13:1, the ratio its own worst landing
+     surface admits (rest 5.31 on --app-surface-raised, 5.31/4.7 = 1.13):
+     dL* +3.45, and 4.68/5.13/4.90:1 on raised/surface/background — every
+     page-level surface a hoverable label sits on. It is NOT solved for the
+     pressed states: surface-active reads 4.16, so a hover label paired with
+     a hover:bg-*-surface-ACTIVE backdrop stays on the REST ink's discipline
+     (no migrated site pairs them; the census guard keeps it that way).
+     The soft fills mix their tone over winter's WHITE
+     --app-surface at alpha 0.11. All values are DesignKit::Color output,
+     byte-checked by the regeneration spec. Honest record, no pass bar in
+     this slice: today's --app-*-on-surface labels measure 4.59-6.05:1 on
+     these fills. */
+  --app-accent: #0062FC;
+  --app-accent-solid: #0B4FD0;
+  --app-accent-ink: #095CDF;
+  --app-accent-ink-hover: #0A64F0;
+  --app-warning-solid: #A1670B;
+  --app-error-solid: #E5131A;
+  --app-success-soft: #E4FAF0;
+  --app-warning-soft: #FDF5E6;
+  --app-error-soft: #FDEBEC;
+  --app-info-soft: #E3F7FA;
+
+  --app-overlay: rgba(15, 23, 42, 0.45);
+}
+
+/* ============================================================
+   Tailwind v4 @theme — expose design tokens as utilities
+   (YATFA-3081, frontend rewrite foundation YATFA-3010)
+   ============================================================
+
+   CONVENTION DECISION (one uniform rule, applied to every token):
+   every token utility is prefixed `app-`, mirroring its `--app-*` source.
+
+   Why a uniform `app-` prefix on the UTILITY name:
+     - DaisyUI v5 already owns `primary`, `secondary`, `accent`, `neutral`,
+       `info`, `success`, `warning`, `error`, `base` as color utilities, and
+       Tailwind owns `border` (border-width). Mapping `--app-success` straight
+       to `--color-success` would collide with DaisyUI's `bg-success`; mapping
+       `--app-border` to `--color-border` would collide with the `border`
+       width utility. Prefixing with `app-` on EVERY token dodges every
+       collision with ONE rule, and extends the existing `--app-` namespace
+       strategy (chosen in YATFA-877 to avoid the DaisyUI collision).
+     - Self-documenting: any `*-app-*` class in a view is, by definition, a
+       design-token reference.
+
+   Why `@theme inline` (not plain `@theme`):
+     The token values are themselves `var(--app-*)`, which are redefined under
+     `[data-theme="winter"]`. `inline` makes the generated utilities reference
+     `var(--app-*)` DIRECTLY (e.g. `.bg-app-surface { background-color: var(--app-surface) }`)
+     instead of baking in a static value at build time, so toggling the theme
+     attribute recolors every utility at runtime. Verified in the build step.
+
+   Naming map (token -> utility suffixes generated):
+     --app-primary             -> bg/text/border-app-primary
+     --app-secondary           -> bg/text/border-app-secondary
+     --app-cta                 -> bg-app-cta, text-app-cta
+     --app-cta-hover           -> bg-app-cta-hover
+     --app-cta-solid-hover     -> bg-app-cta-solid-hover (solid CTA button only)
+     --app-background          -> bg-app-background, text-app-background
+     --app-surface             -> bg-app-surface, text-app-surface
+     --app-surface-raised      -> bg-app-surface-raised
+     --app-text                -> text-app-content (+ bg/border-app-content)
+     --app-text-secondary      -> text-app-content-secondary
+     --app-text-muted          -> text-app-muted
+     --app-border              -> border-app-border (+ bg/text-app-border)
+     --app-border-light        -> border-app-border-light
+     --app-panel-border        -> border-app-panel-border (panel-scoped, YATFA-3742)
+     --app-shadow              -> shadow-app (panel drop shadow, YATFA-3742)
+     --app-success             -> bg-app-success, text-app-success (+ border-)
+     --app-warning             -> bg-app-warning, text-app-warning
+     --app-error               -> bg-app-error, text-app-error
+     --app-info                -> bg-app-info, text-app-info
+     --app-*-surface           -> bg-app-*-surface (soft badge backgrounds)
+
+   Interaction state layer (YATFA-5916) — same uniform rule, `app-` + the
+   token name minus its `--app-` prefix:
+     --app-surface-hover       -> bg-app-surface-hover
+     --app-surface-active      -> bg-app-surface-active
+     --app-border-hover        -> border-app-border-hover
+     --app-border-strong       -> border-app-border-strong
+     --app-border-focus        -> border-app-border-focus
+     --app-*-border            -> border-app-*-border (tonal edges)
+     --app-*-on-surface        -> text-app-*-on-surface (label on a soft fill)
+     --app-error-hover         -> bg-app-error-hover
+     --app-warning-hover       -> bg-app-warning-hover
+     --app-overlay             -> bg-app-overlay (modal scrim)
+     --app-radius-control      -> rounded-app-control
+     --app-radius-pill         -> rounded-app-pill
+     --app-control-h-{sm,md,lg}-> h-app-control-{sm,md,lg} (also min-h-/w-/p-)
+
+   NOTE: the original `--app-*` custom properties above are UNCHANGED and
+   remain the single source of truth — the ~1,900 existing `var(--app-*)`
+   references in views keep resolving exactly as before. This block only ADDS
+   utilities; it renames nothing.
+   ============================================================ */
+@theme inline {
+  /* Core palette */
+  --color-app-primary: var(--app-primary);
+  --color-app-secondary: var(--app-secondary);
+  --color-app-cta: var(--app-cta);
+  --color-app-cta-hover: var(--app-cta-hover);
+  --color-app-background: var(--app-background);
+  --color-app-surface: var(--app-surface);
+  --color-app-surface-raised: var(--app-surface-raised);
+
+  /* Text / content */
+  --color-app-content: var(--app-text);
+  --color-app-content-secondary: var(--app-text-secondary);
+  --color-app-muted: var(--app-text-muted);
+
+  /* Borders */
+  --color-app-border: var(--app-border);
+  --color-app-border-light: var(--app-border-light);
+
+  /* Panel surface treatment (YATFA-3742) — dedicated panel border + shadow.
+     --color-app-panel-border generates border/bg/text-app-panel-border;
+     --shadow-app generates the shadow-app box-shadow utility. Both reference
+     the per-theme custom properties directly, so a theme switch recolors
+     (and re-shadows) at runtime. */
+  --color-app-panel-border: var(--app-panel-border);
+  --shadow-app: var(--app-shadow);
+
+  /* Semantic colors */
+  --color-app-success: var(--app-success);
+  --color-app-warning: var(--app-warning);
+  --color-app-error: var(--app-error);
+  --color-app-info: var(--app-info);
+
+  /* Semantic surfaces (soft backgrounds for badges/alerts) */
+  --color-app-success-surface: var(--app-success-surface);
+  --color-app-error-surface: var(--app-error-surface);
+  --color-app-warning-surface: var(--app-warning-surface);
+  --color-app-info-surface: var(--app-info-surface);
+
+  /* Opaque toast twins (YATFA-6428) — registered so `bg-app-success-toast-surface`
+     et al generate a utility at all; an unregistered utility renders no color. */
+  --color-app-success-toast-surface: var(--app-success-toast-surface);
+  --color-app-error-toast-surface: var(--app-error-toast-surface);
+  --color-app-warning-toast-surface: var(--app-warning-toast-surface);
+  --color-app-info-toast-surface: var(--app-info-toast-surface);
+  --color-app-neutral-surface: var(--app-neutral-surface);
+
+  /* ------------------------------------------------------------------
+     Interaction state layer (YATFA-5916). Same `inline` reasoning as
+     everything above: the utilities reference var(--app-*) directly, so a
+     `data-theme` switch recolors hover/active/tonal edges at runtime.
+     ------------------------------------------------------------------ */
+
+  /* Interaction surfaces */
+  --color-app-surface-hover: var(--app-surface-hover);
+  --color-app-surface-active: var(--app-surface-active);
+
+  /* Border states */
+  --color-app-border-hover: var(--app-border-hover);
+  --color-app-border-strong: var(--app-border-strong);
+  --color-app-border-focus: var(--app-border-focus);
+
+  /* Tonal borders */
+  --color-app-success-border: var(--app-success-border);
+  --color-app-error-border: var(--app-error-border);
+  --color-app-warning-border: var(--app-warning-border);
+  --color-app-info-border: var(--app-info-border);
+  --color-app-neutral-border: var(--app-neutral-border);
+
+  /* Tonal foregrounds on a soft *-surface fill */
+  --color-app-success-on-surface: var(--app-success-on-surface);
+  --color-app-warning-on-surface: var(--app-warning-on-surface);
+  --color-app-error-on-surface: var(--app-error-on-surface);
+  --color-app-info-on-surface: var(--app-info-on-surface);
+  --color-app-neutral-on-surface: var(--app-neutral-on-surface);
+
+  /* Solid-tone hover fills */
+  --color-app-error-hover: var(--app-error-hover);
+  --color-app-warning-hover: var(--app-warning-hover);
+
+  /* Solid-fill button state family (YATFA-6285) — theme-independent label +
+     the two lighter hover fills it stays legible against. Registered here for
+     the same reason as everything else in this block: an unregistered utility
+     generates no CSS at all, so `text-app-solid-label` would render with NO
+     color rather than the wrong one. */
+  --color-app-solid-label: var(--app-solid-label);
+  --color-app-error-solid-hover: var(--app-error-solid-hover);
+  --color-app-warning-solid-hover: var(--app-warning-solid-hover);
+  --color-app-cta-solid-hover: var(--app-cta-solid-hover);
+
+  /* Tri-hue token set (YATFA-6817, roadmap YATFA-6762 slice 2; hover alias
+     added by slice 3a, YATFA-6879) — the accent trio, the solved *-solid
+     fills and the opaque soft fills. Slice 3a moved every TEXT-role cta
+     consumer onto text-app-accent-ink(-hover) — the alias below is what
+     makes that utility exist; a solved token without its alias produces no
+     utility and is a silent no-op. Fills/rings/borders stay on the old
+     tokens until batches 3b/3c. The `app-` prefix is mandatory as ever:
+     DaisyUI v5 owns bare `accent`/`success`/`warning`/`error`/`info`
+     utilities. */
+  --color-app-accent: var(--app-accent);
+  --color-app-accent-solid: var(--app-accent-solid);
+  --color-app-accent-ink: var(--app-accent-ink);
+  --color-app-accent-ink-hover: var(--app-accent-ink-hover);
+  --color-app-warning-solid: var(--app-warning-solid);
+  --color-app-error-solid: var(--app-error-solid);
+  --color-app-success-soft: var(--app-success-soft);
+  --color-app-warning-soft: var(--app-warning-soft);
+  --color-app-error-soft: var(--app-error-soft);
+  --color-app-info-soft: var(--app-info-soft);
+
+  /* Modal scrim */
+  --color-app-overlay: var(--app-overlay);
+
+  /* Control geometry — --radius-* generates rounded-app-*, --spacing-*
+     generates h-/min-h-/w-/p-app-control-*. */
+  --radius-app-control: var(--app-radius-control);
+  --radius-app-pill: var(--app-radius-pill);
+  --spacing-app-control-sm: var(--app-control-h-sm);
+  --spacing-app-control-md: var(--app-control-h-md);
+  --spacing-app-control-lg: var(--app-control-h-lg);
+}
+
+/* Apply the font globally */
+html {
+  font-family: var(--font-family);
+}
+
+/* Respect reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Focus ring for keyboard navigation.
+   THE one focus technique (YATFA-5916): geometry comes from
+   --app-focus-ring-width / --app-focus-ring-offset and the color from
+   --app-border-focus, which is defined equal to --app-cta in both themes —
+   so this is the same visible ring as before, now parameterized in one place
+   instead of hard-coded here and re-invented per component. Still keyed on
+   :focus-visible, deliberately not :focus. */
+:focus-visible {
+  outline: var(--app-focus-ring-width) solid var(--app-border-focus);
+  outline-offset: var(--app-focus-ring-offset);
+}
+
+/* ============================================================
+   Full-width form pattern (YATFA-3629)
+   ------------------------------------------------------------
+   Forms are full-width (no max-width cap — see the layout's
+   <main> convention). `.form-grid` is the ONE shared responsive
+   field grid so a form uses the available width instead of a
+   single narrow column floating in dead space. Wrap sibling
+   fields in <div class="form-grid">; mark any field that should
+   span the whole row (text areas, descriptions, wide inputs)
+   with `.form-field-full`. Apply this consistently — do not
+   bespoke-design each form's width.
+   ============================================================ */
+@utility form-grid {
+  @apply grid grid-cols-1 gap-x-6 gap-y-4 md:grid-cols-2;
+}
+
+@utility form-field-full {
+  @apply md:col-span-2;
+}
+
+/* ============================================================
+   Typography scale — the ONE sanctioned heading-size ramp
+   (YATFA-4431)
+   ------------------------------------------------------------
+   Section headings used to be a different size on every page
+   (~100 ad-hoc `text-xl/2xl/3xl/4xl` headings with no ramp).
+   These four utilities ARE the type ramp: every signed-in
+   non-admin heading is sized with one of them (directly, or via
+   UI::HeadingComponent which wraps them). `text-app-h1` matches
+   the UI::PageHeaderComponent title size (text-3xl :lg), so the
+   page <h1> and the ramp's top step are the same size.
+
+   Each utility fixes font-size + font-weight + tracking only —
+   COLOR is intentionally NOT baked in so a heading keeps its
+   own token color (text-app-content, text-app-error, …) or the
+   caller-supplied class. The mechanical sweep REPLACES a
+   heading's ad-hoc `text-SIZE font-WEIGHT` fragment with the
+   single ramp class, so no competing size/weight utility remains.
+   ============================================================ */
+@utility text-app-h1 {
+  @apply text-3xl font-bold tracking-tight;
+}
+
+@utility text-app-h2 {
+  @apply text-xl font-bold tracking-tight;
+}
+
+@utility text-app-h3 {
+  @apply text-lg font-semibold;
+}
+
+@utility text-app-h4 {
+  @apply text-sm font-semibold;
+}
+
+/* ============================================================
+   Headline-figure scale — the ONE sanctioned figure ramp
+   (YATFA-5592)
+   ------------------------------------------------------------
+   A headline figure is the big tabular number a panel leads
+   with (the open-PR count, the delivery age, fleet uptime),
+   usually followed by a small muted unit phrase. It is NOT a
+   heading — it carries no document-outline meaning and belongs
+   in a <span> — so it gets its own ramp beside text-app-h1..h4
+   rather than borrowing one of those steps.
+
+   These three utilities ARE that ramp: every figure is sized
+   with one of them, via UI::FigureComponent which wraps them.
+   Before it, 14 sites hand-rolled `text-2xl font-bold
+   tabular-nums text-[var(--app-text)]` inline — 25% of the
+   whole heading_sizes lint rule was this one pattern.
+
+   Following the convention of the heading ramp above, each
+   utility fixes font-size + weight + numeric-figure style only
+   — COLOR is intentionally NOT baked in; UI::FigureComponent's
+   tone map supplies it (text-app-content, text-app-muted,
+   text-app-error, …).
+
+   `tabular-nums` is part of the ramp rather than the caller's
+   job because all 14 migrated sites carried it: a figure that
+   changes width as its digits tick is exactly what these
+   utilities exist to prevent.
+   ============================================================ */
+@utility text-app-figure-sm {
+  @apply text-xl font-bold tabular-nums;
+}
+
+@utility text-app-figure-md {
+  @apply text-2xl font-bold tabular-nums;
+}
+
+@utility text-app-figure-lg {
+  @apply text-3xl font-bold tabular-nums;
+}
+
+/* ============================================================
+   Sidebar Styles
+   ============================================================ */
+
+.sidebar {
+  width: var(--sidebar-width);
+  transition: width var(--transition-normal) ease-in-out;
+  will-change: width;
+}
+
+.sidebar.collapsed {
+  width: var(--sidebar-collapsed-width);
+}
+
+.sidebar.collapsed .sidebar-label {
+  opacity: 0;
+  width: 0;
+  overflow: hidden;
+  transition: opacity var(--transition-fast) ease-in-out;
+}
+
+.sidebar:not(.collapsed) .sidebar-label {
+  opacity: 1;
+  transition: opacity var(--transition-normal) ease-in-out var(--transition-fast);
+}
+
+.sidebar.collapsed .sidebar-group-title {
+  opacity: 0;
+  height: 0;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+.sidebar:not(.collapsed) .sidebar-group-title {
+  opacity: 1;
+  transition: opacity var(--transition-normal) ease-in-out;
+}
+
+/* Sidebar toggle button */
+.sidebar-toggle {
+  transition: transform var(--transition-normal) ease-in-out;
+}
+
+.sidebar.collapsed .sidebar-toggle {
+  transform: rotate(180deg);
+}
+
+/* Mobile overlay backdrop */
+.sidebar-overlay {
+  transition: opacity var(--transition-normal) ease-in-out;
+}
+
+.sidebar-overlay.inactive {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Main content area shifts with sidebar */
+.main-wrapper {
+  transition: margin-left var(--transition-normal) ease-in-out;
+}
+
+/* Nav item hover/active states */
+.sidebar-nav-item {
+  transition: background-color var(--transition-fast) ease-in-out,
+              color var(--transition-fast) ease-in-out;
+  min-height: 40px;
+}
+
+@media (max-width: 639px) {
+  .sidebar-nav-item {
+    min-height: 44px; /* Touch target 44px on mobile */
+  }
+}
+
+.sidebar-nav-item:hover {
+  background-color: rgba(128, 128, 128, 0.1);
+}
+
+.sidebar-nav-item.active {
+  background-color: rgba(34, 197, 94, 0.1);
+  color: var(--app-cta);
+}
+
+/* ============================================================
+   Markdown prose styles (dark-aware) */
+@utility prose {
+  @apply max-w-none;
+  color: inherit;
+  /* Markdown is authored text: code identifiers, URLs and paths routinely exceed
+     345px as a single unbreakable token, and inline text overflow does not show up
+     as an overflowing ELEMENT — it silently widens the page (YATFA-4550). Breaking
+     inside such tokens is what keeps rendered markdown from scrolling the page. */
+  overflow-wrap: break-word;
+}
+
+.prose h1 {
+  @apply text-2xl font-bold mt-8 mb-4;
+}
+
+.prose h2 {
+  @apply text-xl font-bold mt-6 mb-3;
+}
+
+.prose h3 {
+  @apply text-lg font-semibold mt-4 mb-2;
+}
+
+.prose p {
+  @apply my-3;
+}
+
+.prose ul {
+  @apply list-disc list-inside my-3;
+}
+
+.prose ol {
+  @apply list-decimal list-inside my-3;
+}
+
+.prose li {
+  @apply my-1;
+}
+
+.prose code {
+  @apply bg-base-300 px-1.5 py-0.5 rounded text-sm font-mono;
+}
+
+.prose pre {
+  @apply bg-base-300 rounded-lg p-4 overflow-x-auto my-4;
+}
+
+.prose pre code {
+  @apply bg-transparent p-0;
+}
+
+/* Markdown tables are authored, not designed — a wide one (e.g. the agent prompt
+   docs on /admin/prompts) forced horizontal PAGE scroll at 360px (YATFA-4550).
+   The containment lives in the MARKUP, not here: `MarkdownRenderer::Renderer#table`
+   wraps every emitted <table> in a `div.overflow-x-auto` scroll box, so wide
+   markdown scrolls in place and the page never does.
+   Do NOT add `display: block` to this rule to achieve the same thing: it demotes
+   the table to a block box whose rows fall into an anonymous width:auto table box,
+   which makes `w-full` size the SCROLLER rather than the table — every markdown
+   table in the app then shrink-to-fits to content width at EVERY viewport
+   (measured: 900px → 160px in a 900px container). Keep `display: table`. */
+.prose table {
+  @apply w-full my-4 border-collapse;
+}
+
+.prose th {
+  @apply text-left font-bold border-b border-base-content/20 px-3 py-2;
+}
+
+.prose td {
+  @apply px-3 py-2 border-b border-base-content/10;
+}
+
+.prose blockquote {
+  @apply border-l-4 border-primary pl-4 italic my-4;
+}
+
+.prose a {
+  @apply text-primary underline hover:opacity-80;
+}
+
+.prose strong {
+  @apply font-bold;
+}
+
+.prose em {
+  @apply italic;
+}
+
+.prose hr {
+  @apply my-6 border-t border-base-content/20;
+}
+
+/* Highlight.js light theme overrides for winter */
+[data-theme="winter"] .hljs {
+  background: #F1F5F9;
+  color: #0F172A;
+}
+[data-theme="winter"] .hljs-keyword,
+[data-theme="winter"] .hljs-selector-tag { color: #9333EA; }
+[data-theme="winter"] .hljs-string,
+[data-theme="winter"] .hljs-addition { color: #16A34A; }
+[data-theme="winter"] .hljs-comment,
+[data-theme="winter"] .hljs-quote { color: #64748B; font-style: italic; }
+[data-theme="winter"] .hljs-variable,
+[data-theme="winter"] .hljs-template-variable,
+[data-theme="winter"] .hljs-tag { color: #0891B2; }
+[data-theme="winter"] .hljs-number,
+[data-theme="winter"] .hljs-literal { color: #D97706; }
+[data-theme="winter"] .hljs-title,
+[data-theme="winter"] .hljs-section { color: #2563EB; font-weight: bold; }
+[data-theme="winter"] .hljs-deletion { color: #DC2626; }
+
+/* Enable text selection in xterm terminal */
+.xterm {
+  user-select: text !important;
+  -ms-user-select: text !important;
+  -webkit-user-select: text !important;
+}
+
+/* Toast notification animations */
+.fade-in {
+  animation: fadeIn 0.3s ease-in-out;
+}
+
+.fade-out {
+  animation: fadeOut 0.3s ease-in-out forwards;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeOut {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+}
+
+/* Skeleton Loading States — theme-aware */
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    rgba(128, 128, 128, 0.08) 25%,
+    rgba(128, 128, 128, 0.15) 50%,
+    rgba(128, 128, 128, 0.08) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: 0.375rem;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+/* Fade-in animation for content when loaded */
+.content-fade-in {
+  animation: contentFadeIn 0.3s ease-in-out;
+}
+
+@keyframes contentFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Skeleton-specific components */
+/* All skeleton variants inherit shimmer animation from base .skeleton class */
+
+.skeleton-card {
+  @apply card bg-base-100 shadow-md;
+}
+
+.skeleton-badge {
+  @apply badge badge-ghost;
+}
+
+.skeleton-text {
+  @apply rounded;
+}
+
+.skeleton-avatar {
+  @apply rounded-full;
+}
+
+.skeleton-progress {
+  @apply progress;
+}
+
+/* Trix Editor custom styles to match daisyUI theme */
+trix-editor {
+  @apply bg-base-100 border border-base-300 rounded-lg min-h-[200px] p-4 focus:outline-none focus:border-primary;
+  prose: max-w-none;
+}
+
+trix-editor:empty:before {
+  content: attr(placeholder);
+  @apply text-base-content/50 pointer-events-none;
+}
+
+trix-toolbar {
+  @apply bg-base-200 border border-base-300 rounded-t-lg;
+}
+
+trix-toolbar .trix-button-group {
+  @apply border-base-300 bg-base-200;
+}
+
+trix-toolbar .trix-button {
+  @apply text-base-content/70 hover:bg-base-300 hover:text-base-content;
+}
+
+trix-toolbar .trix-button--active {
+  @apply bg-primary text-primary-content;
+}
+
+trix-toolbar .trix-button:disabled {
+  @apply opacity-30;
+}
+
+trix-editor pre {
+  @apply bg-base-300 rounded-lg p-4 overflow-x-auto my-4;
+}
+
+trix-editor code {
+  @apply bg-base-300 px-1.5 py-0.5 rounded text-sm font-mono text-base-content;
+}
+
+trix-editor pre code {
+  @apply bg-transparent p-0;
+}
+
+trix-editor blockquote {
+  @apply border-l-4 border-primary pl-4 italic my-4 text-base-content/80;
+}
+
+trix-editor h1 {
+  @apply text-2xl font-bold mt-8 mb-4 text-base-content;
+}
+
+trix-editor h2 {
+  @apply text-xl font-bold mt-6 mb-3 text-base-content;
+}
+
+trix-editor h3 {
+  @apply text-lg font-semibold mt-4 mb-2 text-base-content;
+}
+
+trix-editor ul {
+  @apply list-disc list-inside my-3 text-base-content;
+}
+
+trix-editor ol {
+  @apply list-decimal list-inside my-3 text-base-content;
+}
+
+trix-editor a {
+  @apply text-primary underline hover:opacity-80;
+}
+
+/* ============================================================
+   Lifecycle Step Indicator
+   ============================================================ */
+
+.lifecycle-bar .lifecycle-step {
+  transition: transform var(--transition-fast) ease-in-out,
+              box-shadow var(--transition-fast) ease-in-out;
+}
+
+.lifecycle-bar .lifecycle-step:hover {
+  transform: scale(1.1);
+}
+
+/* Branch state badge variants */
+.lifecycle-branch--blocked {
+  @apply badge-warning badge-sm;
+}
+
+.lifecycle-branch--cancelled {
+  @apply badge-error badge-sm;
+}
+
+.lifecycle-branch--needs-human {
+  @apply badge-warning badge-sm;
+}
+
+/* ============================================================
+   Dashboard bar-chart tooltip (YATFA-5319)
+   ============================================================
+   Reveals the per-bar tooltip in dashboard/_bar_chart.html.erb.
+
+   Written here rather than with Tailwind's `group-hover/bar:block`
+   variant on purpose: Tailwind wraps every hover variant in
+   `@media (hover: hover)`, which does not match in a headless browser
+   (nor on a touch device) — so the reveal was untestable and silently
+   dead wherever the media query failed. A plain :hover rule is
+   pointer-agnostic. :focus-within is included so the tooltip also
+   appears if a focusable control is ever added inside a column.
+
+   The numbers stay reachable without any pointer at all: the peak and
+   the most recent bucket are labelled directly on the chart, and the
+   full series is rendered as sr-only text. */
+.chart-column .chart-tooltip {
+  display: none;
+}
+
+.chart-column:hover .chart-tooltip,
+.chart-column:focus-within .chart-tooltip {
+  display: block;
+}
+
+/* ============================================================
+   Review-surface fullscreen (YATFA-6041, extended YATFA-6207)
+   ============================================================
+   A review surface is handed to the Fullscreen API by
+   FullscreenControl#toggle. This rule is the ENTIRE stylesheet cost of
+   that, and it is deliberately two declarations rather than the six it
+   started as.
+
+   SELECTED ON THE SHARED HOST MARKER, not on any one surface's class
+   and no longer on the CAMERA's target attribute. The fullscreenable
+   surfaces are the board and (YATFA-6207) the FOCUS pane's frame
+   wrapper — and only the board has a camera at all, so
+   `[data-visual-draft-canvas-target="viewport"]` could not reach the
+   focus pane by construction. (There were THREE when this was written:
+   YATFA-6949 merged the two boards, and a marker every host carries is
+   exactly why that merge needed no edit here.) Every host marks itself with
+   `data-vd-fullscreen-host`; that is the one attribute this rule needs,
+   and it reaches every present and future surface from one place.
+
+   The lesson being preserved here is the ORIGINAL one, one level up: the
+   first cut keyed this to `.vd-canvas-viewport` and silently missed the
+   second board's `.vd-canvas2-viewport` (class selectors are exact token
+   matches), which carried the identical border and radius utilities and
+   so went fullscreen still wearing them. That second board no longer
+   exists (YATFA-6949), which is precisely why the lesson is recorded
+   here rather than left to be re-learned from the markup. A surface-specific selector
+   misses a surface; a marker every host carries cannot.
+
+   SIZING IS ALREADY HANDLED — do not add width/height here. The
+   obvious worry is that every host carries a page-chrome-aware height
+   (`h-[calc(100vh-22rem)] min-h-[24rem]` on the boards,
+   `xl:h-[calc(100vh-20rem)]` on the focus wrapper) that is exactly right
+   in the page and exactly wrong on a screen with no page chrome on it,
+   and that a fullscreened element would keep it and sit letterboxed. It
+   does not: the UA stylesheet's `:fullscreen` block sets
+   width/height/min-height/max-height with `!important`, and an
+   `!important` UA declaration beats every non-important author one
+   whatever its specificity or layer. Measured in headless Chromium
+   against this exact markup: the element goes 384px → 600×800 (the full
+   screen) with NO width/height rule here at all. Adding them back would
+   be dead code that reads as load-bearing.
+
+   WHAT DOES NOT COME FOR FREE is the panel treatment. The UA block
+   resets no border and no radius, so without the two declarations below
+   the fullscreened board keeps a 1px border and an 8px corner radius —
+   measured, same probe — which are the styling of a panel sitting in a
+   page, and there is no page here.
+
+   Unlayered on purpose (Tailwind v4 emits its utilities inside
+   `@layer utilities`, and an unlayered rule beats a layered one whatever
+   the specificity), so this does not depend on out-specifying whichever
+   border utility the markup happens to carry.
+
+   The BACKGROUND deliberately stays: both boards set
+   `bg-app-surface-raised` as a design token on the element itself, and
+   the focus wrapper sets `bg-white` (the bundle's own page colour), and
+   it is what keeps each surface legible instead of rendering against the
+   browser's opaque black backdrop. */
+[data-vd-fullscreen-host]:fullscreen {
+  border-width: 0;
+  border-radius: 0;
+}
+
+/* ============================================================
+   Review-surface render width (YATFA-6213)
+   ============================================================
+   A review surface that mounts the frame controls can constrain its
+   render to a narrow, phone-width viewport. The WIDTH ITSELF is not set
+   here — WidthControl caps the <iframe> element's own max-width in JS,
+   because the width is a chosen value that changes at runtime and a
+   stylesheet cannot hold a reviewer's choice.
+
+   WHAT IS HERE is the only part that is genuinely styling: the GUTTER.
+   The host carries `bg-white` (the bundle's own page colour, so a
+   full-width render is legible against it), which means a 375px render
+   centred in a 900px pane sits in white space on a white ground and
+   reads as a render that FAILED to fill the pane rather than as a phone
+   viewport. Tinting the host in the narrow arm — and only in it — makes
+   the frame's edges visible, so the reviewer can see where the viewport
+   they are judging actually ends.
+
+   KEYED ON THE HOST MARKER, which WidthControl sets on itself, for the
+   same reason `[data-vd-fullscreen-host]` is: a surface-specific class
+   selector misses a surface (that is the lesson the two boards'
+   viewport classes already taught one rule up), and a marker
+   every host carries cannot. The `="narrow"` arm is explicit rather
+   than an attribute-presence match, so the FULL arm — the default, and
+   exactly today's rendering — is untouched by this rule even though its
+   host carries the same attribute.
+
+   Unlayered on purpose, matching the fullscreen rule above: Tailwind v4
+   emits its utilities inside `@layer utilities` and an unlayered rule
+   beats a layered one whatever the specificity, so this does not depend
+   on out-specifying the `bg-white` the markup happens to carry. */
+[data-vd-render-width="narrow"] {
+  background-color: var(--app-surface-raised);
+}
+
+/* ============================================================
+   Review-surface annotation dock (YATFA-6224)
+   ============================================================
+   Block addressing and reviewer notes (YATFA-6219) are server-rendered
+   ONCE per alternative, in the focus pane's details column. The
+   Fullscreen API promotes one element and its subtree, and the element
+   the focus pane hands over is the frame wrapper — so that list, a
+   sibling two levels out, is off the screen entirely the moment the
+   reviewer goes full screen.
+
+   AnnotationDock MOVES that one list into the wrapper for the duration
+   and returns it to its server-rendered home afterwards. Moving rather
+   than rendering a second copy is what makes "a note written in either
+   view is present in the other" true by construction: one list, one set
+   of forms, one set of DOM ids, nothing to keep in step, and no
+   duplicate `id` on a page that has a standing no-duplicate-ids spec.
+
+   THESE TWO RULES ARE THE WHOLE STYLESHEET COST, and they are keyed on a
+   marker the dock sets on the HOST rather than on the panel, for two
+   distinct reasons. The first is the one `[data-vd-fullscreen-host]`
+   above is keyed that way for: a surface-specific class selector misses
+   a surface. The second is specific to this feature — the panel is
+   REPLACED IN PLACE by a Turbo Stream every time a note is written, so
+   any attribute the dock had written onto the panel would be gone the
+   first time the reviewer used it, while the panel itself stays exactly
+   where it was. An attribute on the host survives that; the child
+   combinator finds whatever panel is currently there.
+
+   THE RESERVED GUTTER, not an overlay. `padding-right` on the host
+   shrinks the <iframe> (which is `w-full`, so it measures the CONTENT
+   box) instead of hiding its right-hand edge behind a floating panel —
+   the render is being JUDGED, and judging it through a panel laid over
+   its right third is not judging it. The panel is absolutely positioned
+   into the gutter that padding opened. It also keeps WidthControl's
+   centring honest: `margin-inline: auto` on a capped frame centres it
+   within the content box, which is now the part of the host the reviewer
+   can actually see.
+
+   `padding-top` on the PANEL, not on the host: FullscreenControl's
+   button is `absolute top-2 right-2 z-10` inside this same host, so
+   without it the panel's first row sits under the only control that
+   leaves full screen. The panel stays below that z-index deliberately —
+   the way out must never be the thing that gets covered.
+
+   Unlayered on purpose, matching both rules above: Tailwind v4 emits its
+   utilities inside `@layer utilities` and an unlayered rule beats a
+   layered one whatever the specificity, so this does not depend on
+   out-specifying whichever spacing utility the partial happens to
+   carry. */
+[data-vd-annotations-docked] {
+  --vd-annotations-width: 22rem;
+  padding-right: var(--vd-annotations-width);
+}
+
+[data-vd-annotations-docked] > .vd-blocks {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  z-index: 5;
+  width: var(--vd-annotations-width);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 2.75rem 0.75rem 0.75rem;
+  background-color: var(--app-surface);
+  border-left: 1px solid var(--app-panel-border);
+}
+
+/* ============================================================
+   Restored-draft marker (YATFA-6286)
+   ============================================================
+   Rendered by draft_persistence_controller.js when it restores text
+   the operator typed but never saved. Restoration is deliberately
+   automatic — no prompt, no confirmation, no gesture — so this marker
+   is the ONLY thing that tells them where the text in the field came
+   from. Without it, restored prose is indistinguishable from prose the
+   server sent, which is its own kind of confusion.
+
+   PASSIVE BY CONSTRUCTION. `pointer-events: none` (also set inline by
+   the controller, so the marker is harmless even if this stylesheet
+   has not loaded) means it can never intercept a click meant for the
+   field it sits under. It is never focusable, never a control, and it
+   removes itself the moment the operator engages with the field.
+
+   Styled as a quiet warning rather than an error: unsaved text coming
+   back is a good outcome, not a fault — but it IS a state the operator
+   should notice, so muted body text would under-sell it.
+
+   The controller injects this element with `insertAdjacentElement`
+   directly after the field, so it inherits nothing from the form's own
+   spacing utilities; the margin is stated here rather than left to
+   whichever wrapper the caller happens to use. Unlayered on purpose,
+   matching the rules above — Tailwind v4 emits utilities inside
+   `@layer utilities`, and an unlayered rule wins whatever the
+   specificity, so this does not depend on out-specifying a caller. */
+.yatfa-draft-restored {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-top: 0.25rem;
+  font-size: 0.75rem;
+  line-height: 1rem;
+  color: var(--app-warning-on-surface, var(--app-warning));
+  pointer-events: none;
+}
+
+.yatfa-draft-restored::before {
+  content: "↩";
+  font-size: 0.875rem;
+  line-height: 1;
+}
+
+/* ============================================================
+   Form control layer — the ONE input system (YATFA-6137,
+   roadmap YATFA-6240 slice 2; consumes the YATFA-5916 state tokens)
+   ------------------------------------------------------------
+   Slice 1 added the `--app-*` interaction-state tokens and gave them zero
+   consumers. This layer is their first consumer: every input control in the
+   forms layer, with its FULL state matrix — rest, hover, focus-visible,
+   disabled, error/invalid, read-only — in both themes.
+
+   WHY PLAIN CSS AND NOT `@utility`:
+     A state matrix needs `:hover`, `:focus-visible`, `[aria-invalid]`,
+     `:checked`, `:indeterminate`, `::placeholder`, `::file-selector-button`
+     and `::after` on ONE control. Expressing that as Tailwind utilities means
+     a ~30-class string repeated at every call site — which is precisely the
+     divergence this slice exists to collapse (51 `input-bordered`, 58
+     `select-bordered`, 51 `toggle`, 13 diverged inline checkbox strings on
+     `main`). One class per control, one definition.
+
+   WHY `@layer components`:
+     Tailwind v4 declares `@layer theme, base, components, utilities`, so
+     these rules sit BELOW the utility layer. A call site that needs to
+     override geometry (`w-full sm:w-72`, `text-sm`) still wins with a plain
+     utility and needs no `!important` — the base is a floor, not a cage.
+     This is the OPPOSITE choice from the unlayered `[data-vd-*]` rules above,
+     which deliberately out-rank utilities; these must not.
+
+   ---- FOCUS: there is exactly one technique ----
+   The global `:focus-visible` rule (see above) is THE focus mechanism —
+   an outline in `--app-border-focus` sized by `--app-focus-ring-width` /
+   `--app-focus-ring-offset`. These rules do NOT re-declare an outline and do
+   NOT introduce a ring; they only add the border-color change that pairs with
+   it. Before this slice the forms layer had two competing techniques
+   (`focus-visible:ring-2` in the builder, `focus:border-app-cta
+   focus:ring-1` in roadmaps/index). Both are removed by this slice.
+
+   ---- MEASURED CONTRAST (WCAG 1.4.11 non-text = 3:1; AA text = 4.5:1) ----
+   Format: dark / winter. Every control edge is measured against ITS OWN fill,
+   not against the page.
+
+     RESTING EDGE  --app-neutral-border
+       on --app-surface          3.75 / 3.46   (inputs, check, radio)
+       on --app-surface-raised   3.07 / 3.16   (read-only, disabled fill)
+     HOVER EDGE    --app-border-hover
+       on --app-surface-hover    4.31 / 3.76   (inputs, check, radio)
+       on --app-surface-active   3.38 / 3.44   (toggle track)
+     FOCUS/CHECKED --app-border-focus (== --app-cta)
+       on --app-surface          7.83 / 3.30
+       on --app-background       8.85 / 3.15   (ring offset gap)
+     ERROR EDGE    --app-error-border
+       on the error fill below   4.49 / 4.35
+     TOGGLE TRACK EDGE --app-border-strong
+       on --app-surface-active   4.31 / 4.39
+     TEXT
+       --app-text on every control fill        >= 11.61 / 14.48
+       --app-text-muted (placeholder/hint)
+         on --app-surface        5.54 / 5.77
+         on --app-surface-hover  4.82 / 5.12   (the hover ceiling slice 1 set)
+       --app-text-secondary on --app-surface-raised (read-only) 5.71 / 6.92
+       knob --app-text-secondary on track --app-surface-active  4.74 / 6.15
+       tick --app-background on a --app-cta fill                8.85 / 3.15
+
+   TWO DELIBERATE DEVIATIONS FROM THE REFERENCE RENDER (YATFA-5725), both
+   forced by measurement rather than taste:
+
+     1. The render hovers a check/radio edge to `--app-border-focus`. In
+        winter that is 2.93:1 on `--app-surface-hover` — under the 3:1 bar.
+        Every control here uses ONE ramp instead
+        (neutral-border -> border-hover), which also means an input and a
+        checkbox hover identically.
+     2. The render rests read-only and disabled edges on `--app-border`. That
+        measures 1.00:1 dark / 1.13:1 winter against `--app-surface-raised` —
+        the edge disappears entirely. They rest on `--app-neutral-border`
+        (3.07 / 3.16) here. This is the same trap the ticket flags for winter,
+        where `--app-surface-active` is byte-identical to `--app-border`.
+
+   `--app-text-muted` on `--app-surface-active` is 3.77:1 in dark (sub-AA), so
+   nothing in this layer puts it there: the file name sits on `--app-surface`,
+   and the file/clear button hover foreground is `--app-text`.
+
+   Motion: every transition below uses the `--transition-*` duration tokens
+   and is neutralised by the `prefers-reduced-motion` block above.
+   ============================================================ */
+@layer components {
+  /* ---- The one text-like control ---------------------------------- */
+  .app-input {
+    display: block;
+    width: 100%;
+    min-height: var(--app-control-h-md);
+    padding: 8px 12px;
+    font-size: 14px;
+    line-height: 1.4;
+    color: var(--app-text);
+    background-color: var(--app-surface);
+    border: 1px solid var(--app-neutral-border);
+    border-radius: var(--app-radius-control);
+    appearance: none;
+    -webkit-appearance: none;
+    transition:
+      border-color var(--transition-fast) ease,
+      background-color var(--transition-fast) ease;
+  }
+
+  /* A filled value must read differently from a placeholder: the value is
+     --app-text (>=11.61:1), the placeholder --app-text-muted (5.54 / 5.77).
+     `opacity: 1` defeats the UA's own dimming, which would otherwise take the
+     placeholder BELOW the measured ratio on some engines. */
+  .app-input::placeholder {
+    color: var(--app-text-muted);
+    opacity: 1;
+  }
+
+  .app-input--sm { min-height: var(--app-control-h-sm); padding: 4px 10px; font-size: 13px; }
+  .app-input--lg { min-height: var(--app-control-h-lg); padding: 12px 14px; font-size: 15px; }
+
+  /* HOVER — did not exist on any input before this slice. Excluded on
+     disabled/read-only: neither is editable, so neither invites a pointer. */
+  .app-input:hover:not(:disabled):not([readonly]) {
+    background-color: var(--app-surface-hover);
+    border-color: var(--app-border-hover);
+  }
+
+  /* FOCUS — border only. The outline comes from the global :focus-visible
+     rule; re-declaring it here is how a second focus technique is born. */
+  .app-input:focus-visible {
+    border-color: var(--app-border-focus);
+    background-color: var(--app-surface);
+  }
+
+  /* INVALID — on the control itself, so the field is identifiable without
+     reading the message beneath it. Keyed off `aria-invalid`, which
+     Forms::FieldComponent now emits, so the visual state and the state
+     exposed to assistive technology cannot drift apart. */
+  .app-input[aria-invalid="true"] {
+    border-color: var(--app-error-border);
+    background-color: color-mix(in srgb, var(--app-error-border) 7%, var(--app-surface));
+  }
+
+  /* An invalid field that is ALSO focused keeps the error edge; the focus
+     outline still comes from the global rule. */
+  .app-input[aria-invalid="true"]:hover:not(:disabled):not([readonly]),
+  .app-input[aria-invalid="true"]:focus-visible {
+    border-color: var(--app-error-border);
+  }
+
+  /* READ-ONLY — legible and obviously not editable, but NOT "broken":
+     full-opacity text at 5.71 / 6.92, distinct from the dimmed disabled. */
+  .app-input[readonly] {
+    background-color: var(--app-surface-raised);
+    border-color: var(--app-neutral-border);
+    color: var(--app-text-secondary);
+    cursor: default;
+  }
+
+  .app-input:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+    background-color: var(--app-surface-raised);
+    border-color: var(--app-neutral-border);
+  }
+
+  /* ---- Textarea ---------------------------------------------------- */
+  /* On `main` BASE_TEXTAREA_CLASSES was byte-identical to BASE_INPUT_CLASSES,
+     so a textarea had neither a real height nor a resize policy — it rendered
+     as a one-line box that could be dragged sideways out of its grid column. */
+  .app-textarea {
+    min-height: 96px;
+    resize: vertical;
+    line-height: 1.55;
+  }
+
+  /* ---- Select ------------------------------------------------------ */
+  /* `appearance: none` on .app-input already suppresses the native OS arrow
+     (which renders in the platform's own light-theme chrome and breaks the
+     dark theme). That makes drawing our own chevron mandatory, not cosmetic:
+     without it the control has no affordance at all. */
+  .app-select-wrap { position: relative; display: block; width: 100%; }
+  .app-select { padding-right: 36px; cursor: pointer; }
+
+  .app-select-wrap > .app-select-chevron {
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    width: 16px;
+    height: 16px;
+    margin-top: -8px;
+    color: var(--app-text-muted);
+    pointer-events: none;
+    transition: color var(--transition-fast) ease;
+  }
+
+  .app-select-wrap:hover > .app-select-chevron { color: var(--app-text-secondary); }
+
+  /* ---- Search ------------------------------------------------------ */
+  .app-search-wrap { position: relative; display: block; }
+  .app-search { padding-left: 36px; }
+
+  .app-search-wrap > .app-search-icon {
+    position: absolute;
+    left: 12px;
+    top: 50%;
+    width: 16px;
+    height: 16px;
+    margin-top: -8px;
+    color: var(--app-text-muted);
+    pointer-events: none;
+  }
+
+  /* ---- File input -------------------------------------------------- */
+  /* The file-selector button's own fill is --app-surface-raised, so it is the
+     one control here whose hover pairs with --app-surface-active (slice 1's
+     token pairing: "-active" never sits on --app-surface-hover). */
+  .app-file {
+    padding: 0;
+    display: flex;
+    align-items: center;
+    overflow: hidden;
+  }
+
+  .app-file::file-selector-button {
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    height: calc(var(--app-control-h-md) - 2px);
+    padding: 0 14px;
+    margin-right: 12px;
+    color: var(--app-text);
+    background-color: var(--app-surface-raised);
+    border: 0;
+    border-right: 1px solid var(--app-neutral-border);
+    cursor: pointer;
+    transition: background-color var(--transition-fast) ease;
+  }
+
+  .app-file:hover:not(:disabled)::file-selector-button {
+    background-color: var(--app-surface-active);
+  }
+
+  .app-file:disabled::file-selector-button { cursor: not-allowed; }
+
+  /* ---- Checkbox / radio / toggle — one visual family ---------------- */
+  /* `.app-choice` is the label wrapper: it is what makes the text a click
+     target and what carries the not-allowed cursor when the control inside
+     is disabled (a disabled INPUT cannot style its own label). */
+  .app-choice {
+    display: inline-flex;
+    align-items: flex-start;
+    gap: 8px;
+    font-size: 14px;
+    line-height: 1.35;
+    color: var(--app-text);
+    cursor: pointer;
+  }
+
+  .app-choice:has(:disabled) {
+    cursor: not-allowed;
+    color: var(--app-text-muted);
+  }
+
+  .app-check,
+  .app-radio {
+    appearance: none;
+    -webkit-appearance: none;
+    flex: none;
+    position: relative;
+    width: 18px;
+    height: 18px;
+    margin: 0;
+    margin-top: 1px;
+    background-color: var(--app-surface);
+    border: 1px solid var(--app-neutral-border);
+    cursor: pointer;
+    transition:
+      background-color var(--transition-fast) ease,
+      border-color var(--transition-fast) ease;
+  }
+
+  .app-check { border-radius: 5px; }
+  .app-radio { border-radius: var(--app-radius-pill); }
+
+  /* Same hover ramp as the text inputs — see deviation 1 in the header. */
+  .app-check:hover:not(:disabled),
+  .app-radio:hover:not(:disabled) {
+    background-color: var(--app-surface-hover);
+    border-color: var(--app-border-hover);
+  }
+
+  .app-check:checked,
+  .app-check:indeterminate {
+    background-color: var(--app-cta);
+    border-color: var(--app-cta);
+  }
+
+  /* A checked radio is a RING, not a filled box: the fill stays --app-surface
+     and the border thickens to 5px, which draws the inner dot without a
+     pseudo-element. */
+  .app-radio:checked {
+    background-color: var(--app-surface);
+    border-color: var(--app-cta);
+    border-width: 5px;
+  }
+
+  /* CHECKED + HOVER. The generic hover rule above is `:hover:not(:disabled)`
+     = (0,3,0), which OUT-SPECIFIES the (0,2,0) `:checked` rules — so without
+     these the fill reverted to --app-surface-hover on a checked control and
+     the tick, drawn in --app-background, fell to 1.30 dark / 1.08 winter.
+     Because it is specificity and not order, re-ordering `:checked` does NOT
+     fix it; the restore has to be at least as specific, hence the explicit
+     pairs below (0,4,0).
+
+     These deliberately land on --app-cta-hover rather than merely restoring
+     --app-cta: a checked control must still ACKNOWLEDGE the pointer, and
+     re-stating the rest value would make checked the one state in the family
+     with no hover affordance. Measured, tick(--app-background) on
+     --app-cta-hover 6.12 / 4.79 and the fill on --app-surface 5.42 / 5.02 —
+     both clear 3:1 in both themes. */
+  .app-check:checked:hover:not(:disabled),
+  .app-check:indeterminate:hover:not(:disabled) {
+    background-color: var(--app-cta-hover);
+    border-color: var(--app-cta-hover);
+  }
+
+  /* The radio is a RING, so only the edge moves — the 5px width is inherited
+     from `.app-radio:checked` above (that declaration is not contested; only
+     `border-color` was being lost). --app-cta-hover on --app-surface-hover
+     measures 4.71 / 4.45. */
+  .app-radio:checked:hover:not(:disabled) {
+    border-color: var(--app-cta-hover);
+  }
+
+  /* The tick and the indeterminate dash are DRAWN, not image assets, so they
+     need no request and cannot 404 offline. --app-background on --app-cta
+     measures 8.85 / 3.15. */
+  .app-check:checked::after {
+    content: "";
+    position: absolute;
+    left: 5px;
+    top: 1px;
+    width: 5px;
+    height: 10px;
+    border: solid var(--app-background);
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg);
+  }
+
+  /* `:indeterminate` is settable ONLY from JavaScript (there is no HTML
+     attribute for it) — see the `indeterminate-checkbox` Stimulus controller,
+     which is what gives this rule a trigger. Declared after :checked so a
+     control that is both renders the dash, matching the native precedence. */
+  .app-check:indeterminate::after {
+    content: "";
+    position: absolute;
+    left: 3px;
+    top: 7px;
+    width: 10px;
+    height: 2px;
+    border-radius: 1px;
+    background-color: var(--app-background);
+  }
+
+  .app-check[aria-invalid="true"],
+  .app-radio[aria-invalid="true"] {
+    border-color: var(--app-error-border);
+  }
+
+  /* Same specificity trap as the checked pair above: (0,2,0) here loses its
+     border-color to the (0,3,0) generic hover, so an INVALID checkbox looked
+     valid the moment a pointer touched it — the one state that must never be
+     dismissable by hovering. --app-error-border on --app-surface-hover
+     measures 4.12 / 4.29. */
+  .app-check[aria-invalid="true"]:hover:not(:disabled),
+  .app-radio[aria-invalid="true"]:hover:not(:disabled) {
+    border-color: var(--app-error-border);
+  }
+
+  /* TONE modifier — deliberately NOT the same thing as [aria-invalid] above.
+     A checkbox can carry an error TONE without the field being invalid: the
+     logs filter tints its "failed" status checkbox red because the thing being
+     filtered FOR is a failure, not because the user typed something wrong.
+     Expressing that as aria-invalid would tell assistive technology the field
+     has a validation error, which is a lie — hence a separate class.
+     Checked fill --app-error-border measures 4.74 dark / 4.83 winter against
+     --app-surface (3:1 bar); the tick on it, 5.36 / 4.62. */
+  .app-check--error:checked,
+  .app-check--error:indeterminate {
+    background-color: var(--app-error-border);
+    border-color: var(--app-error-border);
+  }
+
+  .app-check--error:hover:not(:disabled) {
+    border-color: var(--app-error-border);
+  }
+
+  /* UNCHECKED error tone keeps its edge on hover via the rule above, but a
+     CHECKED one also has a FILL to defend, and that rule sets no
+     background-color — so the red fill was still being replaced by
+     --app-surface-hover, leaving the tick on nearly its own colour. Mirrors
+     the --app-cta-hover treatment: the tone darkens on hover rather than
+     flattening. --app-error-hover fill on --app-surface-hover measures
+     3.21 / 5.74, tick(--app-background) on it 4.18 / 6.18. */
+  .app-check--error:checked:hover:not(:disabled),
+  .app-check--error:indeterminate:hover:not(:disabled) {
+    background-color: var(--app-error-hover);
+    border-color: var(--app-error-hover);
+  }
+
+  /* Toggle / switch. The track's own fill (--app-surface-active) is only
+     1.47 / 1.23 against the page, so the BORDER is what satisfies 1.4.11 —
+     --app-border-strong measures 4.31 / 4.39 on the track. */
+  .app-toggle {
+    appearance: none;
+    -webkit-appearance: none;
+    flex: none;
+    position: relative;
+    width: 40px;
+    height: 22px;
+    margin: 0;
+    border-radius: var(--app-radius-pill);
+    background-color: var(--app-surface-active);
+    border: 1px solid var(--app-border-strong);
+    cursor: pointer;
+    transition:
+      background-color var(--transition-normal) ease,
+      border-color var(--transition-normal) ease;
+  }
+
+  .app-toggle::after {
+    content: "";
+    position: absolute;
+    left: 2px;
+    top: 2px;
+    width: 16px;
+    height: 16px;
+    border-radius: var(--app-radius-pill);
+    background-color: var(--app-text-secondary);
+    transition:
+      transform var(--transition-normal) ease,
+      background-color var(--transition-normal) ease;
+  }
+
+  .app-toggle:hover:not(:disabled) { border-color: var(--app-border-hover); }
+
+  .app-toggle:checked {
+    background-color: var(--app-cta);
+    border-color: var(--app-cta);
+  }
+
+  .app-toggle:checked::after {
+    transform: translateX(18px);
+    background-color: var(--app-background);
+  }
+
+  /* Disabled for the choice family — a checkbox had NO disabled styling at
+     all on `main` (BASE_CHECKBOX_CLASSES carried no `disabled:` pair, unlike
+     the text inputs beside it). The edge stays on --app-neutral-border rather
+     than dropping to --app-border, which would erase it (deviation 2). */
+  .app-check:disabled,
+  .app-radio:disabled,
+  .app-toggle:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    border-color: var(--app-neutral-border);
+  }
+}
+
+/* ============================================================
+   The app's confirmation dialog (YATFA-6487)
+   ------------------------------------------------------------
+   The replacement chrome for the browser's native `confirm()`. The behaviour
+   lives in `app/javascript/utils/confirm_dialog.js`; this is only its skin.
+
+   WHY IT LOOKS LIKE THIS. Every value below is an `--app-*` token, so the
+   dialog inherits both themes with no `[data-theme="winter"]` block of its
+   own — the tokens already flip. That is also what makes it cheap for the
+   roadmap's slice-4 modal atomic to absorb: there is no bespoke palette here
+   to reconcile, only the shared one.
+
+   NOT `@layer components`, deliberately — and this is the OPPOSITE choice
+   from the forms layer above. The forms layer is a floor a call site may
+   override with a utility. This dialog has no call sites: it is built in JS
+   and appended to <body>, so nothing can ever put a utility on it. Leaving it
+   unlayered keeps it above the utility layer and out of reach of a stray
+   global that would otherwise land on a bare `dialog` element.
+
+   MEASURED CONTRAST (dark / winter), against this panel's own fill
+   (--app-surface-raised), not against the page:
+     --app-text        (heading)            11.61 / 14.48
+     --app-text-secondary (message)          5.71 /  6.92
+     --app-neutral-border (panel + cancel edge)
+                                             3.07 /  3.16   >= 3:1 (1.4.11)
+   The confirm button's label is --app-solid-label on --app-error, which is
+   the same solid pairing the destructive ButtonComponent variant already
+   ships and is measured there.
+
+   THE CONFIRM BUTTON IS THE ERROR COLOR because everything routed through
+   this dialog is destructive or irreversible — that is the entire reason a
+   confirm exists at the call site. It is NOT the CTA green: agreeing here is
+   not the safe choice, and colouring it as though it were is the styling
+   version of the same mistake trap 4 warns about behaviourally.
+
+   FOCUS is the global `:focus-visible` outline and nothing else — no ring is
+   re-invented here (see the YATFA-5916 note above). Motion uses the
+   `--transition-*` tokens and so is neutralised by the `prefers-reduced-
+   motion` block; the panel is not transformed at rest, so a reduced-motion
+   user gets the dialog instantly rather than a broken half-animation.
+   ============================================================ */
+.app-confirm {
+  /* The element is `display: none` until open — the native `[open]` behaviour
+     — so these only apply once `showModal()` has run. `margin: auto` is what
+     centers a top-layer dialog; the fixed inset is for the fallback path,
+     where the element is NOT in the top layer and would otherwise sit in the
+     document flow at the bottom of <body>. */
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--app-text);
+  font-family: var(--font-family);
+  max-width: min(32rem, calc(100vw - 2rem));
+  width: 100%;
+  margin: auto;
+  overflow: visible;
+}
+
+/* The scrim. `--app-overlay` is the token the app already reserves for a
+   modal backdrop, so this dialog dims the page exactly as the others do. */
+.app-confirm::backdrop {
+  background-color: var(--app-overlay);
+}
+
+/* FALLBACK POSITIONING ONLY. Where `showModal()` is unavailable the element
+   is opened with a bare `open` attribute, which puts it in normal flow with
+   no backdrop and no top layer. Positioning it explicitly keeps it visible
+   and centered rather than stranded below the page content. A real
+   `showModal()` puts the element in the top layer, where `position: fixed`
+   is inert, so this costs the modal path nothing. */
+.app-confirm[open] {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  max-width: none;
+  background-color: var(--app-overlay);
+}
+
+.app-confirm__panel {
+  width: 100%;
+  max-width: min(32rem, calc(100vw - 2rem));
+  padding: 20px;
+  border-radius: 12px;
+  background-color: var(--app-surface-raised);
+  border: 1px solid var(--app-neutral-border);
+  box-shadow: var(--app-shadow);
+  text-align: left;
+}
+
+.app-confirm__heading {
+  margin: 0 0 8px;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--app-text);
+}
+
+/* THE CALLER'S STRING, and the only element here that carries text the app
+   did not write. `white-space: pre-line` preserves any newline a call site
+   put in its message rather than collapsing it, and `overflow-wrap` keeps a
+   long unbroken token (a branch name, an id) inside the panel instead of
+   widening it. Neither alters the text — see the verbatim note in the JS. */
+.app-confirm__message {
+  margin: 0 0 20px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--app-text-secondary);
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.app-confirm__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.app-confirm__button {
+  min-height: var(--app-control-h-md);
+  padding: 0 16px;
+  border-radius: var(--app-radius-control);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    background-color var(--transition-fast) ease,
+    border-color var(--transition-fast) ease,
+    color var(--transition-fast) ease;
+}
+
+/* CANCEL IS THE QUIET ONE but it is NOT a bare link: it is the safe exit from
+   a destructive prompt, so it keeps a real edge and a real hit area. */
+.app-confirm__button--cancel {
+  color: var(--app-text);
+  background-color: var(--app-surface);
+  border: 1px solid var(--app-neutral-border);
+}
+
+.app-confirm__button--cancel:hover {
+  background-color: var(--app-surface-hover);
+  border-color: var(--app-border-hover);
+}
+
+.app-confirm__button--confirm {
+  color: var(--app-solid-label);
+  background-color: var(--app-error);
+  border: 1px solid var(--app-error);
+}
+
+/* ============================================================
+   APP MODAL (YATFA-6562, UI kit slice 4)
+   The generic overlay-panel counterpart of .app-confirm: a native
+   <dialog> whose panel paints from the app-* tokens instead of
+   daisyUI's base-100. Ported from the .app-confirm shape rather
+   than designed anew: same scrim token, same [open] fallback, same
+   panel recipe (raised surface + neutral border + app shadow).
+   Differences from .app-confirm are deliberate: no width is imposed
+   on the dialog — the panel carries the reference cap
+   min(32rem, calc(100vw - 2rem)) by default, and the caller widens it
+   via the --wide modifier (gallery viewer), NOT via a Tailwind
+   `max-w-*` utility: this block is unlayered, and an unlayered rule
+   beats any `@layer utilities` rule whatever its specificity (see the
+   layering notes above), so `max-w-4xl` on the panel would be inert.
+   No heading/message/actions sub-elements are provided; content is the
+   caller's own markup. Backdrop click-to-close is the caller's
+   Stimulus responsibility (`closeOnBackdrop`), not the scrim's —
+   the scrim is styled only.
+   ============================================================ */
+.app-modal {
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--app-text);
+  font-family: var(--font-family);
+  margin: auto;
+  overflow: visible;
+}
+
+.app-modal::backdrop {
+  background-color: var(--app-overlay);
+}
+
+/* FALLBACK POSITIONING ONLY — mirrors .app-confirm[open]: without
+   showModal() the dialog is in normal flow; fix it, center it, and
+   scrim it so it stays visible. A real showModal() makes this inert. */
+.app-modal[open] {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  max-width: none;
+  background-color: var(--app-overlay);
+}
+
+.app-modal__panel {
+  position: relative; /* above the .app-modal__backdrop close-form */
+  z-index: 1;
+  width: 100%;
+  padding: 20px;
+  border-radius: 12px;
+  background-color: var(--app-surface-raised);
+  border: 1px solid var(--app-neutral-border);
+  box-shadow: var(--app-shadow);
+  text-align: left;
+  margin: 0 1rem;
+  max-width: min(32rem, calc(100vw - 2rem)); /* reference cap, mirrors .app-confirm__panel */
+}
+
+/* Wide variant for callers that need more room (gallery viewer):
+   max-w-4xl = 56rem, kept as a modifier because this block is
+   unlayered and would beat any Tailwind max-w-* utility. */
+.app-modal__panel--wide {
+  max-width: min(56rem, calc(100vw - 2rem));
+}
+
+.app-modal__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+/* The close-form: with daisyUI gone, this form is the click-to-close
+   scrim INSIDE the dialog (method="dialog" submits and closes it
+   natively). Absolute inset 0 makes it cover the whole dialog box so
+   a click anywhere outside the panel closes the modal; the button is
+   visually hidden but stays focusable/activatable for keyboard users.
+   The panel sits above it via z-index so its own controls still work. */
+.app-modal__backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border: none;
+  background: transparent;
+  padding: 0;
+  margin: 0;
+  cursor: default;
+}
+
+.app-modal__backdrop > button {
+  appearance: none;
+  border: none;
+  background: transparent;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  font-size: 0;
+  color: transparent;
+  cursor: default;
+}
+
+.app-confirm__button--confirm:hover {
+  background-color: var(--app-error-solid-hover);
+  border-color: var(--app-error-solid-hover);
+}
+
+/* ============================================================
+   Spinner — UI-kit slice 4 final atomic (YATFA-6516)
+
+   ONE definition replacing the three hand-rolled inline
+   `animate-spin` SVGs (icon_builder.rb "running" glyph at 12px,
+   agent_logs/_log_entry.html.erb "Running" badge at 12px,
+   dashboard/logs.html.erb footer at 16px). Those three carried
+   per-site geometry drift (12/12/16px) and NONE had any
+   `prefers-reduced-motion` accommodation.
+
+   The visual language is the reference render's (YATFA-5725
+   ui_kit.css): a CSS ring, not an SVG — 25%-opacity currentColor
+   trough with a full-currentColor top arc, so it is legible on any
+   surface BY CONSTRUCTION (no per-site colour decision, no contrast
+   ratio to assert). Size modifiers pin the geometry the three sites
+   were drifting on: --sm = 12px/2px (badge-adjacent glyphs), default
+   = 16px/2px, --lg = 28px/3px.
+
+   The `k-spin` keyframes rotate to 360deg. Reduced motion: the
+   global block above neutralises ALL animation to 0.01ms !important;
+   the carve-out below (declared later, so it wins the tie) SLOWS the
+   spinner to 2400ms instead of removing the motion entirely — a
+   busy indication that stops moving reads as "stuck", not "calm".
+   ============================================================ */
+@layer components {
+  /* Loading / busy — a state the button has never had (YATFA-6532).
+     Re-hosted verbatim from the reference ui_kit.css on the same
+     conventions as the spinner block below it. */
+  .k-btn-loading { position: relative; pointer-events: none; }
+  .k-btn-loading .k-btn-label { opacity: .55; }
+  .k-btn-loading .k-spinner { color: currentColor; }
+
+  .k-spinner {
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    flex: none;
+    border: 2px solid color-mix(in srgb, currentColor 25%, transparent);
+    border-top-color: currentColor;
+    border-radius: var(--app-radius-pill);
+    animation: k-spin 700ms linear infinite;
+  }
+
+  .k-spinner--sm {
+    width: 12px;
+    height: 12px;
+    border-width: 2px;
+  }
+
+  .k-spinner--lg {
+    width: 28px;
+    height: 28px;
+    border-width: 3px;
+  }
+}
+
+/* ============================================================
+   Tooltip — `.k-tt` UI-kit slice 4 atomic (YATFA-6589)
+
+   ONE definition replacing the two hand-rolled overlays: the 5
+   daisyUI `tooltip`/`data-tip` sites the ticket kanban cards
+   used to carry (daisyUI's SECOND palette on the page — see
+   YATFA-4540's duplication complaint) and, conditionally, the
+   chart tooltip
+   below (see the .chart-column block for why it stays).
+
+   The visual language is the reference render's (YATFA-5725
+   ui_kit.css ~511-540) — LANGUAGE, not a hex contract: a bubble
+   absolutely positioned ABOVE its trigger, token surface
+   (--app-surface-raised fill, --app-neutral-border edge,
+   --app-text label, --app-shadow lift), centered with a small
+   arrow, fading over --transition-fast. Measured contrast
+   (spec/components/tooltip_component_spec.rb): fill vs card
+   backdrop and edge vs fill both ≥3:1 in BOTH themes.
+
+   REVEAL — plain :hover AND :focus-within, on purpose. The same
+   constraint as the YATFA-5319 chart tooltip applies here: a
+   Tailwind `hover:`/`group-hover:` variant is wrapped in
+   `@media (hover: hover)` and so is dead in a headless browser
+   and on touch. These are plain CSS pseudo-class rules — no media
+   query anywhere in this block — pointer-agnostic and testable.
+   :focus-within means keyboard focus on anything inside the
+   wrapper (the badge, a link) reveals the bubble too.
+   ============================================================ */
+@layer components {
+.k-tt {
+  position: relative;
+  display: inline-flex;
+}
+
+.k-tt-bubble {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 3px 8px;
+  border-radius: var(--app-radius-control);
+  border: 1px solid var(--app-neutral-border);
+  background-color: var(--app-surface-raised);
+  color: var(--app-text);
+  font-size: 12px;
+  line-height: 1.35;
+  white-space: nowrap;
+  box-shadow: var(--app-shadow);
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity var(--transition-fast) ease, visibility var(--transition-fast) ease;
+  z-index: 20;
+}
+
+/* Arrow — fill and edge both the bubble's own tokens, so the
+   3:1 edge measurement covers it by construction. */
+.k-tt-bubble::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  margin-left: -5px;
+  border: 5px solid transparent;
+  border-top-color: var(--app-surface-raised);
+}
+
+.k-tt:hover .k-tt-bubble,
+.k-tt:focus-within .k-tt-bubble {
+  opacity: 1;
+  visibility: visible;
+}
+
+/* Start-anchored variant — from the reference kit: a bubble wider
+   than a narrow trigger would center itself off the container's
+   left edge. The bubble's caller-facing class (see
+   UI::TooltipComponent#bubble_attributes) composes with it. */
+.k-tt--start .k-tt-bubble {
+  left: 0;
+  transform: none;
+}
+.k-tt--start .k-tt-bubble::after {
+  left: 12px;
+}
+}
+
+@keyframes k-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .k-spinner {
+    animation-duration: 2400ms !important;
+    animation-iteration-count: infinite !important;
+  }
+}
