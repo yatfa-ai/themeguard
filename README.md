@@ -3,11 +3,9 @@
 > ESLint for your colour variables. Reads the CSS **source**, not the rendered page, and audits how a
 > project's colour tokens are *organised* — not whether text passes contrast.
 
-> **Status: library only, no CLI yet.** This repository holds the README, the licence, the npm
-> placeholder (`0.0.2`) and the library — a CSS custom-property **resolver**, the **colour math core**,
-> and the **three rules** that judge their output, with tests. There is no CLI and the package declares
-> no entry point or bin, so installing it gets you source, not a command. Do not install it expecting to
-> lint anything from a terminal yet.
+> **Status: 0.1.0 — one command, and a library.** `themeguard <file.css>` audits a stylesheet from a
+> terminal, and the same three rules are importable as functions. The package ships compiled output
+> (`dist/`); the calibration fixture and the tests stay in this repository and out of the tarball.
 
 ## The three questions
 
@@ -40,11 +38,79 @@ the source names is lost.
 
 ## Install
 
-Not yet. When there is something to run:
-
 ```bash
 npm install --save-dev themeguard
 ```
+
+## Usage
+
+One command, zero options — point it at a CSS file.
+
+```bash
+npx themeguard path/to/application.css
+```
+
+Run over this repository's own calibration fixture (a real 97 KB Tailwind stylesheet with two themes,
+vendored at `tests/fixtures/application.tailwind.css`), it prints:
+
+```
+themeguard — tests/fixtures/application.tailwind.css
+
+collision (11)
+  [collision] --app-border and --app-surface-raised both resolve to #1E293B in theme "root". They are separate roles, and theme "winter" declares them apart — so this theme is repainting one with the other.
+  [collision] --app-cta and --app-success both resolve to #22C55E in theme "root". They are separate roles, and theme "winter" declares them apart — so this theme is repainting one with the other.
+  … 9 more, across both themes
+
+dead-token (2)
+  [dead-token] --topbar-height is declared at :root:402 and no var() in this stylesheet references it.
+  [dead-token] --transition-slow is declared at :root:407 and no var() in this stylesheet references it.
+
+scale-collapse (2)
+  [scale-collapse] --app-accent-ink-hover is ΔL* 3.90 from --app-accent-ink in theme "root" — under the 4 needed for a visible step, so the hover state is not distinguishable from the resting one.
+  [scale-collapse] --app-accent-ink-hover is ΔL* 3.45 from --app-accent-ink in theme "winter" — under the 4 needed for a visible step, so the hover state is not distinguishable from the resting one.
+
+skipped (0)
+  nothing skipped — every pair rule 3 derived was measurable.
+
+15 findings: 11 collision, 2 dead-token, 2 scale-collapse.
+```
+
+Two things in that output are deliberate and worth reading.
+
+**All three rule headings print even at zero.** A rule that reports nothing and a rule that did not run
+look identical if the heading is omitted, and "nothing here" reads as a pass.
+
+**`skipped` is a section, not a silence.** A pair rule 3 could not measure — a translucent member has no
+lightness until it is composited, and themeguard never invents a backdrop — is *unmeasured*, which is not
+the same claim as *clean*. Those pairs are counted and named, and they do **not** change the exit code:
+they are not findings.
+
+### Exit codes
+
+| Code | Meaning |
+|---|---|
+| `0` | The audit ran and reported nothing. |
+| `1` | The audit ran and reported findings. |
+| `2` | The audit did not run — bad usage, or the file could not be read. |
+
+`1` and `2` are kept apart on purpose: in a pipeline or a pre-commit hook the number is all a caller has,
+and a real finding must never be confusable with a typo in the path — nor with a clean stylesheet.
+
+### As a library
+
+```ts
+import { readFileSync } from "node:fs";
+import { resolveCss, audit } from "themeguard";
+
+const report = audit(resolveCss(readFileSync("application.css", "utf8")));
+for (const finding of report.findings) {
+  console.log(`[${finding.rule}] ${finding.message}`);
+}
+console.log(report.countsByRule); // { collision: 11, "dead-token": 2, "scale-collapse": 2 }
+```
+
+Types ship with the package. Every finding carries the `evidence` behind it, so a verdict can be checked
+rather than taken.
 
 ## Development
 
@@ -52,7 +118,13 @@ npm install --save-dev themeguard
 npm install
 npm test        # vitest
 npm run typecheck
+npm run build   # tsc -p tsconfig.build.json → dist/
 ```
+
+The build has its own config on purpose. `tsconfig.json` is the *checking* config — `noEmit: true`, and
+it includes `tests/` — so passing `--outDir` to it emits nothing at all, silently. `tsconfig.build.json`
+sets `noEmit: false`, `rootDir: "src"` (without it the output nests under `dist/src/` and the manifest's
+`bin` path is a lie) and includes `src` only.
 
 The library lives in `src/`, in two stages that are deliberately kept apart — the lower one produces
 facts and passes no judgement, the upper one judges those facts and nothing else:
@@ -64,6 +136,7 @@ facts and passes no judgement, the upper one judges those facts and nothing else
 | `src/color.ts` | Colour parsing (hex 3/4/6/8, `rgb()`/`rgba()`, `hsl()`/`hsla()`, alpha throughout), WCAG relative luminance, CIE L\*, contrast ratio, source-over compositing. |
 | `src/audit.ts` | `audit(resolved)` — the three rules in one pass, returning findings tagged `collision`, `dead-token` or `scale-collapse`. |
 | `src/rules/` | One module per question. Each docstring carries its judgement heuristics and, more usefully, what it deliberately does **not** report. |
+| `src/cli.ts` | The command. I/O and presentation over `audit()` — no rule, no heuristic and no judgement of its own. |
 
 ```ts
 import { resolveCss, audit } from "themeguard";

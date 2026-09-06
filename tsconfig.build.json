@@ -1,0 +1,27 @@
+{
+  "//": [
+    "The BUILD config, separate from tsconfig.json on purpose.",
+    "",
+    "tsconfig.json is the checking config: `noEmit: true`, and it includes `tests`",
+    "so the suite is typechecked too. Passing `--outDir` to that config produces",
+    "NOTHING — `noEmit: true` silently swallows the emit, and the failure surfaces",
+    "much later as ERR_MODULE_NOT_FOUND, far from its cause. And with no `rootDir`",
+    "the output nests under `src/`, so `dist/cli.js` would actually be at",
+    "`dist/src/cli.js` and the manifest's `bin` path would be a lie.",
+    "",
+    "So the build gets its own config rather than a flag: `include` is src only",
+    "(tests must not ship), `rootDir` is src so `dist/` mirrors it flat, and",
+    "declarations are emitted because the package's `exports` map publishes types."
+  ],
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "rootDir": "src",
+    "outDir": "dist",
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "types": ["node"]
+  },
+  "include": ["src"]
+}

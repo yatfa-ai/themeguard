@@ -1,6 +1,6 @@
 {
   "name": "themeguard",
-  "version": "0.0.2",
+  "version": "0.1.0",
   "description": "Audits a project's CSS colour variables: value collisions between roles, dead tokens, and ramps that collapse between themes.",
   "license": "MIT",
   "homepage": "https://github.com/yatfa-ai/themeguard",
@@ -25,13 +25,33 @@
   },
   "scripts": {
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "build": "tsc -p tsconfig.build.json",
+    "prepublishOnly": "npm run typecheck && npm test && npm run build"
   },
-  "//": "0.0.2 is still a name-reservation placeholder. It ships the foundation library source and its tests; no entry point, no bin and no build output are declared, so there is nothing here to install and run yet.",
+  "//": "0.1.0 is the first release with something to run: `themeguard <file.css>` audits a stylesheet from a terminal, and the library is importable via the exports map. The tarball ships dist/ only — src/ and tests/ (including the 96 KB vendored calibration fixture) are development assets and stay out of it.",
+  "bin": {
+    "themeguard": "dist/cli.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./cli": {
+      "types": "./dist/cli.d.ts",
+      "import": "./dist/cli.js",
+      "default": "./dist/cli.js"
+    },
+    "./package.json": "./package.json"
+  },
   "files": [
+    "dist/",
     "README.md",
-    "src/",
-    "tests/"
+    "LICENSE"
   ],
   "devDependencies": {
     "@types/node": "^20.19.20",
