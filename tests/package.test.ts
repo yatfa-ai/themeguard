@@ -162,7 +162,10 @@ describe("a project that has installed the package", () => {
     expect(result.stdout).toContain("collision (11)");
     expect(result.stdout).toContain("dead-token (2)");
     expect(result.stdout).toContain("scale-collapse (2)");
-    expect(result.stdout).toContain("15 findings: 11 collision, 2 dead-token, 2 scale-collapse.");
+    expect(result.stdout).toContain("family-consistency (7)");
+    expect(result.stdout).toContain(
+      "22 findings: 11 collision, 2 dead-token, 2 scale-collapse, 7 family-consistency.",
+    );
     expect(result.code).toBe(1);
   });
 
@@ -186,7 +189,7 @@ describe("a project that has installed the package", () => {
       ].join("\n"),
     );
     expect(sh(process.execPath, [script], consumer).trim()).toBe(
-      '{"collision":11,"dead-token":2,"scale-collapse":2}',
+      '{"collision":11,"dead-token":2,"scale-collapse":2,"family-consistency":7}',
     );
   });
 
@@ -242,7 +245,9 @@ describe("the README, which is the tarball's only prose", () => {
 
   it("documents the command, the exit codes and the worked census", () => {
     expect(readme).toContain("npx themeguard path/to/application.css");
-    expect(readme).toContain("15 findings: 11 collision, 2 dead-token, 2 scale-collapse.");
+    expect(readme).toContain(
+      "22 findings: 11 collision, 2 dead-token, 2 scale-collapse, 7 family-consistency.",
+    );
     expect(readme).toMatch(/\| `0` \| The audit ran and reported nothing\. \|/);
     expect(readme).toMatch(/\| `1` \| The audit ran and reported findings\. \|/);
     expect(readme).toMatch(/\| `2` \| The audit did not run/);

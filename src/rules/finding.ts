@@ -8,14 +8,20 @@
  * one.
  */
 
-/** Which of the three questions a finding answers. */
+/** Which of the four questions a finding answers. */
 export type RuleId =
   /** Two token names that must differ hold byte-identical colours. */
   | "collision"
   /** A token is declared and referenced by no `var()` anywhere. */
   | "dead-token"
   /** Two tokens meant to read apart are closer than a visible step in L*. */
-  | "scale-collapse";
+  | "scale-collapse"
+  /**
+   * A theme inherits a token whose family the theme's own declarations tune —
+   * at least one sibling sharing the token's declared family head is
+   * overridden, so the un-restated member silently keeps the base value.
+   */
+  | "family-consistency";
 
 export interface Finding {
   readonly rule: RuleId;
@@ -46,6 +52,7 @@ export function sortFindings(findings: readonly Finding[]): Finding[] {
     collision: 0,
     "dead-token": 1,
     "scale-collapse": 2,
+    "family-consistency": 3,
   };
   return [...findings].sort(
     (a, b) =>

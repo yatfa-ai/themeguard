@@ -10,7 +10,7 @@
  * ── What it prints, and why in this shape ──────────────────────────────────
  * Findings are grouped by rule, each group headed by its COUNT, and every line
  * is the README's own `[rule] message` shape so a line pasted into an issue
- * still says which question it answers. All three rule headings are printed
+ * still says which question it answers. All four rule headings are printed
  * even at zero, because a rule that reports nothing and a rule that did not run
  * look identical if the heading is omitted — and "no findings" reads as a pass.
  *
@@ -19,6 +19,19 @@
  * is composited, and themeguard never invents a backdrop) is silence, and
  * silence reads exactly like a clean result. The library goes to the trouble of
  * counting it; a CLI that swallowed it would undo that.
+ *
+ * `coverage` is printed under the same precedent. It is the fact inventory rule
+ * 4 is measured over — per theme, every base-theme token marked overridden or
+ * inherited, with the colour/non-colour split of the inherited set — and it is
+ * INFORMATIONAL by construction: inherited is normal (theme-independent tokens
+ * have no override by design), so the section is counted, named, printed even
+ * at zero, and never moves the exit code. The mixed shape the inventory makes
+ * visible is judged by rule 4, whose findings DO count.
+ *
+ * The split partitions the set it headlines: a base token whose `var()` chain
+ * does not resolve in a theme — or cycles — is neither colour nor non-colour,
+ * so those kinds are appended to the parenthetical when present rather than
+ * vanishing from the count.
  *
  * ── The exit contract, and why findings are not code 2 ─────────────────────
  * Three distinct codes, because a caller in a shell — a pipeline, a
@@ -39,6 +52,7 @@ import { readFileSync, realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { audit } from "./audit.js";
 import { resolveCss } from "./resolve.js";
+import type { TokenKind } from "./resolve.js";
 import type { RuleId } from "./rules/finding.js";
 
 /** The audit ran and reported nothing. */
@@ -59,7 +73,12 @@ export interface CliIo {
 export const USAGE = "usage: themeguard <file.css>";
 
 /** The order groups are printed in — the library's own reading order. */
-const RULE_ORDER: readonly RuleId[] = ["collision", "dead-token", "scale-collapse"];
+const RULE_ORDER: readonly RuleId[] = [
+  "collision",
+  "dead-token",
+  "scale-collapse",
+  "family-consistency",
+];
 
 /**
  * Run the command over `args` (the arguments AFTER the program name) and return
@@ -118,6 +137,47 @@ export function formatReport(
       lines.push(
         `  [skipped] ${pair.state} against ${pair.base} in theme "${pair.theme}": ${pair.reason}`,
       );
+    }
+  }
+  lines.push("");
+
+  // Coverage under the skipped precedent: the fact inventory rule 4 is measured
+  // over, counted, named, printed even at zero, and never an exit code. An
+  // inherited token is normal — theme-independent tokens have no override by
+  // design — so the listing reports what each theme receives and stops; the
+  // mixed shape inside it is judged by rule 4, whose findings DO count.
+  const themeCount = report.coverage.length;
+  const baseCount = report.coverage[0]?.baseTokens ?? 0;
+  lines.push(
+    `coverage (${themeCount} ${themeCount === 1 ? "theme" : "themes"}, ${baseCount} base tokens)`,
+  );
+  for (const theme of report.coverage) {
+    const byKind = (kind: TokenKind) =>
+      theme.inherited.filter((e) => e.kind === kind).length;
+    const color = byKind("color");
+    const nonColor = byKind("non-color");
+    if (theme.inherited.length === 0) {
+      lines.push(`  ${theme.theme}: declares all ${theme.baseTokens} base tokens, inherits 0.`);
+    } else {
+      // The split must partition the set it headlines. Colour and non-colour
+      // are the ordinary two, but a base token's `var()` chain can also fail
+      // to resolve in a theme (`unresolved`) or come back around (`cycle`) —
+      // kinds that would otherwise vanish from both buckets and headline
+      // `0 color / 0 non-color` against a non-zero total. They are appended
+      // when present, so the parenthetical always sums to the inherited
+      // count; when none are present the two-segment form stands unchanged.
+      const segments = [`${color} color`, `${nonColor} non-color`];
+      for (const kind of ["unresolved", "cycle"] as const) {
+        const count = byKind(kind);
+        if (count > 0) segments.push(`${count} ${kind}`);
+      }
+      lines.push(
+        `  ${theme.theme}: declares ${theme.overridden.length} of ${theme.baseTokens} base tokens, ` +
+          `inherits ${theme.inherited.length} (${segments.join(" / ")}).`,
+      );
+      for (const entry of theme.inherited) {
+        lines.push(`    [inherited] ${entry.name} (${entry.kind})`);
+      }
     }
   }
   lines.push("");

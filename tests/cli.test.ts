@@ -108,19 +108,25 @@ afterAll(() => rmSync(tmp, { recursive: true, force: true }));
 describe("themeguard <file.css> over the vendored calibration fixture", () => {
   const result = run(FIXTURE_PATH);
 
-  it("prints the pinned census — 11 collision, 2 dead-token, 2 scale-collapse", () => {
+  it("prints the pinned census — 11 collision, 2 dead-token, 2 scale-collapse, 7 family-consistency", () => {
     expect(result.stdout).toContain("collision (11)");
     expect(result.stdout).toContain("dead-token (2)");
     expect(result.stdout).toContain("scale-collapse (2)");
-    expect(result.stdout).toContain("15 findings: 11 collision, 2 dead-token, 2 scale-collapse.");
+    expect(result.stdout).toContain("family-consistency (7)");
+    expect(result.stdout).toContain(
+      "22 findings: 11 collision, 2 dead-token, 2 scale-collapse, 7 family-consistency.",
+    );
   });
 
-  it("prints one `[rule] message` line per finding, and 15 of them in total", () => {
-    const lines = result.out.filter((l) => /^ {2}\[(collision|dead-token|scale-collapse)\]/.test(l));
-    expect(lines).toHaveLength(15);
+  it("prints one `[rule] message` line per finding, and 22 of them in total", () => {
+    const lines = result.out.filter((l) =>
+      /^ {2}\[(collision|dead-token|scale-collapse|family-consistency)\]/.test(l),
+    );
+    expect(lines).toHaveLength(22);
     expect(lines.filter((l) => l.startsWith("  [collision]"))).toHaveLength(11);
     expect(lines.filter((l) => l.startsWith("  [dead-token]"))).toHaveLength(2);
     expect(lines.filter((l) => l.startsWith("  [scale-collapse]"))).toHaveLength(2);
+    expect(lines.filter((l) => l.startsWith("  [family-consistency]"))).toHaveLength(7);
   });
 
   it("names the two famous collisions and both dead tokens, with their measurements", () => {
@@ -147,10 +153,102 @@ describe("a stylesheet with nothing to report", () => {
     expect(result.stderr).toBe("");
   });
 
-  it("still prints all three rule headings at zero, so a silent rule is visible", () => {
+  it("still prints all four rule headings at zero, so a silent rule is visible", () => {
     expect(result.stdout).toContain("collision (0)");
     expect(result.stdout).toContain("dead-token (0)");
     expect(result.stdout).toContain("scale-collapse (0)");
+    expect(result.stdout).toContain("family-consistency (0)");
+  });
+});
+
+/**
+ * The coverage section — informational by construction, printed under the same
+ * precedent as `skipped`: counted, named, headline even at zero, and NEVER an
+ * exit code. Inherited is normal — theme-independent tokens have no override by
+ * design — so a stylesheet whose only story is inheritance must exit 0.
+ */
+describe("the coverage section — facts, counted and named, never an exit code", () => {
+  const result = run(FIXTURE_PATH);
+
+  it("prints the headline and both themes' inventories over the fixture", () => {
+    expect(result.stdout).toContain("coverage (2 themes, 73 base tokens)");
+    expect(result.stdout).toContain("root: declares all 73 base tokens, inherits 0.");
+    expect(result.stdout).toContain(
+      "winter: declares 51 of 73 base tokens, inherits 22 (8 color / 14 non-color).",
+    );
+  });
+
+  it("names every inherited token with its kind — 22 of them", () => {
+    const inherited = result.out.filter((l) => l.startsWith("    [inherited] "));
+    expect(inherited).toHaveLength(22);
+    expect(inherited.filter((l) => l.endsWith("(color)"))).toHaveLength(8);
+    expect(inherited.filter((l) => l.endsWith("(non-color)"))).toHaveLength(14);
+    // A colour the theme silently receives, and a length it legitimately does:
+    // both are the listing's business, neither is a finding.
+    expect(result.stdout).toContain("    [inherited] --app-success (color)");
+    expect(result.stdout).toContain("    [inherited] --font-family (non-color)");
+  });
+
+  it("prints the family-consistency section with its seven findings", () => {
+    expect(result.stdout).toContain('family-consistency (7)');
+    expect(result.stdout).toContain('--app-success is inherited from :root in theme "winter"');
+  });
+
+  it("still headlines the section when a theme inherits nothing", () => {
+    const single = run(CLEAN_PATH);
+    expect(single.stdout).toContain("coverage (1 theme, 3 base tokens)");
+    expect(single.stdout).toContain("root: declares all 3 base tokens, inherits 0.");
+  });
+
+  it("never moves the exit code — inheritance alone is a clean run", () => {
+    // A theme that inherits a wholly-inherited colour family (no tuning, no
+    // finding) beside an unrelated override: the coverage section has something
+    // to name, rule 4 has nothing to say, and the run exits 0.
+    const path = fixture(
+      "inherited-only.css",
+      `
+:root {
+  --tone: #22C55E;
+  --tone-soft: #86EFAC;
+  --ink: #101010;
+}
+
+[data-theme="night"] { --ink: #EEEEEE; }
+
+.x { background: var(--tone); }
+.badge { background: var(--tone-soft); color: var(--ink); }
+`,
+    );
+    const quiet = run(path);
+    expect(quiet.code).toBe(EXIT_OK);
+    expect(quiet.stdout).toContain("No findings.");
+    expect(quiet.stdout).toContain("family-consistency (0)");
+    // And the inventory is still on the record: night inherits both tone
+    // members whole, which is the listing's business, not a defect's.
+    expect(quiet.stdout).toContain("night: declares 1 of 3 base tokens, inherits 2");
+    expect(quiet.stdout).toContain("    [inherited] --tone (color)");
+    expect(quiet.stdout).toContain("    [inherited] --tone-soft (color)");
+  });
+
+  it("appends the no-value kinds to the split, so the parenthetical partitions the set", () => {
+    // A base token whose var() chain does not resolve in a theme is neither
+    // colour nor non-colour; a split that counted only those two headlines
+    // `0 color / 0 non-color` against a non-zero total — a census that does
+    // not close. The no-value kinds are appended when present, and absent
+    // from every ordinary split, which stays byte-identical.
+    const path = fixture(
+      "unresolved-inherited.css",
+      `
+:root { --tone: var(--brand-green); --tone-border: #16A34A; }
+[data-theme="night"] { --tone-border: #86EFAC; }
+.x { background: var(--tone); border: 1px solid var(--tone-border); }
+`,
+    );
+    const result = run(path);
+    expect(result.stdout).toContain(
+      "night: declares 1 of 2 base tokens, inherits 1 (0 color / 0 non-color / 1 unresolved).",
+    );
+    expect(result.stdout).toContain("    [inherited] --tone (unresolved)");
   });
 });
 
