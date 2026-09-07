@@ -771,6 +771,68 @@ describe("rule 4 — where the fixture cannot reach it (hand-written)", () => {
       expect(f.evidence.overriddenSiblings).toEqual(["--brand-extra-child"]);
     }
   });
+
+  it("omits resolvedValue from evidence when the inherited member's chain does not resolve", () => {
+    // THE NO-VALUE SHAPE. --tone's :root declaration is var(--brand-green),
+    // declared nowhere, so night's copy of --tone resolves to nothing and
+    // `resolvedValue` is null — but `Finding["evidence"]` is typed
+    // `string | number | readonly string[]`, and a null is no string. The
+    // finding is a declaration-PRESENCE fact and fires exactly as it would
+    // for a resolving member; its evidence OMITS the key rather than casting
+    // the null through it, `kind` names the no-value state, and the message
+    // says the chain does not resolve instead of printing "null".
+    // REVERT PROBE — restore `token.resolvedValue as string` and the
+    // in-contract assertions below fail on this stylesheet.
+    const css = `
+      :root { --tone: var(--brand-green); --tone-border: #16A34A; }
+      [data-theme="night"] { --tone-border: #86EFAC; }
+      .x { background: var(--tone); border: 1px solid var(--tone-border); }
+    `;
+    const sheet = audit(resolveCss(css));
+    const family = sheet.findings.filter((f) => f.rule === "family-consistency");
+    // The family IS tuned — night overrides --tone-border — so the presence
+    // fact stands; only the value courtesy is absent.
+    expect(family.map((f) => `${f.theme} ${f.tokens[0]}`)).toEqual(["night --tone"]);
+    const evidence = family[0]?.evidence as Record<string, unknown>;
+    expect(evidence.familyHead).toBe("--tone");
+    expect(evidence.inheritedValue).toBe("var(--brand-green)");
+    expect(evidence.kind).toBe("unresolved");
+    expect("resolvedValue" in evidence).toBe(false);
+    expect(evidence.resolvedValue).toBeUndefined();
+    expect(family[0]?.message).not.toContain("null");
+    expect(family[0]?.message).toContain("does not resolve");
+    // The siblings — the actual evidence — are untouched by the value's state.
+    expect(evidence.overriddenSiblings).toEqual(["--tone-border"]);
+    // And EVERY evidence value on this sheet sits inside the declared
+    // Finding["evidence"] contract — the assertion the cast used to violate.
+    for (const finding of sheet.findings) {
+      for (const value of Object.values(finding.evidence)) {
+        expect(
+          typeof value === "string" || typeof value === "number" || Array.isArray(value),
+        ).toBe(true);
+      }
+    }
+  });
+
+  it("treats a cyclic chain the same way — the other no-value kind", () => {
+    // A cycle resolves to null exactly as an unresolved chain does, so the
+    // evidence contract holds identically: no key, kind named, no "null" in
+    // the message. Pinned because a fix keyed on `kind === "unresolved"`
+    // alone would re-leak through `cycle`.
+    const css = `
+      :root { --a: var(--b); --b: var(--a); --a-border: #16A34A; }
+      [data-theme="night"] { --a-border: #86EFAC; }
+      .x { background: var(--a); border: 1px solid var(--a-border); }
+    `;
+    const sheet = audit(resolveCss(css));
+    const family = sheet.findings.filter((f) => f.rule === "family-consistency");
+    expect(family.map((f) => `${f.theme} ${f.tokens[0]}`)).toEqual(["night --a"]);
+    const evidence = family[0]?.evidence as Record<string, unknown>;
+    expect(evidence.kind).toBe("cycle");
+    expect("resolvedValue" in evidence).toBe(false);
+    expect(family[0]?.message).not.toContain("null");
+    expect(family[0]?.message).toContain("does not resolve");
+  });
 });
 
 /**
@@ -927,6 +989,23 @@ describe("the audit entry point", () => {
     for (const f of report.findings) {
       expect(f.tokens.length).toBeGreaterThan(0);
       for (const token of f.tokens) expect(f.message).toContain(token);
+    }
+  });
+
+  it("keeps every evidence value inside the declared Finding[\"evidence\"] contract", () => {
+    // The contract is `Record<string, string | number | readonly string[]>` —
+    // a rule that casts a null through it ships a runtime null to every
+    // consumer reading the declared type, exactly the defect the
+    // `family-consistency` rule's first draft had on an unresolved chain. The
+    // corpus here is the fixture's 22 findings; the no-value shapes themselves
+    // are pinned on hand-written stylesheets in rule 4's hand-written suite.
+    for (const f of report.findings) {
+      for (const [key, value] of Object.entries(f.evidence)) {
+        expect(
+          typeof value === "string" || typeof value === "number" || Array.isArray(value),
+          `${f.rule}/${f.tokens.join(",")} evidence.${key} is ${JSON.stringify(value)}`,
+        ).toBe(true);
+      }
     }
   });
 

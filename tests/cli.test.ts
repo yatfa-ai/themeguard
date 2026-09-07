@@ -229,6 +229,27 @@ describe("the coverage section — facts, counted and named, never an exit code"
     expect(quiet.stdout).toContain("    [inherited] --tone (color)");
     expect(quiet.stdout).toContain("    [inherited] --tone-soft (color)");
   });
+
+  it("appends the no-value kinds to the split, so the parenthetical partitions the set", () => {
+    // A base token whose var() chain does not resolve in a theme is neither
+    // colour nor non-colour; a split that counted only those two headlines
+    // `0 color / 0 non-color` against a non-zero total — a census that does
+    // not close. The no-value kinds are appended when present, and absent
+    // from every ordinary split, which stays byte-identical.
+    const path = fixture(
+      "unresolved-inherited.css",
+      `
+:root { --tone: var(--brand-green); --tone-border: #16A34A; }
+[data-theme="night"] { --tone-border: #86EFAC; }
+.x { background: var(--tone); border: 1px solid var(--tone-border); }
+`,
+    );
+    const result = run(path);
+    expect(result.stdout).toContain(
+      "night: declares 1 of 2 base tokens, inherits 1 (0 color / 0 non-color / 1 unresolved).",
+    );
+    expect(result.stdout).toContain("    [inherited] --tone (unresolved)");
+  });
 });
 
 describe("pairs rule 3 could not measure", () => {

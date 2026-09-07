@@ -27,7 +27,12 @@
  *      `--app-success` itself has tuned the family and silently kept the base
  *      value for the one member it did not restate. The overridden siblings
  *      are the evidence, and they travel with the finding so the verdict can
- *      be checked rather than taken.
+ *      be checked rather than taken. The resolved value rides along as a
+ *      courtesy when the member's chain resolves; when it does not, there is
+ *      no value to carry and the evidence omits the key — `resolvedValue` is
+ *      typed `string`, and a `null` is no string — while `kind` names the
+ *      no-value state on every finding, so an absent key reads as "nothing
+ *      resolves here" and never as a forgotten one.
  *
  * ── Why the family head is the hinge, and why it is read, never guessed ────
  * Family membership is {@link TokenNames.head}'s derivation, unchanged: a
@@ -176,21 +181,48 @@ export function familyConsistencyRule(
           resolved.token(n, theme)?.origin === "declared",
       );
       if (overriddenSiblings.length === 0) continue;
+      // The finding is a declaration-PRESENCE fact; the resolved value is a
+      // courtesy beside it, and a courtesy must not lie. `resolvedValue` is
+      // typed `string | null` — `null` when the chain does not resolve — and
+      // `Finding["evidence"]` is typed `string | number | readonly string[]`,
+      // so a cast would ship a runtime `null` through a `string` field to
+      // every consumer reading the declared type. When there is no value,
+      // there is no key: the evidence omits it, the message says the chain
+      // does not resolve, and `kind` rides on EVERY finding so the absence
+      // explains itself.
+      const valueClause =
+        token.resolvedValue === null
+          ? `its var() chain does not resolve in this theme`
+          : `resolving to ${token.resolvedValue}`;
       findings.push({
         rule: "family-consistency",
         theme,
         tokens: [token.name],
         message:
-          `${token.name} is inherited from :root in theme "${theme}" (resolving to ` +
-          `${token.resolvedValue}) while the same theme declares ` +
+          `${token.name} is inherited from :root in theme "${theme}" (${valueClause}) ` +
+          `while the same theme declares ` +
           `${overriddenSiblings.join(", ")} — the theme tunes this family, so ` +
           `the member it does not re-declare silently keeps the base value.`,
         evidence: {
           familyHead: head,
           /** The `:root` declaration's value, as written. */
           inheritedValue: token.declaredValue,
-          /** What the theme actually receives, after `var()` substitution. */
-          resolvedValue: token.resolvedValue as string,
+          /**
+           * What the theme's copy resolves to — colour, non-colour, or one of
+           * the two no-value kinds. Present on every finding, so a missing
+           * `resolvedValue` reads as "nothing resolves here", never as a
+           * forgotten one.
+           */
+          kind: token.kind,
+          /**
+           * What the theme actually receives, after `var()` substitution.
+           * Omitted when the chain does not resolve: the field is typed
+           * `string`, and `null` is no string. The absence is the honest
+           * form of "there is no value here".
+           */
+          ...(token.resolvedValue === null
+            ? {}
+            : { resolvedValue: token.resolvedValue }),
           /** The overridden family members cited as evidence, sorted. */
           overriddenSiblings,
         },
