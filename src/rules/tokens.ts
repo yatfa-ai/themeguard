@@ -3,7 +3,7 @@
  *
  * A design-token stylesheet encodes structure in its names — `--app-surface`,
  * `--app-surface-raised` and `--app-surface-hover` are one role and two
- * variants of it — and every one of the three rules needs that structure to
+ * variants of it — and every rule needs that structure to
  * avoid reporting a family's own internal arrangement as a defect.
  *
  * Nothing here parses names for their own sake. A prefix is only ever treated

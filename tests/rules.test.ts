@@ -2,6 +2,10 @@ import { describe, expect, it } from "vitest";
 import { lstar, type Color } from "../src/color.js";
 import { audit } from "../src/audit.js";
 import { resolveCss, type ResolvedStylesheet } from "../src/resolve.js";
+import {
+  coverageReport,
+  familyConsistencyRule,
+} from "../src/rules/coverage.js";
 import { collisionRule } from "../src/rules/collision.js";
 import { deadTokenRule } from "../src/rules/dead-token.js";
 import { scaleCollapseRule, VISIBLE_STEP_LSTAR } from "../src/rules/scale-collapse.js";
@@ -502,8 +506,346 @@ describe("rule 3 — translucency is never composited against an invented backdr
   });
 });
 
+/**
+ * Rule 4 — FAMILY CONSISTENCY, over the vendored fixture. The fixture's winter
+ * theme inherits 22 of the 73 base tokens; exactly 7 of them sit in families
+ * winter itself tunes, and those — and only those — are findings. The same
+ * stylesheet is also the home of the edge the predicate exists for:
+ * `--app-solid-label`, inherited, whose prefix neighbours are overridden but
+ * whose family head (`--app-solid`) is never declared.
+ */
+describe("rule 4 — family consistency, over the vendored fixture", () => {
+  const family = report.findings.filter((f) => f.rule === "family-consistency");
+
+  it("reports EXACTLY the seven mixed-family tokens, in winter, and no others", () => {
+    expect(family.map((f) => `${f.theme} ${f.tokens[0]}`).sort()).toEqual([
+      "winter --app-cta-solid-hover",
+      "winter --app-error",
+      "winter --app-error-solid-hover",
+      "winter --app-info",
+      "winter --app-success",
+      "winter --app-warning",
+      "winter --app-warning-solid-hover",
+    ]);
+    expect(report.countsByRule["family-consistency"]).toBe(7);
+  });
+
+  it("cites every overridden member of the family, and carries both readings of the value", () => {
+    const success = family.find((f) => f.tokens[0] === "--app-success");
+    expect(success?.theme).toBe("winter");
+    expect(success?.evidence.familyHead).toBe("--app-success");
+    expect(success?.evidence.overriddenSiblings).toEqual([
+      "--app-success-border",
+      "--app-success-on-surface",
+      "--app-success-soft",
+      "--app-success-surface",
+      "--app-success-toast-surface",
+    ]);
+    // What :root writes and what winter receives — the same here, both carried,
+    // because they need not be (a var() at :root resolves per theme).
+    expect(success?.evidence.inheritedValue).toBe("#22C55E");
+    expect(success?.evidence.resolvedValue).toBe("#22C55E");
+    // The message names the token, the value and the evidence.
+    expect(success?.message).toContain("--app-success");
+    expect(success?.message).toContain("#22C55E");
+    expect(success?.message).toContain("--app-success-border");
+  });
+
+  it("derives a transitively-headed member's family through its declared parent", () => {
+    // --app-cta-solid-hover's shortest declared prefix is --app-cta-solid, whose
+    // own head is --app-cta — so the family is cta's, not solid's, and the
+    // siblings are the cta tokens winter declares. The inherited member is
+    // never cited as its own sibling.
+    const cta = family.find((f) => f.tokens[0] === "--app-cta-solid-hover");
+    expect(cta?.evidence.familyHead).toBe("--app-cta");
+    expect(cta?.evidence.overriddenSiblings).toEqual(["--app-cta", "--app-cta-hover"]);
+  });
+
+  it("does NOT report --app-solid-label — its family head --app-solid is undeclared", () => {
+    // THE EDGE THE PREDICATE EXISTS FOR. --app-solid-label is inherited by
+    // winter, but the stylesheet never declares --app-solid (or any other
+    // member of an --app-solid family), so the label is its own head and the
+    // correct answer is the listing, not a finding: the declarations say
+    // nothing about a family there. (The sharper trap — an OVERRIDDEN prefix
+    // neighbour in a family whose head is undeclared — is the hand-written
+    // --ink-label case below; the live stylesheet this fixture calibrates for
+    // contains exactly that shape.) The correct finding set is 7, not 8.
+    expect(resolved.token("--app-solid-label", "winter")?.origin).toBe("inherited");
+    const names = new TokenNames(resolved);
+    expect(names.head("--app-solid-label")).toBe("--app-solid-label");
+    // No sibling EXISTS: the only --app-solid* name the stylesheet declares is
+    // the label itself (its alias aside).
+    const solidNames = [...names.declared].filter((n) => n.startsWith("--app-solid"));
+    expect(solidNames).toEqual(["--app-solid-label"]);
+    expect(family.some((f) => f.tokens.includes("--app-solid-label"))).toBe(false);
+  });
+
+  // REVERT PROBE — drop the sibling requirement (report every inherited token,
+  // or report on a shared prefix alone) and this fails: the theme-independent
+  // layout vocabulary becomes 14 findings the stylesheet never asked for.
+  it("reports ZERO findings for the wholly-inherited families — listing, not judgement", () => {
+    const wholly = [
+      "--app-focus-ring-width",
+      "--app-focus-ring-offset",
+      "--app-control-h-sm",
+      "--app-control-h-md",
+      "--app-control-h-lg",
+      "--app-radius-control",
+      "--app-radius-pill",
+      "--sidebar-width",
+      "--sidebar-collapsed-width",
+      "--topbar-height",
+      "--transition-fast",
+      "--transition-normal",
+      "--transition-slow",
+      "--font-family",
+    ];
+    for (const name of wholly) {
+      expect(resolved.absences.some((a) => a.theme === "winter" && a.name === name)).toBe(true);
+      expect(family.some((f) => f.tokens.includes(name))).toBe(false);
+    }
+    // 7 findings + 14 wholly-inherited + 1 undeclared-head = the 22 absences,
+    // so the census closes without a gap.
+    expect(wholly).toHaveLength(14);
+  });
+
+  it("never cites an @theme inline alias as evidence", () => {
+    const names = new TokenNames(resolved);
+    for (const f of family) {
+      for (const sibling of f.evidence.overriddenSiblings as readonly string[]) {
+        expect(names.isAlias(sibling)).toBe(false);
+      }
+    }
+  });
+});
+
+/**
+ * ── THE SHAPES THE FIXTURE CANNOT ISOLATE ────────────────────────────────────
+ *
+ * The fixture's 22 absences happen to hold every interesting case, but they
+ * arrive tangled together. These hand-written stylesheets hold one case each,
+ * so the predicate's parts can fail one at a time rather than blending into a
+ * count — the same discipline rule 1's hand-written suite follows.
+ */
+describe("rule 4 — where the fixture cannot reach it (hand-written)", () => {
+  // REVERT PROBE — make the predicate "inherited" simpliciter and this fails:
+  // four findings for a theme that says nothing about anything.
+  it("reports NOTHING when a theme inherits a family whole — the listing is the answer", () => {
+    const css = `
+      :root {
+        --ctl: #101010;
+        --ctl-sm: 32px;
+        --ctl-lg: 48px;
+        --radius-control: 8px;
+      }
+      [data-theme="night"] { --ink: #EEEEEE; }
+      .box { height: var(--ctl-sm); border-radius: var(--radius-control); }
+    `;
+    const sheet = audit(resolveCss(css));
+    expect(sheet.countsByRule["family-consistency"]).toBe(0);
+    // The facts stay on the record: night inherits every base token, and
+    // coverage names each one.
+    const night = sheet.coverage.find((t) => t.theme === "night");
+    expect(night?.overridden).toEqual([]);
+    expect(night?.inherited.map((e) => e.name)).toEqual([
+      "--ctl",
+      "--ctl-lg",
+      "--ctl-sm",
+      "--radius-control",
+    ]);
+  });
+
+  it("reports the mixed shape on a plain vocabulary, citing the siblings", () => {
+    const css = `
+      :root {
+        --brand: #3366CC;
+        --brand-soft: rgba(51, 102, 204, 0.15);
+        --brand-border: #99BBFF;
+        --brand-hover: #3568CE;
+      }
+      [data-theme="night"] {
+        --brand-soft: rgba(153, 187, 255, 0.12);
+        --brand-border: #223344;
+        --brand-hover: #4477DD;
+      }
+      .btn { background: var(--brand); border: 1px solid var(--brand-border); }
+      .btn:hover { background: var(--brand-hover); }
+    `;
+    const resolved = resolveCss(css);
+    const sheet = audit(resolved);
+    // The whole family tuned EXCEPT the base: night really does receive root's
+    // #3366CC for --brand while every sibling moved.
+    expect(resolved.token("--brand", "night")?.resolvedValue).toBe("#3366CC");
+    const family = sheet.findings.filter((f) => f.rule === "family-consistency");
+    expect(family.map((f) => `${f.theme} ${f.tokens[0]}`)).toEqual(["night --brand"]);
+    expect(family[0]?.evidence.familyHead).toBe("--brand");
+    expect(family[0]?.evidence.overriddenSiblings).toEqual([
+      "--brand-border",
+      "--brand-hover",
+      "--brand-soft",
+    ]);
+    expect(family[0]?.evidence.inheritedValue).toBe("#3366CC");
+  });
+
+  it("does NOT fire across an undeclared family head — and proves the stylesheet CAN fire", () => {
+    // --ink-label is inherited by night; --ink-hover is overridden by night and
+    // shares a prefix. But --ink is never declared, so each is its own head —
+    // different families, no evidence, no finding. The --tone family in the
+    // same stylesheet IS mixed, so the empty result for --ink-label is a
+    // discrimination and not a stylesheet the rule never fires on.
+    const css = `
+      :root {
+        --ink-label: #020617;
+        --ink-hover: #101010;
+        --tone: #22C55E;
+        --tone-border: #16A34A;
+      }
+      [data-theme="night"] { --ink-hover: #EEEEEE; --tone-border: #86EFAC; }
+      .x { color: var(--ink-label); border: 1px solid var(--tone-border); }
+      .x:hover { background: var(--ink-hover); }
+    `;
+    const sheet = audit(resolveCss(css));
+    const family = sheet.findings.filter((f) => f.rule === "family-consistency");
+    expect(family.map((f) => `${f.theme} ${f.tokens[0]}`)).toEqual(["night --tone"]);
+  });
+
+  it("is per-theme: the theme that tunes the family is the theme that answers", () => {
+    const css = `
+      :root { --tone: #22C55E; --tone-border: #16A34A; --flat: #101010; }
+      [data-theme="night"] { --tone-border: #86EFAC; }
+      [data-theme="dusk"] { --unrelated: #FFFFFF; }
+      .x { background: var(--tone); border: 1px solid var(--tone-border); color: var(--flat); }
+    `;
+    const sheet = audit(resolveCss(css));
+    const family = sheet.findings.filter((f) => f.rule === "family-consistency");
+    // night tunes the tone family → its inherited --tone is a finding.
+    // dusk declares nothing of the family → the same inheritance there is
+    // silence, not a defect. root inherits nothing, ever.
+    expect(family.map((f) => `${f.theme} ${f.tokens[0]}`)).toEqual(["night --tone"]);
+  });
+
+  it("stays theme-local: a sibling override is evidence only in the theme that wrote it", () => {
+    // The converse shape — root declares the whole family, night inherits the
+    // base while tuning a sibling. The base and any third theme that inherits
+    // everything see no evidence. Pinned because a theme-agnostic
+    // implementation would report --flat wherever it is inherited.
+    const css = `
+      :root { --flat: #101010; --flat-soft: #202020; }
+      [data-theme="night"] { --flat-soft: #303030; }
+      .x { background: var(--flat); }
+    `;
+    const sheet = audit(resolveCss(css));
+    const family = sheet.findings.filter((f) => f.rule === "family-consistency");
+    expect(family.map((f) => `${f.theme} ${f.tokens[0]}`)).toEqual(["night --flat"]);
+  });
+
+  it("treats a declared intermediate as a family member, and its child as the same family", () => {
+    // head() is transitive through declared heads: --brand-extra-child's
+    // shortest declared prefix is --brand-extra, whose own head is --brand —
+    // one family, three members. night tunes only the child, so BOTH silent
+    // members it inherits are findings, each citing the same evidence. Pinned
+    // because a non-transitive head would report --brand-extra alone and miss
+    // --brand, which sits at the top of the same declared chain.
+    const css = `
+      :root {
+        --brand: #3366CC;
+        --brand-extra: #99BBFF;
+        --brand-extra-child: #AACCEE;
+      }
+      [data-theme="night"] { --brand-extra-child: #223344; }
+      .x { background: var(--brand); color: var(--brand-extra-child); }
+    `;
+    const resolved = resolveCss(css);
+    const names = new TokenNames(resolved);
+    // The derivation really routes the child through the declared intermediate
+    // to the chain's head.
+    expect(names.head("--brand-extra-child")).toBe("--brand");
+    expect(resolved.token("--brand", "night")?.origin).toBe("inherited");
+    const sheet = audit(resolved);
+    const family = sheet.findings.filter((f) => f.rule === "family-consistency");
+    expect(family.map((f) => `${f.theme} ${f.tokens[0]}`).sort()).toEqual([
+      "night --brand",
+      "night --brand-extra",
+    ]);
+    for (const f of family) {
+      expect(f.evidence.overriddenSiblings).toEqual(["--brand-extra-child"]);
+    }
+  });
+});
+
+/**
+ * The coverage inventory — the facts rule 4 is measured over. A listing, never
+ * a judgement: these tests pin the SHAPE (partition, split, per-theme kind) and
+ * the fixture's numbers, not any verdict about inheritance.
+ */
+describe("coverageReport — the inventory rule 4 is measured over", () => {
+  it("partitions every base token per theme, exactly once", () => {
+    const [root, winter] = coverageReport(resolved);
+    expect(root?.theme).toBe("root");
+    expect(root?.baseTokens).toBe(73);
+    expect(root?.overridden).toHaveLength(73);
+    expect(root?.inherited).toEqual([]); // the base theme inherits nothing
+    expect(winter?.baseTokens).toBe(73);
+    expect(winter?.overridden).toHaveLength(51);
+    expect(winter?.inherited).toHaveLength(22);
+    const names = [...(winter?.overridden ?? []), ...(winter?.inherited ?? [])].map((e) => e.name);
+    expect(names).toHaveLength(73);
+    expect(new Set(names).size).toBe(73);
+  });
+
+  it("splits winter's inherited set 8 colour / 14 non-colour, and names the eight", () => {
+    const winter = coverageReport(resolved).find((t) => t.theme === "winter");
+    const colors = winter?.inherited.filter((e) => e.kind === "color") ?? [];
+    const nonColors = winter?.inherited.filter((e) => e.kind === "non-color") ?? [];
+    expect(colors).toHaveLength(8);
+    expect(nonColors).toHaveLength(14);
+    expect(colors.map((e) => e.name)).toEqual([
+      "--app-cta-solid-hover",
+      "--app-error",
+      "--app-error-solid-hover",
+      "--app-info",
+      "--app-solid-label",
+      "--app-success",
+      "--app-warning",
+      "--app-warning-solid-hover",
+    ]);
+  });
+
+  it("lists inherited members without judging them — --app-solid-label included", () => {
+    // The token gets NO finding (undeclared head) and MUST still appear in the
+    // listing: coverage is the inventory of what winter receives, and it
+    // receives this.
+    const winter = coverageReport(resolved).find((t) => t.theme === "winter");
+    expect(winter?.inherited.find((e) => e.name === "--app-solid-label")).toEqual({
+      name: "--app-solid-label",
+      status: "inherited",
+      kind: "color",
+    });
+  });
+
+  it("carries the kind the THEME resolves to, not the base's", () => {
+    // --ink is a var() at :root pointing at a token only `day` declares: a
+    // colour there, unresolved in root. Coverage reports what each theme
+    // receives, so the same name carries different kinds in the two rows.
+    const sheet = resolveCss(`
+      :root { --ink: var(--accent); }
+      [data-theme="day"] { --accent: #3366CC; }
+      .x { color: var(--ink); }
+    `);
+    const [root, day] = coverageReport(sheet);
+    expect(root?.overridden.find((e) => e.name === "--ink")?.kind).toBe("unresolved");
+    expect(day?.inherited.find((e) => e.name === "--ink")?.kind).toBe("color");
+  });
+
+  it("is a pure function of the resolved stylesheet", () => {
+    expect(JSON.stringify(coverageReport(resolved))).toBe(
+      JSON.stringify(coverageReport(resolved)),
+    );
+  });
+});
+
 describe("the rules are yatfa-agnostic — a hand-written stylesheet, no --app- prefix", () => {
-  // themeguard is not a yatfa-specific tool. Nothing in the three rules may key
+  // themeguard is not a yatfa-specific tool. Nothing in the four rules may key
   // off this fixture's vocabulary; the structure is read from the declarations.
   const css = `
     :root {
@@ -555,21 +897,28 @@ describe("the audit entry point", () => {
     expect(Object.keys(empty.countsByRule).sort()).toEqual([
       "collision",
       "dead-token",
+      "family-consistency",
       "scale-collapse",
     ]);
     expect(empty.countsByRule.collision).toBe(0);
+    expect(empty.countsByRule["family-consistency"]).toBe(0);
   });
 
   it("totals its per-rule counts exactly", () => {
     const total = Object.values(report.countsByRule).reduce((a, b) => a + b, 0);
     expect(report.findings).toHaveLength(total);
-    expect(total).toBe(15);
+    expect(total).toBe(22);
   });
 
   it("sorts findings into a stable rule → theme → tokens order", () => {
     const rules = report.findings.map((f) => f.rule);
     expect(rules).toEqual([...rules].sort((a, b) => {
-      const order = { collision: 0, "dead-token": 1, "scale-collapse": 2 } as const;
+      const order = {
+        collision: 0,
+        "dead-token": 1,
+        "scale-collapse": 2,
+        "family-consistency": 3,
+      } as const;
       return order[a] - order[b];
     }));
   });
@@ -590,5 +939,6 @@ describe("the audit entry point", () => {
     expect(collisionRule(resolved, names)).toHaveLength(11);
     expect(deadTokenRule(resolved, names)).toHaveLength(2);
     expect(scaleCollapseRule(resolved, names).findings).toHaveLength(2);
+    expect(familyConsistencyRule(resolved, names)).toHaveLength(7);
   });
 });

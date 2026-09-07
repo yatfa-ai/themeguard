@@ -1,5 +1,5 @@
 /**
- * themeguard — the resolver, the maths, and the three rules.
+ * themeguard — the resolver, the maths, and the four rules.
  *
  * Two stages, kept apart on purpose:
  *
@@ -9,8 +9,10 @@
  *     a defect, or that an unreferenced token is dead.
  *   - `audit.ts` and `rules/` JUDGE that data, as pure functions over
  *     `resolveStylesheet`'s output. {@link audit} is the entry point and
- *     answers all three of the README's questions in one pass, returning
- *     findings tagged `collision`, `dead-token` or `scale-collapse`.
+ *     answers all four of the README's questions in one pass, returning
+ *     findings tagged `collision`, `dead-token`, `scale-collapse` or
+ *     `family-consistency`, plus the per-theme coverage inventory the fourth
+ *     rule is measured over.
  *
  * ```ts
  * import { resolveCss, audit } from "themeguard";
@@ -20,7 +22,7 @@
  * }
  * ```
  *
- * The same three rules are also a command: `themeguard <file.css>` (see
+ * The same four rules are also a command: `themeguard <file.css>` (see
  * `cli.ts`), which is I/O and presentation over exactly this `audit()` call and
  * adds no judgement of its own.
  */
@@ -44,6 +46,13 @@ export {
   type ScaleCollapseResult,
   type SkippedPair,
 } from "./rules/scale-collapse.js";
+export {
+  coverageReport,
+  familyConsistencyRule,
+  type CoverageEntry,
+  type CoverageStatus,
+  type ThemeCoverage,
+} from "./rules/coverage.js";
 export {
   TokenNames,
   STATE_SUFFIXES,

@@ -10,7 +10,7 @@
  * ── What it prints, and why in this shape ──────────────────────────────────
  * Findings are grouped by rule, each group headed by its COUNT, and every line
  * is the README's own `[rule] message` shape so a line pasted into an issue
- * still says which question it answers. All three rule headings are printed
+ * still says which question it answers. All four rule headings are printed
  * even at zero, because a rule that reports nothing and a rule that did not run
  * look identical if the heading is omitted — and "no findings" reads as a pass.
  *
@@ -19,6 +19,14 @@
  * is composited, and themeguard never invents a backdrop) is silence, and
  * silence reads exactly like a clean result. The library goes to the trouble of
  * counting it; a CLI that swallowed it would undo that.
+ *
+ * `coverage` is printed under the same precedent. It is the fact inventory rule
+ * 4 is measured over — per theme, every base-theme token marked overridden or
+ * inherited, with the colour/non-colour split of the inherited set — and it is
+ * INFORMATIONAL by construction: inherited is normal (theme-independent tokens
+ * have no override by design), so the section is counted, named, printed even
+ * at zero, and never moves the exit code. The mixed shape the inventory makes
+ * visible is judged by rule 4, whose findings DO count.
  *
  * ── The exit contract, and why findings are not code 2 ─────────────────────
  * Three distinct codes, because a caller in a shell — a pipeline, a
@@ -59,7 +67,12 @@ export interface CliIo {
 export const USAGE = "usage: themeguard <file.css>";
 
 /** The order groups are printed in — the library's own reading order. */
-const RULE_ORDER: readonly RuleId[] = ["collision", "dead-token", "scale-collapse"];
+const RULE_ORDER: readonly RuleId[] = [
+  "collision",
+  "dead-token",
+  "scale-collapse",
+  "family-consistency",
+];
 
 /**
  * Run the command over `args` (the arguments AFTER the program name) and return
@@ -118,6 +131,33 @@ export function formatReport(
       lines.push(
         `  [skipped] ${pair.state} against ${pair.base} in theme "${pair.theme}": ${pair.reason}`,
       );
+    }
+  }
+  lines.push("");
+
+  // Coverage under the skipped precedent: the fact inventory rule 4 is measured
+  // over, counted, named, printed even at zero, and never an exit code. An
+  // inherited token is normal — theme-independent tokens have no override by
+  // design — so the listing reports what each theme receives and stops; the
+  // mixed shape inside it is judged by rule 4, whose findings DO count.
+  const themeCount = report.coverage.length;
+  const baseCount = report.coverage[0]?.baseTokens ?? 0;
+  lines.push(
+    `coverage (${themeCount} ${themeCount === 1 ? "theme" : "themes"}, ${baseCount} base tokens)`,
+  );
+  for (const theme of report.coverage) {
+    const color = theme.inherited.filter((e) => e.kind === "color").length;
+    const nonColor = theme.inherited.filter((e) => e.kind === "non-color").length;
+    if (theme.inherited.length === 0) {
+      lines.push(`  ${theme.theme}: declares all ${theme.baseTokens} base tokens, inherits 0.`);
+    } else {
+      lines.push(
+        `  ${theme.theme}: declares ${theme.overridden.length} of ${theme.baseTokens} base tokens, ` +
+          `inherits ${theme.inherited.length} (${color} color / ${nonColor} non-color).`,
+      );
+      for (const entry of theme.inherited) {
+        lines.push(`    [inherited] ${entry.name} (${entry.kind})`);
+      }
     }
   }
   lines.push("");

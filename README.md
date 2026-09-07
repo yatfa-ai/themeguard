@@ -4,10 +4,10 @@
 > project's colour tokens are *organised* — not whether text passes contrast.
 
 > **Status: 0.1.0 — one command, and a library.** `themeguard <file.css>` audits a stylesheet from a
-> terminal, and the same three rules are importable as functions. The package ships compiled output
+> terminal, and the same four rules are importable as functions. The package ships compiled output
 > (`dist/`); the calibration fixture and the tests stay in this repository and out of the tarball.
 
-## The three questions
+## The four questions
 
 1. **Value collisions** — two variables that must differ hold byte-identical colours.
    A real one: `--app-border` equalled `--app-surface-raised`, so a panel's 1px border was literally
@@ -17,6 +17,12 @@
 3. **Ramp collapse across themes** — `--text-muted` and `--text-faint` must stay apart by eye. If they
    converge in one theme, the text hierarchy is gone. Measured in CIE L\* (ΔL\* ≥ 4), **not** in
    contrast ratio: two adjacent surfaces a visibly distinct step apart still sit around 1.2:1.
+4. **Family consistency across themes** — when a theme re-declares part of a token family but not all
+   of it, the member it skips silently keeps the base theme's value. A dark-tuned green flowing into a
+   light theme beside the light theme's own re-tuned siblings is exactly the defect that accumulates
+   rather than appears; the finding cites the overridden siblings as the evidence, and the per-theme
+   **coverage** inventory behind it is printed as facts — which tokens each theme re-declares, and
+   which it inherits, colour and non-colour.
 
 Defects like these accumulate rather than appear. Over eight months of one growing project's CSS the
 palette went 23 → 73 tokens and collisions went 0 → 7. (That figure predates the rule; running
@@ -69,21 +75,39 @@ scale-collapse (2)
   [scale-collapse] --app-accent-ink-hover is ΔL* 3.90 from --app-accent-ink in theme "root" — under the 4 needed for a visible step, so the hover state is not distinguishable from the resting one.
   [scale-collapse] --app-accent-ink-hover is ΔL* 3.45 from --app-accent-ink in theme "winter" — under the 4 needed for a visible step, so the hover state is not distinguishable from the resting one.
 
+family-consistency (7)
+  [family-consistency] --app-cta-solid-hover is inherited from :root in theme "winter" (resolving to #4ADE80) while the same theme declares --app-cta, --app-cta-hover — the theme tunes this family, so the member it does not re-declare silently keeps the base value.
+  [family-consistency] --app-success is inherited from :root in theme "winter" (resolving to #22C55E) while the same theme declares --app-success-border, --app-success-on-surface, --app-success-soft, --app-success-surface, --app-success-toast-surface — the theme tunes this family, so the member it does not re-declare silently keeps the base value.
+  … 5 more
+
 skipped (0)
   nothing skipped — every pair rule 3 derived was measurable.
 
-15 findings: 11 collision, 2 dead-token, 2 scale-collapse.
+coverage (2 themes, 73 base tokens)
+  root: declares all 73 base tokens, inherits 0.
+  winter: declares 51 of 73 base tokens, inherits 22 (8 color / 14 non-color).
+    [inherited] --app-success (color)
+    [inherited] --app-focus-ring-width (non-color)
+    … 20 more — every base token each theme inherits, named
+
+22 findings: 11 collision, 2 dead-token, 2 scale-collapse, 7 family-consistency.
 ```
 
-Two things in that output are deliberate and worth reading.
+Three things in that output are deliberate and worth reading.
 
-**All three rule headings print even at zero.** A rule that reports nothing and a rule that did not run
+**All four rule headings print even at zero.** A rule that reports nothing and a rule that did not run
 look identical if the heading is omitted, and "nothing here" reads as a pass.
 
 **`skipped` is a section, not a silence.** A pair rule 3 could not measure — a translucent member has no
 lightness until it is composited, and themeguard never invents a backdrop — is *unmeasured*, which is not
 the same claim as *clean*. Those pairs are counted and named, and they do **not** change the exit code:
 they are not findings.
+
+**`coverage` is facts, not findings.** Inheriting a token is normal — focus geometry, control sizing and
+transitions are theme-independent on purpose — so the inventory never moves the exit code. It is printed
+under the same discipline as `skipped` (counted, named, headline even at zero) because a theme that
+silently receives a value is a fact a reader needs before the `family-consistency` findings above it make
+sense; the findings are the judgement, the inventory is what they are judged against.
 
 ### Exit codes
 
@@ -106,7 +130,7 @@ const report = audit(resolveCss(readFileSync("application.css", "utf8")));
 for (const finding of report.findings) {
   console.log(`[${finding.rule}] ${finding.message}`);
 }
-console.log(report.countsByRule); // { collision: 11, "dead-token": 2, "scale-collapse": 2 }
+console.log(report.countsByRule); // { collision: 11, "dead-token": 2, "scale-collapse": 2, "family-consistency": 7 }
 ```
 
 Types ship with the package. Every finding carries the `evidence` behind it, so a verdict can be checked
@@ -134,8 +158,8 @@ facts and passes no judgement, the upper one judges those facts and nothing else
 | `src/parse.ts` | Which blocks declare custom properties, in which of the three shapes, at which line — and every `var()` **use**, from every declaration rather than only the custom-property ones. |
 | `src/resolve.ts` | What each property resolves to **per theme**, following `var()` chains. Theme absence, translucency, unresolved references and cycles are each represented explicitly — none of them is an error and none is guessed at. |
 | `src/color.ts` | Colour parsing (hex 3/4/6/8, `rgb()`/`rgba()`, `hsl()`/`hsla()`, alpha throughout), WCAG relative luminance, CIE L\*, contrast ratio, source-over compositing. |
-| `src/audit.ts` | `audit(resolved)` — the three rules in one pass, returning findings tagged `collision`, `dead-token` or `scale-collapse`. |
-| `src/rules/` | One module per question. Each docstring carries its judgement heuristics and, more usefully, what it deliberately does **not** report. |
+| `src/audit.ts` | `audit(resolved)` — the four rules in one pass, returning findings tagged `collision`, `dead-token`, `scale-collapse` or `family-consistency`, plus the per-theme coverage inventory. |
+| `src/rules/` | One module per question. Each docstring carries its judgement heuristics and, more usefully, what it deliberately does **not** report. `rules/coverage.ts` also carries the coverage inventory itself — the facts rule 4 is measured over, printed by the CLI as an informational section and never an exit code. |
 | `src/cli.ts` | The command. I/O and presentation over `audit()` — no rule, no heuristic and no judgement of its own. |
 
 ```ts
@@ -155,6 +179,7 @@ the calibration fixture:
 | `collision` | 41 value groups (dark) | 11 across both themes | A token beside its own `@theme inline` alias; two names another theme *re-declares* equal in its own right; two members of one family (`--app-warning` / `--app-warning-border` is deliberate, and the fixture says so). |
 | `dead-token` | 66 unreferenced names | 2 | The 64 `@theme inline` aliases, whose consumers are the utility classes Tailwind generates *from* them and so are unreachable to a source read by construction. |
 | `scale-collapse` | — | 2 | Pairing is derived from **declared interaction states** (`X` / `X-hover`), not by sorting a family by lightness: that alternative returns 25 findings, including all four twins the fixture documents as deliberate. |
+| `family-consistency` | 22 inherited base tokens (winter) | 7 | A finding needs the theme's OWN declarations as evidence: at least one sibling sharing the token's declared family head must be overridden. That drops the 13 wholly-inherited tokens (control heights, radii, sidebar, transitions, font — a theme inheriting a family whole is a legitimate answer, so no finding and no invented intent) and `--app-solid-label`, whose family head `--app-solid` is never declared, so its prefix neighbours belong to a different family and there is nothing to cite. |
 
 Three properties are worth stating because they are what the tests defend:
 
