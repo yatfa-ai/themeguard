@@ -30,7 +30,11 @@
 export {
   audit,
   type AuditReport,
+  type AuditOptions,
+  type SuppressedFinding,
 } from "./audit.js";
+
+export type { SuppressionEntry } from "./config.js";
 
 export {
   sortFindings,

@@ -3,7 +3,7 @@
 > ESLint for your colour variables. Reads the CSS **source**, not the rendered page, and audits how a
 > project's colour tokens are *organised* — not whether text passes contrast.
 
-> **Status: 0.1.0 — one command, and a library.** `themeguard <file.css>` audits a stylesheet from a
+> **Status: 0.1.1 — one command, and a library.** `themeguard <file.css>` audits a stylesheet from a
 > terminal, and the same four rules are importable as functions. The package ships compiled output
 > (`dist/`); the calibration fixture and the tests stay in this repository and out of the tarball.
 
@@ -101,6 +101,9 @@ family-consistency (7)
 skipped (0)
   nothing skipped — every pair rule 3 derived was measurable.
 
+suppressed (0)
+  nothing suppressed — every finding above is one the report stands behind.
+
 coverage (2 themes, 73 base tokens)
   root: declares all 73 base tokens, inherits 0.
   winter: declares 51 of 73 base tokens, inherits 22 (8 color / 14 non-color).
@@ -111,7 +114,7 @@ coverage (2 themes, 73 base tokens)
 22 findings: 11 collision, 2 dead-token, 2 scale-collapse, 7 family-consistency.
 ```
 
-Three things in that output are deliberate and worth reading.
+Four things in that output are deliberate and worth reading.
 
 **All four rule headings print even at zero.** A rule that reports nothing and a rule that did not run
 look identical if the heading is omitted, and "nothing here" reads as a pass.
@@ -127,6 +130,44 @@ under the same discipline as `skipped` (counted, named, headline even at zero) b
 silently receives a value is a fact a reader needs before the `family-consistency` findings above it make
 sense; the findings are the judgement, the inventory is what they are judged against.
 
+**`suppressed` is what you, not the tool, decided.** The section headline prints even at zero, under the
+same discipline as `skipped` and `coverage` — an empty `suppressed` section is the visible proof that
+nothing was set aside. When a `themeguard.config.json` sits beside the stylesheet (see the next section),
+its findings move here with their reasons quoted: out of the counts and the exit code by declaration,
+never by silence.
+
+### Suppressing deliberate findings — `themeguard.config.json`
+
+The audit is calibrated to report what it measures, not what it approves of — so a real stylesheet that
+documents its own deliberate choices (a hover intentionally a hair off its resting colour, a warning fill
+that legitimately equals its border) reports them every run. To agree with the audit *with exceptions*,
+put a `themeguard.config.json` **next to the stylesheet**:
+
+```json
+{
+  "suppress": [
+    { "rule": "scale-collapse", "token": "--app-accent-ink-hover", "reason": "deliberately subtle hover" }
+  ]
+}
+```
+
+Each entry names the `rule` that reports the finding, one token the finding carries, and the `reason` —
+which the report quotes back. Matching is against the finding's structured fields (`rule`, `tokens`),
+never against message prose. A suppressed finding leaves the per-rule counts and the exit code, and moves
+to its own `suppressed (N)` section — counted, named, reason quoted, never silently dropped, under the
+same discipline as `skipped`. `rule` and `token` and `reason` are all required, and a config the package
+cannot honour — an unknown rule id, a missing token, unreadable JSON — exits `2` naming the offending
+entry: a config that silently did nothing would leave you believing a finding was marked deliberate when
+it was reported after all.
+
+**Discovery is stylesheet-adjacent, deliberately.** The config is read from the directory of the
+stylesheet you point the command at — not from the process working directory — so the same command means
+the same thing no matter where it is invoked from, and a project can keep one config beside its built CSS
+(or one per stylesheet directory) instead of relying on wherever the shell happens to be standing. No
+config file beside the stylesheet means no suppression at all: no existing line of the report changes,
+the exit codes are unchanged, and the only difference from a run without the feature is the counted
+`suppressed` section appended at zero.
+
 ### Exit codes
 
 | Code | Meaning |
@@ -137,6 +178,11 @@ sense; the findings are the judgement, the inventory is what they are judged aga
 
 `1` and `2` are kept apart on purpose: in a pipeline or a pre-commit hook the number is all a caller has,
 and a real finding must never be confusable with a typo in the path — nor with a clean stylesheet.
+
+Suppression moves a finding between those codes **by declaration**: what a `themeguard.config.json` marks
+deliberate leaves `1`'s population for `0`'s, and is still printed and counted in the report's
+`suppressed` section — the exit is computed over unsuppressed findings only. Code `2` also covers a config
+that exists but cannot be honoured: the offending entry is named on stderr, never silently skipped.
 
 ### As a library
 
@@ -152,7 +198,22 @@ console.log(report.countsByRule); // { collision: 11, "dead-token": 2, "scale-co
 ```
 
 Types ship with the package. Every finding carries the `evidence` behind it, so a verdict can be checked
-rather than taken.
+rather than taken. A library caller with the same need as the CLI — findings it has itself judged
+deliberate — passes them as the optional second argument, and reads `report.suppressed` under the same
+counted-not-silent discipline:
+
+```ts
+import { resolveCss, audit } from "themeguard";
+
+const report = audit(resolveCss(css), {
+  suppressions: [{ rule: "scale-collapse", token: "--app-accent-ink-hover", reason: "deliberately subtle hover" }],
+});
+for (const { finding, reason } of report.suppressed) {
+  console.log(`[suppressed] [${finding.rule}] ${finding.message} — "${reason}"`);
+}
+```
+
+Omit the second argument and the report is exactly the four-rule audit it has always been.
 
 ## Development
 
@@ -176,7 +237,8 @@ facts and passes no judgement, the upper one judges those facts and nothing else
 | `src/parse.ts` | Which blocks declare custom properties, in which of the four shapes — `:root`, `[data-theme=…]`, `@theme inline`, and a `prefers-color-scheme` `:root` block as its own theme — at which line, and every `var()` **use**, from every declaration rather than only the custom-property ones. |
 | `src/resolve.ts` | What each property resolves to **per theme**, following `var()` chains. Theme absence, translucency, unresolved references and cycles are each represented explicitly — none of them is an error and none is guessed at. |
 | `src/color.ts` | Colour parsing (hex 3/4/6/8, `rgb()`/`rgba()`, `hsl()`/`hsla()`, alpha throughout), WCAG relative luminance, CIE L\*, contrast ratio, source-over compositing. |
-| `src/audit.ts` | `audit(resolved)` — the four rules in one pass, returning findings tagged `collision`, `dead-token`, `scale-collapse` or `family-consistency`, plus the per-theme coverage inventory. |
+| `src/audit.ts` | `audit(resolved)` — the four rules in one pass, returning findings tagged `collision`, `dead-token`, `scale-collapse` or `family-consistency`, plus the per-theme coverage inventory. Passing `suppressions` moves caller-declared findings out of `findings` and the counts into a `suppressed` leg. |
+| `src/config.ts` | `themeguard.config.json` — optional, discovered beside the stylesheet. Parses and validates the `suppress` entries (strictly: an unhonourable config is an error naming the entry, never a silent skip) into the structured declarations `audit()` filters a finished report by. |
 | `src/rules/` | One module per question. Each docstring carries its judgement heuristics and, more usefully, what it deliberately does **not** report. `rules/coverage.ts` also carries the coverage inventory itself — the facts rule 4 is measured over, printed by the CLI as an informational section and never an exit code. |
 | `src/cli.ts` | The command. I/O and presentation over `audit()` — no rule, no heuristic and no judgement of its own. |
 
