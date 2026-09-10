@@ -1021,3 +1021,115 @@ describe("the audit entry point", () => {
     expect(familyConsistencyRule(resolved, names)).toHaveLength(7);
   });
 });
+
+/**
+ * YATFA-7810 — the four rules over a MEDIA-themed stylesheet.
+ *
+ * Before the parse/resolve change these probes reported ZERO across every
+ * rule on the media shapes while the byte-equivalent attribute-theme controls
+ * fired — the defect hid light-mode findings by overwriting the base table
+ * with the dark block's values. The controls are kept beside the assertions
+ * on purpose: they are what proves the rules fire on these values at all,
+ * so a future regression cannot hide behind "the rule simply does not apply".
+ *
+ * REVERT PROBE — undo the `colorScheme` threading in `parse.ts`/`resolve.ts`
+ * and every `media` expectation here drops to 0 while every `control`
+ * expectation stays put, with no error reported anywhere.
+ */
+describe("a prefers-color-scheme stylesheet is audited, not folded", () => {
+  // Probe A — value collision + inheritance. --border and --surface are
+  // byte-identical #f5f5f5 in LIGHT and distinct in the dark block.
+  const probeA = (scheme: "media" | "control") => `
+    :root {
+      --text: #24292f;
+      --text-muted: #767676;
+      --surface: #f5f5f5;
+      --border: #f5f5f5;
+      --accent: #0969da;
+      --accent-ink: #ffffff;
+      --btn: #218bff;
+    }
+    [data-theme="winter"] {
+      --accent: #1f6feb;
+      --border: #d0d7de;
+      --surface: #f6f8fa;
+    }
+    ${
+      scheme === "media"
+        ? `@media (prefers-color-scheme: dark) { :root {
+            --text: #e6edf3; --text-muted: #8b949e; --surface: #161b22;
+            --border: #30363d; --accent-ink: #0d1117; --btn: #388bfd; } }`
+        : `[data-theme="dark"] {
+            --text: #e6edf3; --text-muted: #8b949e; --surface: #161b22;
+            --border: #30363d; --accent-ink: #0d1117; --btn: #388bfd; }`
+    }
+    body { color: var(--text); border-color: var(--border); background: var(--surface); }
+    p { color: var(--text-muted); }
+    a { color: var(--accent); }
+    button { color: var(--accent-ink); background: var(--btn); }
+  `;
+
+  it("reports the light-only collision on the media shape, as the control does", () => {
+    const media = audit(resolveCss(probeA("media")));
+    expect(media.countsByRule.collision).toBe(1);
+    const finding = media.findings.find((f) => f.rule === "collision");
+    expect(finding?.theme).toBe("root");
+    expect(finding?.tokens).toEqual(["--border", "--surface"]);
+    // The control — the same sheet with the media block rewritten to an
+    // attribute theme — fired before the fix and must still fire.
+    expect(audit(resolveCss(probeA("control"))).countsByRule.collision).toBe(1);
+  });
+
+  it("resolves an attribute theme's inherited values to the base, not the dark block", () => {
+    // The fold handed winter's silence the DARK --accent-ink (#0d1117).
+    const media = resolveCss(probeA("media"));
+    expect(media.token("--accent-ink", "winter")?.origin).toBe("inherited");
+    expect(media.token("--accent-ink", "winter")?.resolvedValue).toBe("#ffffff");
+    // And the control agrees, as it always did.
+    const control = resolveCss(probeA("control"));
+    expect(control.token("--accent-ink", "winter")?.resolvedValue).toBe("#ffffff");
+  });
+
+  it("names three themes with the dark theme's declared/inherited split", () => {
+    const media = audit(resolveCss(probeA("media")));
+    expect(media.coverage.map((c) => c.theme)).toEqual(["root", "winter", "dark"]);
+    const dark = media.coverage.find((c) => c.theme === "dark");
+    expect(dark?.overridden).toHaveLength(6);
+    expect(dark?.inherited.map((e) => e.name)).toEqual(["--accent"]);
+    expect(dark?.baseTokens).toBe(7);
+  });
+
+  it("reports the light-only ramp collapse on the media shape, as the control does", () => {
+    // Probe B — --btn and --btn-hover are equal in LIGHT and distinct in the
+    // dark block.
+    const build = (scheme: "media" | "control") => `
+      :root { --btn: #218bff; --btn-hover: #218bff; }
+      ${
+        scheme === "media"
+          ? `@media (prefers-color-scheme: dark) { :root { --btn: #0969da; --btn-hover: #f0f6fc; } }`
+          : `[data-theme="dark"] { --btn: #0969da; --btn-hover: #f0f6fc; }`
+      }
+      button { background: var(--btn); }
+      button:hover { background: var(--btn-hover); }
+    `;
+    const media = audit(resolveCss(build("media")));
+    expect(media.countsByRule["scale-collapse"]).toBe(1);
+    const finding = media.findings.find((f) => f.rule === "scale-collapse");
+    expect(finding?.theme).toBe("root");
+    expect(finding?.tokens).toEqual(["--btn", "--btn-hover"]);
+    expect(media.countsByRule.collision).toBe(0);
+    expect(audit(resolveCss(build("control"))).countsByRule["scale-collapse"]).toBe(1);
+  });
+
+  it("keeps a non-colour-scheme media block folding exactly as before", () => {
+    // The deliberate not-taken, pinned end to end: a min-width :root is
+    // still an unconditional root scope as far as the resolver is concerned.
+    const sheet = resolveCss(`
+      :root { --btn: #218bff; --btn-hover: #218bff; }
+      @media (min-width: 40rem) { :root { --btn: #388bfd; --btn-hover: #1a7ee5; } }
+    `);
+    expect(sheet.themes).toEqual(["root"]);
+    // The wider block wins the fold (last declaration), exactly as before.
+    expect(sheet.token("--btn", "root")?.resolvedValue).toBe("#388bfd");
+  });
+});

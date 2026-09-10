@@ -2,21 +2,32 @@
  * CSS custom-property parser.
  *
  * Reads the SOURCE — no browser, no framework, no CSSOM. It recognises the
- * three declaration shapes themeguard's scope names:
+ * four declaration shapes themeguard's scope names:
  *
  *   1. `:root { … }`                  the base scope
  *   2. `[data-theme="winter"] { … }`  a theme override scope
  *   3. `@theme inline { … }`          Tailwind v4's alias namespace
+ *   4. `@media (prefers-color-scheme: dark) { :root { … } }`
+ *                                     an OS-preference palette — its own
+ *                                     theme beside the base, never folded
+ *                                     into it; the condition travels on the
+ *                                     scope ({@link Scope.colorScheme})
  *
  * A block's prelude is a selector LIST, so it can name more than one of these
  * at once: `:root, [data-theme="dark"] { … }` — the usual way to write "dark is
  * the default theme" — is genuinely both the base scope and the dark scope, and
  * is reported as two scopes over the same declarations.
  *
- * Anything else that declares custom properties (a component class, a
- * `@media` block) is still parsed and reported, under the scope kind `other`,
- * so nothing is silently dropped — but only the three shapes above take part
- * in theme resolution.
+ * Anything else that declares custom properties (a component class, a `@media`
+ * block conditioning on anything but one colour-scheme feature) is still parsed
+ * and reported — under the scope kind `other`, or as a `root` scope when the
+ * block is a `:root` — so nothing is silently dropped. Only the four shapes
+ * above take part in theme resolution, and the fourth as its OWN theme: the old
+ * reading folded a conditioned `:root` into the base table, overwriting the
+ * light palette with the dark one. A `:root` under a media condition this file
+ * does not model (a comma query list, a second feature, a non-screen type) still
+ * folds into the base — a stated limit, not a silent one; see
+ * {@link colorSchemeOf}.
  *
  * A block BODY is parsed depth-aware, because since CSS Nesting a body is
  * declarations AND nested rules, and a nested rule's declarations belong to a
@@ -86,6 +97,23 @@ export interface Scope {
    * `[data-theme="winter"]`), otherwise `null`.
    */
   readonly theme: string | null;
+  /**
+   * The `prefers-color-scheme` value of the nearest enclosing conditional
+   * at-rule, on the root scopes that condition applies to — `dark` or `light`.
+   * Absent when no such at-rule encloses the block, and set on `kind ===
+   * "root"` scopes only: a conditioned `:root` is NOT a cascade over the base
+   * (both blocks are live, selected by the OS setting), so the resolver reads
+   * this field and builds each value its own theme beside the base instead of
+   * folding the conditioned declarations into it.
+   *
+   * Deliberately NOT recognised: any media prelude whose condition is more
+   * than the one feature — a comma query list (an OR of conditions), a second
+   * feature (`… and (min-width: …)`), or a non-screen media type — and no
+   * other at-rule (`@supports`, `@layer`) conditions a palette. Those keep the
+   * unconditional reading: today's behaviour, stated as a limit rather than a
+   * silent guess. See {@link colorSchemeOf}.
+   */
+  readonly colorScheme?: "dark" | "light";
   /** 1-based line of the block's opening brace. */
   readonly line: number;
   readonly declarations: readonly Declaration[];
@@ -709,15 +737,62 @@ function readReferences(
   return out;
 }
 
+/** `(prefers-color-scheme: dark|light)`, whitespace- and case-insensitive. */
+const COLOR_SCHEME_FEATURE = /\(\s*prefers-color-scheme\s*:\s*(dark|light)\s*\)/i;
+
+/**
+ * What a media PRELUDE may still name once its one colour-scheme feature is
+ * removed: the at-rule itself, the `only`/`and` connectives, and the media
+ * types a colour scheme can actually apply to. `print` and `speech` fail this
+ * and keep the unconditional reading — a palette conditioned on print is not
+ * the OS palette.
+ */
+const MEDIA_SCHEME_PRELUDE = /^(?:@media|only|screen|all|and|\s)+$/i;
+
+/**
+ * The `prefers-color-scheme` value an at-rule prelude conditions a palette on,
+ * or `null` when it does not condition on exactly one.
+ *
+ * "Exactly one" is the whole rule, and each rejection is a decision rather
+ * than an oversight. A comma query list (`@media (prefers-color-scheme: dark),
+ * print`) is an OR — the block is live in dark AND in print, and no single
+ * value names that. A second feature (`… and (min-width: 40rem)`) narrows the
+ * condition to part of the dark population, and the palette of a fraction is
+ * not the palette. A media type other than `screen`/`all` (`print`, `speech`)
+ * is the same narrowing by another door. `@supports` and `@layer` condition on
+ * capability and cascade order, never on the OS setting. All of these keep
+ * today's unconditional reading — folded into the base table — which is a
+ * stated limit rather than a silent guess: the README's Scope section names
+ * it, and this function is the only door through which a condition reaches a
+ * {@link Scope}.
+ *
+ * `only screen and (prefers-color-scheme: dark)` passes: `only` and `screen`
+ * change specificity and medium, not which palette is selected.
+ */
+function colorSchemeOf(prelude: string): "dark" | "light" | null {
+  if (!/^@media\b/i.test(prelude)) return null;
+  // An OR of queries names no single palette.
+  if (findTopLevel(prelude, /^,/) !== -1) return null;
+  const groups = prelude.match(/\([^()]*\)/g) ?? [];
+  if (groups.length !== 1) return null;
+  const feature = groups[0] as string;
+  const m = feature.match(COLOR_SCHEME_FEATURE);
+  if (!m) return null;
+  if (!MEDIA_SCHEME_PRELUDE.test(prelude.replace(feature, " "))) return null;
+  return m[1]?.toLowerCase() as "dark" | "light";
+}
+
 /**
  * Parse a stylesheet into its custom-property-declaring scopes.
  *
  * Nested at-rules (`@media`, `@supports`, `@layer`) are recursed into, so a
- * `:root` inside a media query is found; `@theme` blocks are NOT recursed into
- * because their body is declarations, not rules.
- *
- * A block BODY is parsed depth-aware, because since CSS Nesting a body is
- * declarations AND nested rules. A nested rule's declarations belong to a
+ * `:root` inside a media query is found — and a `:root` inside a
+ * `prefers-color-scheme` media query additionally carries that condition on
+ * its scope ({@link Scope.colorScheme}), in BOTH writings: flat
+ * (`@media … { :root { … } }`) and nested (`:root { @media … { … } }`).
+ * `@theme` blocks are NOT recursed into because their body is declarations,
+ * not rules. A block BODY is parsed depth-aware, because since CSS Nesting a
+ * body is declarations AND nested rules. A nested rule's declarations belong to a
  * DIFFERENT subject, so they are taken out of the enclosing block by
  * {@link blankNestedBlocks} and then walked separately: their prelude is
  * resolved against the parent by {@link resolveNestedSelector} and classified by
@@ -733,7 +808,7 @@ export function parseStylesheet(source: string): Stylesheet {
   const scopes: Scope[] = [];
   const references: Reference[] = [];
 
-  const walk = (from: number, to: number, parent: string | null): void => {
+  const walk = (from: number, to: number, parent: string | null, scheme: "dark" | "light" | null): void => {
     let i = from;
     let preludeStart = from;
     let depth = 0;
@@ -776,8 +851,13 @@ export function parseStylesheet(source: string): Stylesheet {
             selector.startsWith("@") && matches[0].kind !== "theme-inline";
           if (isNestingAtRule) {
             // An at-rule is transparent to nesting: its children still resolve
-            // against the at-rule's own parent, not against the at-rule.
-            walk(bodyStart, i, parent);
+            // against the at-rule's own parent, not against the at-rule. NOT
+            // transparent to palette context: a colour-scheme media query is
+            // the one at-rule whose condition selects a palette, so the value
+            // it names is carried onto the root scopes below and inherited by
+            // everything nested inside, the nearest condition winning.
+            const ownScheme = colorSchemeOf(rawSelector);
+            walk(bodyStart, i, parent, ownScheme ?? scheme);
             // Declarations written DIRECTLY in a nested at-rule body belong to
             // the parent rule's subject, conditionally — `:root { @media print
             // { --p: … } }` declares `--p` on `:root`. Reported under that
@@ -803,6 +883,14 @@ export function parseStylesheet(source: string): Stylesheet {
                     selector: parent,
                     matchedSelector,
                     theme,
+                    // The condition these declarations are live under is THIS
+                    // at-rule — and only this at-rule: an enclosing
+                    // non-scheme condition (say `print` wrapping the
+                    // colour-scheme one) is not modelled, so carrying the
+                    // outer context here would claim more than is known. Only
+                    // a root scope carries it; only the resolver's root fold
+                    // ever read it.
+                    ...(kind === "root" && ownScheme ? { colorScheme: ownScheme } : {}),
                     line: lines[blockStart] ?? 1,
                     declarations: conditional,
                   });
@@ -829,13 +917,18 @@ export function parseStylesheet(source: string): Stylesheet {
                   selector,
                   matchedSelector,
                   theme,
+                  // The palette context this block is live under — non-null
+                  // only inside a colour-scheme media query, and attached to
+                  // the root kind only, which is the kind whose fold the
+                  // resolver must not perform.
+                  ...(kind === "root" && scheme ? { colorScheme: scheme } : {}),
                   line: lines[blockStart] ?? 1,
                   declarations,
                 });
               }
             }
             // Then the nested rules this body contains, under their own subject.
-            walk(bodyStart, i, selector);
+            walk(bodyStart, i, selector, scheme);
           }
           preludeStart = i + 1;
           blockStart = -1;
@@ -851,6 +944,6 @@ export function parseStylesheet(source: string): Stylesheet {
     }
   };
 
-  walk(0, css.length, null);
+  walk(0, css.length, null, null);
   return { scopes, references };
 }

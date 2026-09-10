@@ -95,7 +95,11 @@ export interface ValueGroup {
 }
 
 export interface ResolvedStylesheet {
-  /** `root` first, then every `[data-theme=…]` in source order. */
+  /**
+   * `root` first, then every other theme in source order — `[data-theme=…]`
+   * scopes named by their attribute value, and `prefers-color-scheme` `:root`
+   * scopes named by their feature value (`dark`, `winter`, `light`, …).
+   */
   readonly themes: readonly string[];
   /** Every token, for every theme. */
   readonly tokens: readonly ResolvedToken[];
@@ -125,7 +129,12 @@ function tableFor(scopes: readonly Scope[]): Map<string, { value: string; line: 
   const map = new Map<string, { value: string; line: number }>();
   for (const scope of scopes) {
     for (const d of scope.declarations) {
-      // Last declaration wins, as the cascade does within one origin.
+      // Last declaration wins, as the cascade does within one origin. The fold
+      // is only sound for UNconditional scopes, which is all this function is
+      // ever handed: a `prefers-color-scheme` `:root` block does not cascade
+      // over the base — both blocks are live, selected by the OS setting — so
+      // resolveStylesheet builds each conditioned scope into its own theme and
+      // never lets it reach here.
       map.set(d.name, { value: d.value, line: d.line });
     }
   }
@@ -138,14 +147,36 @@ export function resolveStylesheet(sheet: Stylesheet): ResolvedStylesheet {
   const inlineScopes = sheet.scopes.filter((s) => s.kind === "theme-inline");
   const themeScopes = sheet.scopes.filter((s) => s.kind === "theme");
 
-  const rootTable = tableFor(rootScopes);
+  // A `prefers-color-scheme` `:root` block is NOT a cascade over the base:
+  // the base block and the conditioned block are both live, selected by the
+  // OS setting, and folding the conditioned values in here would overwrite
+  // the light palette with the dark one — hiding every light-only defect and
+  // feeding dark values to every attribute theme's inheritance. So the
+  // conditioned root scopes are lifted OUT of the base table and become
+  // themes of their own, named for the feature value (`dark`, `light`). The
+  // UNconditional scopes build the base table every theme — the scheme themes
+  // included — inherits through, which is the whole point: inheritance reads
+  // the real base, never a conditioned overwrite.
+  const baseScopes = rootScopes.filter((s) => !s.colorScheme);
+  const schemeScopes = rootScopes.filter((s) => s.colorScheme);
+
+  const rootTable = tableFor(baseScopes);
   const inlineTable = tableFor(inlineScopes);
 
   const themeNames: string[] = [ROOT_THEME];
   const themeTables = new Map<string, ScopeTable>();
   themeTables.set(ROOT_THEME, { theme: ROOT_THEME, declarations: rootTable });
-  for (const scope of themeScopes) {
-    const name = scope.theme as string;
+
+  // Attribute themes and colour-scheme themes are one population: an author
+  // who writes BOTH `[data-theme="dark"]` and a dark media block is stating
+  // the dark palette twice, by attribute and by OS setting, so the two land
+  // in one `dark` table — last declaration in source order winning, exactly
+  // as two `[data-theme="dark"]` blocks already did. The stable sort keeps
+  // `themes` "root first, then every theme in source order" across both kinds.
+  const overrides = [...themeScopes, ...schemeScopes].sort((a, b) => a.line - b.line);
+  for (const scope of overrides) {
+    const name =
+      scope.kind === "root" ? (scope.colorScheme as string) : (scope.theme as string);
     if (!themeTables.has(name)) {
       themeNames.push(name);
       themeTables.set(name, { theme: name, declarations: new Map() });
@@ -155,10 +186,12 @@ export function resolveStylesheet(sheet: Stylesheet): ResolvedStylesheet {
       table.declarations.set(d.name, { value: d.value, line: d.line });
     }
   }
-
   // Lookup for a theme: its own declarations, then :root, then the
   // `@theme inline` alias namespace (which is theme-independent by design —
   // its values are var() references that recolour when the theme switches).
+  // `:root` here is the UNconditional base table: a colour-scheme block's
+  // values are a theme of their own, never the fallback another theme reads
+  // through.
   const lookup = (
     name: string,
     theme: string,

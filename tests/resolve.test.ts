@@ -732,3 +732,155 @@ describe("a brace written inside a STRING in a nested body is text, not structur
     expect(table(r)).toEqual(table(flat));
   });
 });
+
+/**
+ * YATFA-7810 — a `prefers-color-scheme` `:root` block is its own theme.
+ *
+ * REVERT PROBE — let `resolveStylesheet` fold conditioned root scopes back
+ * into the base table (drop the `colorScheme` split) and the four assertions
+ * that carry the ticket's name fail in the SILENT direction: the base table
+ * turns dark (`#f5f5f5` becomes `#161b22`), winter's inherited
+ * `--text-muted` resolves to the dark `#8b949e`, `themes` loses `dark`, and
+ * `resolveCss` reports no error anywhere.
+ */
+describe("a prefers-color-scheme :root block resolves as its own theme", () => {
+  // Probe A's shape, corrected pairs: --border and --surface are
+  // byte-identical in the LIGHT palette and distinct in the dark block, and
+  // dark re-declares six of the seven names, leaving --accent inherited.
+  const css = `
+    :root {
+      --text: #24292f;
+      --text-muted: #767676;
+      --surface: #f5f5f5;
+      --border: #f5f5f5;
+      --accent: #0969da;
+      --accent-ink: #ffffff;
+      --btn: #218bff;
+    }
+    [data-theme="winter"] {
+      --text: #0d1117;
+      --text-muted: #57606a;
+      --surface: #f6f8fa;
+      --border: #d0d7de;
+      --accent: #1f6feb;
+      --accent-ink: #ffffff;
+      --btn: #1f6feb;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --text: #e6edf3;
+        --text-muted: #8b949e;
+        --surface: #161b22;
+        --border: #30363d;
+        --accent-ink: #0d1117;
+        --btn: #388bfd;
+      }
+    }
+  `;
+  const sheet = resolveCss(css);
+
+  it("names the theme for the feature value, in source order", () => {
+    expect(sheet.themes).toEqual([ROOT_THEME, "winter", "dark"]);
+  });
+
+  it("keeps the base table the light palette the unconditional :root declares", () => {
+    // The fold made these read as the DARK values.
+    expect(sheet.token("--surface", ROOT_THEME)?.resolvedValue).toBe("#f5f5f5");
+    expect(sheet.token("--border", ROOT_THEME)?.resolvedValue).toBe("#f5f5f5");
+    expect(sheet.token("--text-muted", ROOT_THEME)?.resolvedValue).toBe("#767676");
+    expect(sheet.token("--btn", ROOT_THEME)?.resolvedValue).toBe("#218bff");
+  });
+
+  it("gives the dark theme its own declarations", () => {
+    const surface = sheet.token("--surface", "dark");
+    expect(surface?.origin).toBe("declared");
+    expect(surface?.resolvedValue).toBe("#161b22");
+    expect(sheet.token("--btn", "dark")?.resolvedValue).toBe("#388bfd");
+  });
+
+  it("gives the dark theme the base for every name it does not re-declare", () => {
+    // The declared/inherited split the coverage inventory reports per theme.
+    const accent = sheet.token("--accent", "dark");
+    expect(accent?.origin).toBe("inherited");
+    expect(accent?.resolvedValue).toBe("#0969da");
+    expect(sheet.absences.filter((a) => a.theme === "dark").map((a) => a.name)).toEqual([
+      "--accent",
+    ]);
+  });
+
+  it("resolves an attribute theme's inherited values from the UNconditional base", () => {
+    // THE corruption the fold caused: winter says nothing here about nothing —
+    // it declares every base name — so assert the negative on the resolver's
+    // own terms: dark's values are not the fallback winter would read if it
+    // went silent. The next fixture carries the corrupted-inheritance case.
+    expect(sheet.token("--text-muted", "winter")?.resolvedValue).toBe("#57606a");
+  });
+
+  it("keeps an attribute theme's silence resolving to the base, never the dark block", () => {
+    // The ticket's probe A, one assertion: a theme that does not re-declare
+    // --text-muted must read the LIGHT base value, not the dark block's
+    // #8b949e the folded table used to hand it.
+    const quiet = resolveCss(`
+      :root { --text-muted: #767676; --surface: #f5f5f5; }
+      [data-theme="winter"] { --surface: #f6f8fa; }
+      @media (prefers-color-scheme: dark) { :root { --text-muted: #8b949e; --surface: #161b22; } }
+    `);
+    expect(quiet.token("--text-muted", "winter")?.origin).toBe("inherited");
+    expect(quiet.token("--text-muted", "winter")?.resolvedValue).toBe("#767676");
+    expect(quiet.token("--surface", "winter")?.resolvedValue).toBe("#f6f8fa");
+  });
+
+  it("reads the nested form exactly as the flat one", () => {
+    const flat = resolveCss(
+      "@media (prefers-color-scheme: dark) { :root { --bg: #0d1117; --fg: #e6edf3; } }",
+    );
+    const nested = resolveCss(
+      ":root { @media (prefers-color-scheme: dark) { --bg: #0d1117; --fg: #e6edf3; } }",
+    );
+    expect(nested.themes).toEqual([ROOT_THEME, "dark"]);
+    expect(nested.token("--bg", "dark")?.resolvedValue).toBe("#0d1117");
+    expect(nested.token("--bg", ROOT_THEME)).toBeUndefined();
+    const table = (s: ReturnType<typeof resolveCss>) =>
+      s.themes.map((t) => [t, s.tokensFor(t).map((k) => `${k.name}=${k.resolvedValue}`)]);
+    expect(table(nested)).toEqual(table(flat));
+  });
+
+  it("treats `light` and `dark` blocks as two themes beside the base", () => {
+    const both = resolveCss(`
+      :root { --bg: #fefefe; --fg: #111111; }
+      @media (prefers-color-scheme: light) { :root { --bg: #ffffff; --fg: #24292f; } }
+      @media (prefers-color-scheme: dark) { :root { --bg: #0d1117; --fg: #e6edf3; } }
+    `);
+    expect(both.themes).toEqual([ROOT_THEME, "light", "dark"]);
+    expect(both.token("--bg", "light")?.resolvedValue).toBe("#ffffff");
+    expect(both.token("--bg", "dark")?.resolvedValue).toBe("#0d1117");
+    // Neither conditioned block folds over the base, in either direction.
+    expect(both.token("--bg", ROOT_THEME)?.resolvedValue).toBe("#fefefe");
+    expect(both.token("--fg", ROOT_THEME)?.resolvedValue).toBe("#111111");
+  });
+
+  it("merges with an author-declared [data-theme=\"dark\"] into one dark theme", () => {
+    // The naming decision, pinned: the feature value IS the theme name, and an
+    // author who selects the same palette twice — by attribute and by OS
+    // setting — gets one `dark` table, last declaration in source order
+    // winning, exactly as two [data-theme="dark"] blocks already did. Staying
+    // distinct would need a second name for one palette and would report one
+    // theme as two.
+    const both = resolveCss(`
+      :root { --bg: #ffffff; }
+      [data-theme="dark"] { --bg: #010409; }
+      @media (prefers-color-scheme: dark) { :root { --bg: #0d1117; } }
+    `);
+    expect(both.themes).toEqual([ROOT_THEME, "dark"]);
+    // The attribute block is written FIRST and the media block LAST, so the
+    // media block's value wins the shared table — source order, as ever.
+    expect(both.token("--bg", "dark")?.resolvedValue).toBe("#0d1117");
+
+    const flipped = resolveCss(`
+      :root { --bg: #ffffff; }
+      @media (prefers-color-scheme: dark) { :root { --bg: #0d1117; } }
+      [data-theme="dark"] { --bg: #010409; }
+    `);
+    expect(flipped.token("--bg", "dark")?.resolvedValue).toBe("#010409");
+  });
+});
