@@ -489,6 +489,34 @@ describe("a NESTED rule's declarations belong to its own subject (audit YATFA-69
     ).toBe("root");
   });
 
+  it("lands a colour-scheme :root on the same scope flat and nested, condition attached", () => {
+    // YATFA-7810 — the conscious update of the flat/nested equivalence the
+    // test above has always pinned. Both writings of a `prefers-color-scheme`
+    // block still land on ONE `root` scope, and BOTH now carry the condition
+    // that selects their palette — flat via the walker's at-rule context,
+    // nested via the declarations-read-in-a-nested-at-rule path. The attached
+    // condition is what keeps the resolver from folding either into the base
+    // table.
+    const flat = parseStylesheet(
+      "@media (prefers-color-scheme: dark) { :root { --a: #111; } }",
+    ).scopes;
+    expect(flat).toHaveLength(1);
+    expect(flat[0].kind).toBe("root");
+    expect(flat[0].colorScheme).toBe("dark");
+
+    const nested = parseStylesheet(
+      ":root { --b: #222; @media (prefers-color-scheme: dark) { --a: #111; } }",
+    ).scopes;
+    const conditioned = nested.filter((s) => s.colorScheme !== undefined);
+    expect(conditioned).toHaveLength(1);
+    expect(conditioned[0].kind).toBe("root");
+    expect(conditioned[0].colorScheme).toBe("dark");
+    expect(conditioned[0].declarations.map((d) => d.name)).toEqual(["--a"]);
+    // The unconditional half of the same block stays unconditional.
+    const plain = nested.filter((s) => s.colorScheme === undefined);
+    expect(plain.map((s) => s.declarations.flatMap((d) => d.name))).toEqual([["--b"]]);
+  });
+
   it("leaves the fixture census exactly where it was", () => {
     // The calibration fixture uses no nesting, so a correct body parser must move
     // NOTHING here. This is the cost check, asserted rather than promised.
@@ -517,6 +545,83 @@ describe("census of a minimal hand-written stylesheet", () => {
     expect(scopes.map((s) => s.kind).sort()).toEqual(["root", "root", "theme", "theme-inline"]);
     const names = scopes.flatMap((s) => s.declarations.map((d) => d.name));
     expect(names.sort()).toEqual(["--a", "--a", "--b", "--c", "--color-a"]);
+  });
+});
+
+describe("a prefers-color-scheme :root block is its own scope, not a fold (YATFA-7810)", () => {
+  // REVERT PROBE — drop the walker's colour-scheme threading (or the
+  // `Scope.colorScheme` field) and every assertion on `colorScheme` here
+  // fails: the condition is gone from the data, the resolver folds the dark
+  // values into the base table, and nothing reports a failure — the exact
+  // silence this ticket exists to end.
+  const parseOne = (prelude: string, body = ":root { --bg: #0d1117; }") =>
+    parseStylesheet(`${prelude} { ${body} }`).scopes;
+
+  it("carries the feature value on the root scope, flat form", () => {
+    const scopes = parseOne("@media (prefers-color-scheme: dark)");
+    expect(scopes).toHaveLength(1);
+    expect(scopes[0].kind).toBe("root");
+    expect(scopes[0].theme).toBeNull();
+    expect(scopes[0].colorScheme).toBe("dark");
+    expect(scopes[0].declarations.map((d) => d.name)).toEqual(["--bg"]);
+  });
+
+  it("carries the feature value on the root scope, nested form", () => {
+    const scopes = parseStylesheet(
+      ":root { --bg: #ffffff; @media (prefers-color-scheme: dark) { --bg: #0d1117; } }",
+    ).scopes.filter((s) => s.colorScheme !== undefined);
+    expect(scopes).toHaveLength(1);
+    expect(scopes[0].kind).toBe("root");
+    expect(scopes[0].colorScheme).toBe("dark");
+    expect(scopes[0].declarations.map((d) => d.name)).toEqual(["--bg"]);
+  });
+
+  it("carries `light` the same way", () => {
+    const scopes = parseOne("@media (prefers-color-scheme: light)");
+    expect(scopes[0].colorScheme).toBe("light");
+  });
+
+  it("is case- and whitespace-insensitive on the feature", () => {
+    const scopes = parseStylesheet(
+      "@MEDIA ( PREFERS-COLOR-SCHEME : DARK ) { :root { --bg: #0d1117; } }",
+    ).scopes;
+    expect(scopes[0].colorScheme).toBe("dark");
+  });
+
+  it("recognises `only screen and (prefers-color-scheme: dark)`", () => {
+    const scopes = parseOne("@media only screen and (prefers-color-scheme: dark)");
+    expect(scopes[0].colorScheme).toBe("dark");
+  });
+
+  it("leaves a non-colour-scheme condition exactly where it was", () => {
+    // min-width, print, reduced-motion, @supports, @layer: the fold is
+    // today's reading, kept deliberately — no palette is claimed, so the
+    // resolver folds the declarations into the base exactly as before.
+    for (const prelude of [
+      "@media (min-width: 40rem)",
+      "@media print",
+      "@media (prefers-reduced-motion: reduce)",
+      "@supports (display: grid)",
+      "@layer base",
+    ]) {
+      const scopes = parseOne(prelude);
+      expect(scopes, prelude).toHaveLength(1);
+      expect(scopes[0].kind, prelude).toBe("root");
+      expect(scopes[0].colorScheme, prelude).toBeUndefined();
+    }
+  });
+
+  it("does not claim a palette for compound, OR, or no-preference conditions", () => {
+    for (const prelude of [
+      "@media (prefers-color-scheme: dark) and (min-width: 40rem)",
+      "@media (prefers-color-scheme: dark), print",
+      "@media print and (prefers-color-scheme: dark)",
+      "@media (prefers-color-scheme: no-preference)",
+    ]) {
+      const scopes = parseOne(prelude);
+      expect(scopes[0].kind, prelude).toBe("root");
+      expect(scopes[0].colorScheme, prelude).toBeUndefined();
+    }
   });
 });
 

@@ -42,6 +42,24 @@ Any CSS that declares custom properties — `:root`, `[data-theme="…"]`, and T
 away before themeguard sees anything: point it at the compiled CSS and it works, but the link back to
 the source names is lost.
 
+An OS-preference palette is a theme of its own, not a shadow over the base. `@media
+(prefers-color-scheme: dark) { :root { … } }` — how GitHub Primer, shadcn and plain-vanilla dark mode
+all write it — resolves as a `dark` theme beside `root`, with the same declared/inherited split as any
+attribute theme. That is what keeps a defect that exists only in the light palette reachable, and an
+attribute theme's inherited values resolving to the real base rather than to the dark block's
+overrides: a media-conditioned block does not cascade over `:root`, both are live, selected by the OS
+setting. The theme is named for the feature value; a stylesheet that *also* declares
+`[data-theme="dark"]` is stating the dark palette twice, by attribute and by OS preference, and the
+two land in one `dark` table — last declaration in source order winning, exactly as two
+`[data-theme="dark"]` blocks already did. The nested writing works too:
+`:root { @media (prefers-color-scheme: dark) { … } }`.
+
+Deliberately not taken: a media prelude whose condition is more than the one feature — a comma list
+(an OR of conditions), a second feature (`… and (min-width: …)`), a non-screen type (`print`) — and
+`@supports`/`@layer` conditions all keep today's reading, folded into the base. A palette selected by
+*part* of a compound condition is not a palette of its own; modelling that honestly needs
+condition-aware tables, which this package does not pretend to have.
+
 ## Install
 
 ```bash
@@ -155,7 +173,7 @@ facts and passes no judgement, the upper one judges those facts and nothing else
 
 | Module | What it answers |
 |---|---|
-| `src/parse.ts` | Which blocks declare custom properties, in which of the three shapes, at which line — and every `var()` **use**, from every declaration rather than only the custom-property ones. |
+| `src/parse.ts` | Which blocks declare custom properties, in which of the four shapes — `:root`, `[data-theme=…]`, `@theme inline`, and a `prefers-color-scheme` `:root` block as its own theme — at which line, and every `var()` **use**, from every declaration rather than only the custom-property ones. |
 | `src/resolve.ts` | What each property resolves to **per theme**, following `var()` chains. Theme absence, translucency, unresolved references and cycles are each represented explicitly — none of them is an error and none is guessed at. |
 | `src/color.ts` | Colour parsing (hex 3/4/6/8, `rgb()`/`rgba()`, `hsl()`/`hsla()`, alpha throughout), WCAG relative luminance, CIE L\*, contrast ratio, source-over compositing. |
 | `src/audit.ts` | `audit(resolved)` — the four rules in one pass, returning findings tagged `collision`, `dead-token`, `scale-collapse` or `family-consistency`, plus the per-theme coverage inventory. |
