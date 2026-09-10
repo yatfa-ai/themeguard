@@ -20,6 +20,16 @@
  * silence reads exactly like a clean result. The library goes to the trouble of
  * counting it; a CLI that swallowed it would undo that.
  *
+ * ── The config ────────────────────────────────────────────────────────────
+ * `themeguard.config.json`, OPTIONAL, is discovered NEXT TO THE STYLESHEET —
+ * not the process CWD: a run is `themeguard <file.css>`, so the config that
+ * governs a file is the one beside it. Absent file ⇒ byte-identical output and
+ * exit codes. Each entry lists a rule id, a token name and a reason, strictly
+ * validated: a config this package cannot honour exits 2 naming the entry,
+ * never a silent skip. Matching findings move out of the per-rule counts and
+ * into a `suppressed` section with their reason quoted — counted, named, never
+ * dropped, and out of the exit code by declaration rather than by silence.
+ *
  * `coverage` is printed under the same precedent. It is the fact inventory rule
  * 4 is measured over — per theme, every base-theme token marked overridden or
  * inherited, with the colour/non-colour split of the inherited set — and it is
@@ -46,11 +56,18 @@
  * from a typo in the path. Skipped pairs do NOT raise the code: they are not
  * findings, and a stylesheet whose only unmeasurable pair is translucent has
  * not been shown to have a defect.
+ *
+ * The exit computes over UNSUPPRESSED findings — a finding the user has
+ * recorded as deliberate in themeguard.config.json no longer holds the exit
+ * code hostage, which is the point of the config. A malformed config is the
+ * opposite case: the audit did not run on the terms the user wrote, so it is
+ * exit 2 alongside the usage errors, naming the offending entry.
  */
 
 import { readFileSync, realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { audit } from "./audit.js";
+import { ConfigError, loadConfig } from "./config.js";
 import { resolveCss } from "./resolve.js";
 import type { TokenKind } from "./resolve.js";
 import type { RuleId } from "./rules/finding.js";
@@ -107,9 +124,34 @@ export function runCli(args: readonly string[], io: CliIo): number {
     return EXIT_ERROR;
   }
 
-  const report = audit(resolveCss(css));
+  // The config, if the user wrote one, sits NEXT TO the stylesheet — not in
+  // the process CWD. A run is `themeguard <file.css>`, so the config that
+  // governs a file is the one beside it; a CWD lookup would make the same
+  // command mean different things from different directories. Absent file ⇒
+  // no suppressions and byte-identical behaviour; a present but unhonourable
+  // one ⇒ exit 2, bad usage's own contract, never a silent skip.
+  let suppressions;
+  try {
+    suppressions = loadConfig(path);
+  } catch (error) {
+    io.err(
+      error instanceof ConfigError
+        ? `themeguard: ${error.message}`
+        : `themeguard: cannot read themeguard.config.json — ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+    );
+    return EXIT_ERROR;
+  }
+
+  const report = audit(resolveCss(css), {
+    suppressions: suppressions ?? [],
+  });
   for (const line of formatReport(path, report)) io.out(line);
 
+  // Findings here are the UNSUPPRESSED ones — a finding the user has recorded
+  // as deliberate no longer holds the exit code hostage, which is the whole
+  // point of the config.
   return report.findings.length > 0 ? EXIT_FINDINGS : EXIT_OK;
 }
 
@@ -137,6 +179,26 @@ export function formatReport(
       lines.push(
         `  [skipped] ${pair.state} against ${pair.base} in theme "${pair.theme}": ${pair.reason}`,
       );
+    }
+  }
+  lines.push("");
+
+  // The same counted-not-silent discipline, for what the USER has judged: a
+  // finding marked deliberate in themeguard.config.json leaves the counts
+  // above — and the exit code — but never the record. It is named here with
+  // the reason its suppressor gave, so a run that exits 0 still says what it
+  // chose not to hold against the stylesheet. The headline prints even at
+  // zero: an empty section is the proof that nothing was set aside, and a
+  // section that vanished at zero would read as a pass by omission.
+  lines.push(`suppressed (${report.suppressed.length})`);
+  if (report.suppressed.length === 0) {
+    lines.push("  nothing suppressed — every finding above is one the report stands behind.");
+  } else {
+    lines.push(
+      "  findings marked deliberate in themeguard.config.json. Counted here, named below with the reason each was given — out of the counts and the exit code by declaration, never by silence.",
+    );
+    for (const { finding, reason } of report.suppressed) {
+      lines.push(`  [suppressed] [${finding.rule}] ${finding.message} — "${reason}"`);
     }
   }
   lines.push("");
