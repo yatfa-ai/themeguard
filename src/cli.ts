@@ -23,8 +23,10 @@
  * ── The config ────────────────────────────────────────────────────────────
  * `themeguard.config.json`, OPTIONAL, is discovered NEXT TO THE STYLESHEET —
  * not the process CWD: a run is `themeguard <file.css>`, so the config that
- * governs a file is the one beside it. Absent file ⇒ byte-identical output and
- * exit codes. Each entry lists a rule id, a token name and a reason, strictly
+ * governs a file is the one beside it. Absent file ⇒ no suppressions: no
+ * existing line of the report changes and the exit codes are unchanged — the
+ * only addition is the counted `suppressed` section, printed even at zero.
+ * Each entry lists a rule id, a token name and a reason, strictly
  * validated: a config this package cannot honour exits 2 naming the entry,
  * never a silent skip. Matching findings move out of the per-rule counts and
  * into a `suppressed` section with their reason quoted — counted, named, never
@@ -128,8 +130,10 @@ export function runCli(args: readonly string[], io: CliIo): number {
   // the process CWD. A run is `themeguard <file.css>`, so the config that
   // governs a file is the one beside it; a CWD lookup would make the same
   // command mean different things from different directories. Absent file ⇒
-  // no suppressions and byte-identical behaviour; a present but unhonourable
-  // one ⇒ exit 2, bad usage's own contract, never a silent skip.
+  // no suppressions — every existing line of the report is unchanged and the
+  // exit codes hold; the only addition is the counted `suppressed` section —
+  // while a present but unhonourable one ⇒ exit 2, bad usage's own contract,
+  // never a silent skip.
   let suppressions;
   try {
     suppressions = loadConfig(path);

@@ -164,8 +164,9 @@ it was reported after all.
 stylesheet you point the command at — not from the process working directory — so the same command means
 the same thing no matter where it is invoked from, and a project can keep one config beside its built CSS
 (or one per stylesheet directory) instead of relying on wherever the shell happens to be standing. No
-config file beside the stylesheet means no suppression at all, and output byte-identical to a run without
-the feature.
+config file beside the stylesheet means no suppression at all: no existing line of the report changes,
+the exit codes are unchanged, and the only difference from a run without the feature is the counted
+`suppressed` section appended at zero.
 
 ### Exit codes
 
