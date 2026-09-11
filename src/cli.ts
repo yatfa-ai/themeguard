@@ -43,11 +43,30 @@
  * directly above. Matching is the config entry's, plus the one conjunct the
  * site contributes; a refactored defect moves away from its directive, the
  * directive orphans, and the finding prints and moves the exit code again —
- * the self-announcing miss, never a silence. A malformed directive (unknown
+ * the self-announcing miss, never a silence. That miss is self-announcing
+ * only while the finding still exists: a defect FIXED rather than moved
+ * leaves nothing to announce anything, and there the report's counted
+ * `unmatched` section (below) names the orphaned judgement instead — still
+ * not an error. A malformed directive (unknown
  * rule id, missing reason) is the config's own contract: exit 2 naming the
  * comment's line, never a silent skip. The two mechanisms merge at the single
  * `suppressions` seam below; the config stays the project-level mechanism,
  * the directive its site-level one, and neither changed the other's semantics.
+ *
+ * ── The unmatched ─────────────────────────────────────────────────────────
+ * The complement of `suppressed`, under the same counted-even-at-zero
+ * discipline: a declared suppression that matched NOTHING is named, with its
+ * rule, its scope, its `file:line` source where it has one, and its reason
+ * quoted. Suppression is a standing ledger of signed-off exceptions, and
+ * before this section nothing ever told the reader that an entry had
+ * outlived the defect it was written about — a config carrying dead
+ * judgements was byte-indistinguishable from no config at all. The section
+ * prints even at zero, because an empty section is the PROOF that every
+ * recorded judgement is still doing work; like `skipped` and `coverage` it
+ * is hygiene, never a defect, and never moves the exit code. Its prose names
+ * the two possible causes and stops — the tool cannot tell an expired
+ * judgement (defect fixed, retire the entry) from a mis-aimed one, and must
+ * not pretend to.
  *
  * `coverage` is printed under the same precedent. It is the fact inventory rule
  * 4 is measured over — per theme, every base-theme token marked overridden or
@@ -81,6 +100,12 @@
  * code hostage, which is the point of the config. A malformed config is the
  * opposite case: the audit did not run on the terms the user wrote, so it is
  * exit 2 alongside the usage errors, naming the offending entry.
+ *
+ * The `unmatched` section is likewise outside the exit: a declared entry that
+ * matched nothing is a stale or mis-aimed JUDGEMENT, not a defect in the
+ * stylesheet, so an expired judgement must never turn a green pipeline red.
+ * The exit stays exactly the question it has always been — were there
+ * unsuppressed findings.
  */
 
 import { readFileSync, realpathSync } from "node:fs";
@@ -142,6 +167,22 @@ function scopeSuffix(entry: SuppressionEntry): string {
  */
 function sourceClause(entry: SuppressionEntry | SiteScopedSuppressionEntry): string {
   return "source" in entry ? ` [${entry.source}]` : "";
+}
+
+/**
+ * The scalar `token` spelling of a config entry's token dimension, as
+ * ` [token: --name]` — `""` for every other entry. DELIBERATELY NOT folded
+ * into `scopeSuffix`: the `suppressed` line's format is pinned byte-identical
+ * and needs no token segment, because the finding's own message sits in the
+ * middle of that line and already names the tokens the judgement covered. An
+ * `unmatched` line has no finding by definition, so the token dimension is
+ * the only field that can distinguish one entry from another — omitting it
+ * here would render three different judgements about three different tokens
+ * as three byte-identical lines. It rides this line alone for exactly that
+ * reason; `scopeSuffix` stays untouched.
+ */
+function tokenScope(entry: SuppressionEntry | SiteScopedSuppressionEntry): string {
+  return entry.token !== undefined ? ` [token: ${entry.token}]` : "";
 }
 
 /**
@@ -272,6 +313,40 @@ export function formatReport(
     );
     for (const { finding, reason, entry } of report.suppressed) {
       lines.push(`  [suppressed] [${finding.rule}] ${finding.message} — "${reason}"${scopeSuffix(entry)}${sourceClause(entry)}`);
+    }
+  }
+  lines.push("");
+
+  // The complement of `suppressed`, under the same counted-not-silent
+  // discipline: a declared judgement that matched NOTHING is printed, because
+  // silence is exactly what made a stale entry invisible. Suppression is a
+  // standing ledger of signed-off exceptions, and nothing ever told the
+  // reader one had outlived its defect — a config carrying dead entries read
+  // byte-identically to no config at all. The section prints even at ZERO:
+  // an empty section is the proof that every recorded judgement is still
+  // doing work, and a section that vanished at zero would reproduce the very
+  // silence this removes. It never moves the exit code — a stale entry is
+  // hygiene, not a defect in the stylesheet, the same posture `skipped` and
+  // `coverage` take. Each line reuses the vocabulary the `suppressed` lines
+  // already have — the rule, the declared scope, the directive's `file:line`
+  // source where it has one, the reason quoted — because an unmatched entry
+  // is an entry like any other, only without a finding behind it. The prose
+  // names the two causes honestly and stops: the tool cannot tell an expired
+  // judgement (defect fixed, retire the entry) from a mis-aimed one, and
+  // must not pretend to.
+  lines.push(`unmatched (${report.unmatchedSuppressions.length})`);
+  if (report.unmatchedSuppressions.length === 0) {
+    lines.push(
+      "  nothing unmatched — every recorded judgement still covers a finding this report carries.",
+    );
+  } else {
+    lines.push(
+      "  declared suppressions no finding matched. Either the defect was fixed and the judgement can be retired, or the entry never aimed at a finding that exists — the report cannot tell which.",
+    );
+    for (const entry of report.unmatchedSuppressions) {
+      lines.push(
+        `  [unmatched] [${entry.rule}] — "${entry.reason}"${tokenScope(entry)}${scopeSuffix(entry)}${sourceClause(entry)}`,
+      );
     }
   }
   lines.push("");

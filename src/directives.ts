@@ -10,9 +10,13 @@
  * holding down a defect nobody judged. A directive is bound to its site BY
  * CONSTRUCTION: it lives at the site, so moving the defect orphans the
  * directive, the finding it used to cover prints again and moves the exit
- * code — the same self-announcing miss a config entry that matches nothing
- * gets, and deliberately not a silence. And when the file is vendored,
- * regenerated or forked, the judgement travels with it.
+ * code — the same self-announcing miss a mis-aimed config entry gets, and
+ * deliberately not a silence. That miss is self-announcing only while the
+ * finding still exists: FIX the defect rather than moving it and there is
+ * nothing left to announce anything, so the orphaned judgement is named
+ * instead by the audit report's counted `unmatchedSuppressions` leg (the
+ * CLI's `unmatched` section) — still not an error, never a silence. And when
+ * the file is vendored, regenerated or forked, the judgement travels with it.
  *
  * The grammar is one comment:
  *

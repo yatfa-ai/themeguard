@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -388,5 +388,181 @@ describe("node dist/cli.js — the built artifact", () => {
   it("exits 0 on the clean stylesheet and 2 on a missing one", () => {
     expect(spawn(CLEAN_PATH).code).toBe(EXIT_OK);
     expect(spawn(join(tmp, "absent.css")).code).toBe(EXIT_ERROR);
+  });
+});
+
+/**
+ * The `unmatched` section — the complement of `suppressed`, under the same
+ * counted-even-at-zero discipline. A declared suppression that matched
+ * NOTHING is named, with its rule, its declared scope, its `[file:line]`
+ * source where it has one, and its reason quoted — because a standing ledger
+ * of signed-off exceptions must say when one of its entries has outlived the
+ * defect it was written about. Like `skipped` and `coverage` it is hygiene,
+ * never a defect: it prints at zero and NEVER moves the exit code, so an
+ * expired judgement cannot turn a green pipeline red.
+ */
+describe("the unmatched section — judgements that matched nothing, counted and named", () => {
+  const dir = join(tmp, "unmatched-fixtures");
+
+  function fx(name: string, css: string): string {
+    const path = join(dir, name);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(path, css, "utf8");
+    return path;
+  }
+
+  function config(json: string): void {
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "themeguard.config.json"), json, "utf8");
+  }
+
+  const DEAD_ENTRIES = JSON.stringify({
+    suppress: [
+      { rule: "scale-collapse", token: "--page-ink-hover", reason: "deliberate hover, signed off 2026-02-01" },
+      { rule: "dead-token", token: "--legacy-ink", reason: "reserved for the pricing page, signed off 2026-03-10" },
+      { rule: "collision", tokens: ["--page-bg", "--page-ink"], reason: "reviewed 2025-11-20, kept for the print theme" },
+    ],
+  });
+
+  it("names every dead config entry — rule, scope, reason quoted — on a CLEAN sheet, at exit 0", () => {
+    config(DEAD_ENTRIES);
+    const result = run(fx("dead-entries.css", CLEAN_CSS));
+    expect(result.code).toBe(EXIT_OK);
+    expect(result.stdout).toContain("unmatched (3)");
+    expect(result.stdout).toContain(
+      "  declared suppressions no finding matched. Either the defect was fixed and the judgement can be retired, or the entry never aimed at a finding that exists — the report cannot tell which.",
+    );
+    expect(result.out.filter((l) => l.startsWith("  [unmatched] "))).toEqual([
+      '  [unmatched] [scale-collapse] — "deliberate hover, signed off 2026-02-01" [token: --page-ink-hover]',
+      '  [unmatched] [dead-token] — "reserved for the pricing page, signed off 2026-03-10" [token: --legacy-ink]',
+      '  [unmatched] [collision] — "reviewed 2025-11-20, kept for the print theme" [tokens: --page-bg, --page-ink]',
+    ]);
+  });
+
+  it("distinguishes entries that share a rule and a reason — the scalar token is the only difference, and it prints", () => {
+    // The reviewer's probe shape: a batch of tokens signed off together —
+    // same rule, same reason, different scalar tokens. These three entries
+    // are distinguishable ONLY by their token dimension, and the unmatched
+    // line has no finding to name it instead, so the token MUST render or
+    // the three lines collapse into one another.
+    config(
+      JSON.stringify({
+        suppress: [
+          { rule: "dead-token", token: "--legacy-ink", reason: "reserved, signed off 2026-03-10" },
+          { rule: "dead-token", token: "--legacy-accent", reason: "reserved, signed off 2026-03-10" },
+          { rule: "dead-token", token: "--legacy-panel", reason: "reserved, signed off 2026-03-10" },
+        ],
+      }),
+    );
+    const result = run(fx("same-shape.css", CLEAN_CSS));
+    expect(result.code).toBe(EXIT_OK);
+    expect(result.stdout).toContain("unmatched (3)");
+    expect(result.out.filter((l) => l.startsWith("  [unmatched] "))).toEqual([
+      '  [unmatched] [dead-token] — "reserved, signed off 2026-03-10" [token: --legacy-ink]',
+      '  [unmatched] [dead-token] — "reserved, signed off 2026-03-10" [token: --legacy-accent]',
+      '  [unmatched] [dead-token] — "reserved, signed off 2026-03-10" [token: --legacy-panel]',
+    ]);
+  });
+
+  it("prints even at ZERO, in prose — an empty section is the proof every judgement still works", () => {
+    // No config beside this sheet (the only one lives beside the other
+    // fixtures in `dir`): the section must headline anyway, the exact silence
+    // this ticket removes being a section that vanished at zero.
+    const result = run(CLEAN_PATH);
+    expect(result.stdout).toContain("unmatched (0)");
+    expect(result.stdout).toContain(
+      "  nothing unmatched — every recorded judgement still covers a finding this report carries.",
+    );
+    expect(result.out.filter((l) => l.startsWith("  [unmatched] "))).toEqual([]);
+  });
+
+  it("sits with the counted sections — after `suppressed`, before `coverage`", () => {
+    config(DEAD_ENTRIES);
+    const result = run(fx("dead-entries.css", CLEAN_CSS));
+    const suppressedAt = result.out.findIndex((l) => l === "suppressed (0)");
+    const unmatchedAt = result.out.findIndex((l) => l === "unmatched (3)");
+    const coverageAt = result.out.findIndex((l) => l.startsWith("coverage ("));
+    expect(suppressedAt).toBeGreaterThan(-1);
+    expect(unmatchedAt).toBeGreaterThan(suppressedAt);
+    expect(coverageAt).toBeGreaterThan(unmatchedAt);
+  });
+
+  it("never moves the exit code — findings alone decide, here and on a finding-bearing sheet", () => {
+    // A clean sheet with three dead judgements exits 0 (pinned above); the
+    // fence's other side: the SAME dead entries on a sheet WITH a finding
+    // still exit 1 — an unmatched section neither adds nor removes a finding.
+    config(DEAD_ENTRIES);
+    const oneFinding = fx(
+      "one-finding.css",
+      `
+:root {
+  --panel: #202020;
+  --panel-hover: #252525;
+}
+
+.panel { background: var(--panel); }
+.panel:hover { background: var(--panel-hover); }
+`,
+    );
+    const withFinding = run(oneFinding);
+    expect(withFinding.code).toBe(EXIT_FINDINGS);
+    expect(withFinding.stdout).toContain("scale-collapse (1)");
+    expect(withFinding.stdout).toContain("unmatched (3)");
+  });
+
+  it("names an orphaned directive whose defect was FIXED, with its [file:line] source clause", () => {
+    // The judgement was recorded about an equality that no longer exists —
+    // the one case with no finding left to announce the miss.
+    config("{}");
+    const orphanSheet = fx(
+      "orphaned-directive.css",
+      CLEAN_CSS.replace(
+        "  --page-bg: #FFFFFF;",
+        "  /* themeguard-ignore collision --page-bg --page-ink -- vendor brand, signed off 2026-01-15 */\n  --page-bg: #FFFFFF;",
+      ),
+    );
+    const result = run(orphanSheet);
+    expect(result.code).toBe(EXIT_OK);
+    expect(result.stdout).toContain("unmatched (1)");
+    expect(result.out.find((l) => l.startsWith("  [unmatched] "))).toBe(
+      '  [unmatched] [collision] — "vendor brand, signed off 2026-01-15" [tokens: --page-bg, --page-ink] [' +
+        orphanSheet +
+        ":3]",
+    );
+  });
+
+  it("splits the ledger honestly — the entry that worked stays in `suppressed`, the dead one in `unmatched`", () => {
+    config(
+      JSON.stringify({
+        suppress: [
+          { rule: "scale-collapse", token: "--panel-hover", reason: "deliberately subtle, still holding" },
+          { rule: "dead-token", token: "--legacy-ink", reason: "stale — the token is long gone" },
+        ],
+      }),
+    );
+    // The finding-bearing sheet: the hover entry genuinely suppresses the one
+    // finding (so the run exits 0); the dead-token entry matches nothing and
+    // is named as unmatched. One ledger, two fates, both visible.
+    const result = run(fx(
+      "mixed.css",
+      `
+:root {
+  --panel: #202020;
+  --panel-hover: #252525;
+}
+
+.panel { background: var(--panel); }
+.panel:hover { background: var(--panel-hover); }
+`,
+    ));
+    expect(result.code).toBe(EXIT_OK);
+    expect(result.stdout).toContain("suppressed (1)");
+    expect(result.stdout).toContain("unmatched (1)");
+    expect(result.out.find((l) => l.startsWith("  [suppressed] "))).toContain(
+      '"deliberately subtle, still holding"',
+    );
+    expect(result.out.find((l) => l.startsWith("  [unmatched] "))).toContain(
+      '"stale — the token is long gone"',
+    );
   });
 });

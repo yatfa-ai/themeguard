@@ -33,6 +33,10 @@
  * who DOES have one — a user who has looked at a finding and declared it
  * deliberate — passes `suppressions`, and matching findings move from
  * `findings` to the report's `suppressed` leg with their reason attached.
+ * The complement is reported alongside: declared entries that matched nothing
+ * are carried on `unmatchedSuppressions` — counted, named, still not an
+ * error — so a recorded judgement whose defect is gone can announce that
+ * instead of going silent.
  * Suppression is a post-audit, explicit, structured declaration (rule id +
  * token dimension, optionally scoped to the theme and the exact token set the
  * finding was measured over — never message scraping): it filters a finished
@@ -80,6 +84,25 @@ export interface AuditReport {
    */
   readonly suppressed: readonly SuppressedFinding[];
   /**
+   * The declared suppressions that matched NO finding — the complement of
+   * `suppressed`, in declaration order (config entries first, then
+   * directives, exactly the order the caller's array carried). Suppression is
+   * a standing ledger of exceptions, and before this leg nothing ever told a
+   * reader that one of its entries had outlived the defect it was written
+   * about: nothing matched, so nothing printed, and a config carrying dead
+   * judgements was byte-indistinguishable from no config at all. Reported
+   * under the same counted-not-silent discipline as `skipped` and
+   * `suppressed` — hygiene, never a defect in the stylesheet, and it never
+   * moves the exit code (the exit stays the unsuppressed-findings question).
+   * The report cannot tell an EXPIRED judgement — the defect was fixed, the
+   * entry should be retired — from a MIS-AIMED one that never matched
+   * anything real; it carries both and names neither, and the CLI's prose for
+   * this section says so rather than pretending to know.
+   */
+  readonly unmatchedSuppressions: readonly (
+    SuppressionEntry | SiteScopedSuppressionEntry
+  )[];
+  /**
    * Per theme, every base-theme token marked `overridden` or `inherited`, with
    * the kind each theme's copy resolves to. A fact inventory, never a
    * judgement: a wholly inherited family is normal (theme-independent tokens
@@ -113,6 +136,12 @@ export interface AuditOptions {
    * findings living at the directive's own position, so the judgement is
    * bound to its site by construction. A config entry never carries one, and
    * config entries behave byte-identically to before this dimension existed.
+   *
+   * The complement is reported too: a declared entry that matches NO finding
+   * moves nothing and stays an error-free no-op, and is carried on the
+   * report's `unmatchedSuppressions` leg — counted and named, never an
+   * error — so a judgement that has outlived its defect can say so instead
+   * of going silent.
    */
   readonly suppressions?: readonly (SuppressionEntry | SiteScopedSuppressionEntry)[];
 }
@@ -204,7 +233,11 @@ export function audit(
   //     below it (a standalone comment on the preceding line) — the two
   //     industry placements. Move the defect and the directive orphans:
   //     nothing matches, the finding prints and moves the exit code — the
-  //     self-announcing miss, never a silence.
+  //     self-announcing miss, never a silence. That miss is self-announcing
+  //     only while the finding EXISTS: fix the defect rather than move it and
+  //     there is nothing left to announce anything, which is the gap the
+  //     `unmatchedSuppressions` leg below exists to close — the orphaned
+  //     judgement is named there, still without becoming an error.
   const findingLines = (finding: Finding): readonly number[] => {
     if (finding.sites !== undefined) return finding.sites.map((s) => s.line);
     // A rule that carries no `sites` (dead-token) still publishes its lines —
@@ -237,6 +270,14 @@ export function audit(
     return true;
   };
   const suppressions = options.suppressions ?? [];
+  // Which declared entries matched is tracked by POSITION in the caller's
+  // array, never by shape: the same entry can match many findings, and two
+  // distinct entries can be structurally similar, so the complement below is
+  // a set-difference over the entries themselves — the array's own slots —
+  // and not over their fields. `findIndex` reads the same first-match the
+  // `find` it replaces read, so the matching behaviour is unchanged; only
+  // what the loop remembers about a match is new.
+  const matched = new Array<boolean>(suppressions.length).fill(false);
   const suppressed: SuppressedFinding[] = [];
   const kept: Finding[] = [];
   for (const finding of sortFindings([
@@ -245,9 +286,13 @@ export function audit(
     ...scale.findings,
     ...family,
   ])) {
-    const entry = suppressions.find((s) => matches(s, finding));
-    if (entry === undefined) kept.push(finding);
-    else suppressed.push({ finding, reason: entry.reason, entry });
+    const index = suppressions.findIndex((s) => matches(s, finding));
+    if (index === -1) kept.push(finding);
+    else {
+      matched[index] = true;
+      const entry = suppressions[index] as SuppressionEntry | SiteScopedSuppressionEntry;
+      suppressed.push({ finding, reason: entry.reason, entry });
+    }
   }
 
   return {
@@ -259,6 +304,11 @@ export function audit(
       "family-consistency": kept.filter((f) => f.rule === "family-consistency").length,
     },
     suppressed,
+    // The complement, in declaration order: the caller's slots that no
+    // finding claimed. Declared entries arrive as one ordered array at the
+    // CLI's single merge seam (config entries first, then directives), so
+    // this order IS the order the judgements were recorded in.
+    unmatchedSuppressions: suppressions.filter((_, i) => !matched[i]),
     skipped: scale.skipped,
     coverage: coverageReport(resolved),
   };
