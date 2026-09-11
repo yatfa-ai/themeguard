@@ -425,13 +425,47 @@ describe("the CLI audits the closure, and the config beside the ROOT governs it"
       "utf8",
     );
     const { code, out } = run(path);
-    // Suppression matches by rule, token and theme — never by file — so the
-    // root's config governs findings spliced in from imported files.
+    // An unscoped entry has no file axis at all, so the root's config governs
+    // findings spliced in from imported files.
     expect(code).toBe(EXIT_OK);
     expect(out.some((l) => l.startsWith("suppressed (1)"))).toBe(true);
     expect(
       out.some((l) => l.includes("--orphan is declared at sup-tokens.css:1") && l.includes("reserved for the pricing page")),
     ).toBe(true);
+  });
+
+  it("a FILE-scoped entry naming the root governs the closure's imported findings too", () => {
+    // The 0.1.11 composition this rebase creates: a file scope is compared
+    // against the audited ENTRY stylesheet — the unit the invocation asked
+    // about — and the unit here is the closure, so a judgement scoped to the
+    // root covers the findings its imports spliced in.
+    writeSheet("scoped-tokens.css", ":root { --orphan: #00FF00; }", cliDir);
+    const path = writeSheet(
+      "scoped-composed.css",
+      '@import "./scoped-tokens.css";\n\n.btn { color: red; }',
+      cliDir,
+    );
+    writeFileSync(
+      join(cliDir, "themeguard.config.json"),
+      JSON.stringify({
+        suppress: [
+          {
+            rule: "dead-token",
+            token: "--orphan",
+            file: "scoped-composed.css",
+            reason: "reserved for the pricing page",
+          },
+        ],
+      }),
+      "utf8",
+    );
+    const { code, out } = run(path);
+    expect(code).toBe(EXIT_OK);
+    expect(out).toContain("suppressed (1)");
+    expect(
+      out.some((l) => l.includes("[file: scoped-composed.css]") && l.includes("reserved for the pricing page")),
+    ).toBe(true);
+    expect(out.some((l) => l.includes("declared at scoped-tokens.css:1"))).toBe(true);
   });
 
   it("a REAL finding in the closure still holds exit 1", () => {

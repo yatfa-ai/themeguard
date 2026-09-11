@@ -221,8 +221,10 @@ What is followed, and what is deliberately not:
   independently (`Declared at tokens.css:3 and line 7.`) rather than pooling bare line numbers that may not
   even share a file. Sites in the entry file render exactly as they always have.
 - **Governed by the root's config:** `themeguard.config.json` sits beside the stylesheet you point the
-  command at, and an entry matches by rule, token and theme — never by file — so one judgement written beside
-  the root governs findings living anywhere in the closure. `themeguard-ignore` directives are the opposite:
+  command at, and an unscoped entry matches by rule, token and theme — it has no file axis at all — so one
+  judgement written beside the root governs findings living anywhere in the closure. A file-scoped entry
+  (0.1.11's `file` field) governs the same span by naming it: the stylesheet it names is the ENTRY
+  stylesheet, the closure's root, so whatever the invocation audited, the entry covers. `themeguard-ignore` directives are the opposite:
   a judgement written at one site in one file, and they are read from the entry file's text only — so a
   directive matches only entry-file sites, by line, and never a finding spliced in from an imported file
   whose line merely coincides.
