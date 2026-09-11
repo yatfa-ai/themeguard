@@ -959,6 +959,7 @@ describe("the audit entry point", () => {
     const empty = audit(resolveCss(":root { --a: #FFFFFF; --b: var(--a); }"));
     expect(Object.keys(empty.countsByRule).sort()).toEqual([
       "collision",
+      "cycle-reference",
       "dead-token",
       "family-consistency",
       "scale-collapse",
@@ -967,6 +968,7 @@ describe("the audit entry point", () => {
     expect(empty.countsByRule.collision).toBe(0);
     expect(empty.countsByRule["family-consistency"]).toBe(0);
     expect(empty.countsByRule["unresolved-reference"]).toBe(0);
+    expect(empty.countsByRule["cycle-reference"]).toBe(0);
   });
 
   it("totals its per-rule counts exactly", () => {
@@ -984,6 +986,7 @@ describe("the audit entry point", () => {
         "scale-collapse": 2,
         "family-consistency": 3,
         "unresolved-reference": 4,
+        "cycle-reference": 5,
       } as const;
       return order[a] - order[b];
     }));
