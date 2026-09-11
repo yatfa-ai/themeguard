@@ -11,7 +11,7 @@ import { resolveCss } from "../src/resolve.js";
 import { fixtureCss } from "./fixture.js";
 
 /**
- * Rule 6 — CYCLE REFERENCE.
+ * Rule 7 — CYCLE REFERENCE.
  *
  * The rule is one walk — per theme, the `kind === "cycle"` tokens the resolver
  * already reports, grouped by loop set and scoped by authorship — over data
@@ -256,7 +256,7 @@ describe("rule 6 — cycle reference, the shapes that used to pass silent", () =
   });
 });
 
-describe("suppression — the sixth rule id through both doors", () => {
+describe("suppression — the seventh rule id through both doors", () => {
   it("a config entry naming the rule and a member token moves the finding to the suppressed leg", () => {
     const css = `
 :root {
@@ -341,7 +341,7 @@ describe("suppression — the sixth rule id through both doors", () => {
   });
 });
 
-describe("runCli — the exit code moves with the sixth rule, both ways", () => {
+describe("runCli — the exit code moves with the seventh rule, both ways", () => {
   it("a loop is exit 1, its own section, and its count on the summary line", () => {
     const path = cssFixture(
       "loop.css",
@@ -354,7 +354,7 @@ describe("runCli — the exit code moves with the sixth rule, both ways", () => 
       "  [cycle-reference] --a → --b → --a is a var() cycle: every property in the loop, and every var() consuming a member, is invalid at computed-value time. Declared at lines 2 and 3.",
     );
     expect(result.stdout).toContain(
-      "1 finding: 0 collision, 0 dead-token, 0 scale-collapse, 0 family-consistency, 0 unresolved-reference, 1 cycle-reference.",
+      "1 finding: 0 collision, 0 dead-token, 0 scale-collapse, 0 family-consistency, 0 unresolved-reference, 1 cycle-reference, 0 duplicate-declaration.",
     );
   });
 
@@ -398,8 +398,8 @@ describe("runCli — the exit code moves with the sixth rule, both ways", () => 
   });
 });
 
-describe("the config door — the sixth id is a valid suppression rule id", () => {
-  it("parseConfig accepts a cycle-reference entry, and the unknown-rule error names the full six", () => {
+describe("the config door — the seventh id is a valid suppression rule id", () => {
+  it("parseConfig accepts a cycle-reference entry, and the unknown-rule error names the full list", () => {
     const entries = parseConfig(
       JSON.stringify({
         suppress: [{ rule: "cycle-reference", token: "--a", reason: "judged deliberate" }],

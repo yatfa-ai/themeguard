@@ -1,5 +1,5 @@
 /**
- * themeguard — the resolver, the maths, and the six rules.
+ * themeguard — the resolver, the maths, and the seven rules.
  *
  * Two stages, kept apart on purpose:
  *
@@ -9,10 +9,11 @@
  *     a defect, or that an unreferenced token is dead.
  *   - `audit.ts` and `rules/` JUDGE that data, as pure functions over
  *     `resolveStylesheet`'s output. {@link audit} is the entry point and
- *     answers all six of the README's questions in one pass, returning
+ *     answers all seven of the README's questions in one pass, returning
  *     findings tagged `collision`, `dead-token`, `scale-collapse`,
- *     `family-consistency`, `unresolved-reference` or `cycle-reference`, plus
- *     the per-theme coverage inventory the fourth rule is measured over.
+ *     `family-consistency`, `unresolved-reference`, `cycle-reference` or
+ *     `duplicate-declaration`, plus the per-theme coverage inventory the fourth
+ *     rule is measured over.
  *
  * ```ts
  * import { resolveCss, audit } from "themeguard";
@@ -22,7 +23,7 @@
  * }
  * ```
  *
- * The same six rules are also a command: `themeguard <file.css>` (see
+ * The same seven rules are also a command: `themeguard <file.css>` (see
  * `cli.ts`), which is I/O and presentation over exactly this `audit()` call and
  * adds no judgement of its own.
  */
@@ -49,6 +50,7 @@ export { collisionRule } from "./rules/collision.js";
 export { deadTokenRule } from "./rules/dead-token.js";
 export { unresolvedReferenceRule } from "./rules/unresolved-reference.js";
 export { cycleReferenceRule } from "./rules/cycle-reference.js";
+export { duplicateDeclarationRule } from "./rules/duplicate-declaration.js";
 export {
   scaleCollapseRule,
   VISIBLE_STEP_LSTAR,

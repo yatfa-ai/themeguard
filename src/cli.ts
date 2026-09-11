@@ -180,6 +180,7 @@ const RULE_ORDER: readonly RuleId[] = [
   "family-consistency",
   "unresolved-reference",
   "cycle-reference",
+  "duplicate-declaration",
 ];
 
 /**

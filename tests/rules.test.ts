@@ -9,6 +9,7 @@ import {
 import { collisionRule } from "../src/rules/collision.js";
 import { positionClause } from "../src/rules/finding.js";
 import { deadTokenRule } from "../src/rules/dead-token.js";
+import { duplicateDeclarationRule } from "../src/rules/duplicate-declaration.js";
 import { scaleCollapseRule, VISIBLE_STEP_LSTAR } from "../src/rules/scale-collapse.js";
 import { TokenNames } from "../src/rules/tokens.js";
 import { fixtureCss } from "./fixture.js";
@@ -961,6 +962,7 @@ describe("the audit entry point", () => {
       "collision",
       "cycle-reference",
       "dead-token",
+      "duplicate-declaration",
       "family-consistency",
       "scale-collapse",
       "unresolved-reference",
@@ -969,6 +971,7 @@ describe("the audit entry point", () => {
     expect(empty.countsByRule["family-consistency"]).toBe(0);
     expect(empty.countsByRule["unresolved-reference"]).toBe(0);
     expect(empty.countsByRule["cycle-reference"]).toBe(0);
+    expect(empty.countsByRule["duplicate-declaration"]).toBe(0);
   });
 
   it("totals its per-rule counts exactly", () => {
@@ -987,6 +990,7 @@ describe("the audit entry point", () => {
         "family-consistency": 3,
         "unresolved-reference": 4,
         "cycle-reference": 5,
+        "duplicate-declaration": 6,
       } as const;
       return order[a] - order[b];
     }));
@@ -1026,6 +1030,9 @@ describe("the audit entry point", () => {
     expect(deadTokenRule(resolved, names)).toHaveLength(2);
     expect(scaleCollapseRule(resolved, names).findings).toHaveLength(2);
     expect(familyConsistencyRule(resolved, names)).toHaveLength(7);
+    // And the seventh rule on the same fixture: its census is 0 (pinned in
+    // duplicate-declaration.test.ts, derived from the pre-fold scopes).
+    expect(duplicateDeclarationRule(resolved)).toHaveLength(0);
   });
 });
 
