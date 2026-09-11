@@ -62,7 +62,7 @@
 
 import { deltaLstar, lstar, type Color } from "../color.js";
 import type { ResolvedStylesheet } from "../resolve.js";
-import type { Finding } from "./finding.js";
+import { positionClause, type Finding, type FindingSite } from "./finding.js";
 import { TokenNames, type StatePair } from "./tokens.js";
 
 /** Below this, a step between two fills is not reliably visible. */
@@ -114,6 +114,14 @@ export function scaleCollapseRule(
       }
       const delta = deltaLstar(from.color as Color, to.color as Color);
       if (Math.abs(delta) >= VISIBLE_STEP_LSTAR) continue;
+      // The two declarations the distance was measured BETWEEN, in the order the
+      // message names them: base first, then state. Both are the theme's own
+      // cascade winners — in winter the pair is measured from winter's
+      // declarations, not from the `:root` ones the same names also have.
+      const sites: FindingSite[] = [
+        { name: base, line: from.line },
+        { name: state, line: to.line },
+      ];
       findings.push({
         rule: "scale-collapse",
         theme,
@@ -121,7 +129,13 @@ export function scaleCollapseRule(
         message:
           `${state} is ΔL* ${Math.abs(delta).toFixed(2)} from ${base} in theme "${theme}" — ` +
           `under the ${VISIBLE_STEP_LSTAR} needed for a visible step, so the ${suffix} ` +
-          `state is not distinguishable from the resting one.`,
+          `state is not distinguishable from the resting one. ` +
+          // `sites` reads base-then-state to match the finding's `tokens`, while
+          // the sentence above reads state-then-base — so the clause is built
+          // from a reordered copy rather than from `sites` itself, and the two
+          // orders stay the two orders each is correct in.
+          positionClause([sites[1] as FindingSite, sites[0] as FindingSite]),
+        sites,
         evidence: {
           state: suffix,
           deltaLstar: Number(delta.toFixed(2)),

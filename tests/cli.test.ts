@@ -137,6 +137,49 @@ describe("themeguard <file.css> over the vendored calibration fixture", () => {
     expect(result.stdout).toContain("ΔL* 3.90");
   });
 
+  /**
+   * The position clause, as a PASTED LINE — which is the thing the CLI's own
+   * docstring promises ("a line pasted into an issue still says which question
+   * it answers") and which a collision line could not deliver before: it named
+   * the tokens and the value, and left the receiver to re-derive the cascade by
+   * hand over a 5,000-line stylesheet.
+   */
+  it("ends a collision, scale-collapse and family-consistency line with WHERE it lives", () => {
+    const line = (prefix: string, contains: string) =>
+      result.out.find((l) => l.startsWith(prefix) && l.includes(contains));
+
+    // The fixture declares --app-border at 41 and --app-surface-raised at 33,
+    // both in the base :root block. Those are the lines root's finding was
+    // measured from — winter's 438/421 belong to winter's own finding.
+    expect(line("  [collision]", "--app-border and --app-surface-raised")).toContain(
+      "Declared at lines 41 and 33.",
+    );
+    expect(line("  [scale-collapse]", 'theme "root"')).toContain(
+      "Declared at lines 376 and 375.",
+    );
+    expect(line("  [family-consistency]", "--app-success is inherited")).toContain(
+      "Declared at line 54.",
+    );
+
+    // EVERY line of those three rules carries one — a clause on the famous
+    // examples and nowhere else would be a demo, not a feature.
+    const positioned = result.out.filter((l) =>
+      /^ {2}\[(collision|scale-collapse|family-consistency)\]/.test(l),
+    );
+    expect(positioned).toHaveLength(20);
+    for (const l of positioned) expect(l).toMatch(/Declared at lines? [\d, and]+\.$/);
+  });
+
+  it("leaves both dead-token lines byte-identical — that rule already said where", () => {
+    // dead-token names `:root:402`, with a SELECTOR the merged theme tables
+    // cannot supply, so it is untouched by this slice. Pinned whole rather than
+    // by `toContain`, because the claim is that nothing was appended.
+    expect(result.out.filter((l) => l.startsWith("  [dead-token]"))).toEqual([
+      "  [dead-token] --topbar-height is declared at :root:402 and no var() in this stylesheet references it.",
+      "  [dead-token] --transition-slow is declared at :root:407 and no var() in this stylesheet references it.",
+    ]);
+  });
+
   it("exits 1 — findings found, which is never the same code as a clean run", () => {
     expect(result.code).toBe(EXIT_FINDINGS);
     expect(EXIT_FINDINGS).not.toBe(EXIT_OK);

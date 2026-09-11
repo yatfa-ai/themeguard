@@ -81,8 +81,8 @@ vendored at `tests/fixtures/application.tailwind.css`), it prints:
 themeguard — tests/fixtures/application.tailwind.css
 
 collision (11)
-  [collision] --app-border and --app-surface-raised both resolve to #1E293B in theme "root". They are separate roles, and theme "winter" declares them apart — so this theme is repainting one with the other.
-  [collision] --app-cta and --app-success both resolve to #22C55E in theme "root". They are separate roles, and theme "winter" declares them apart — so this theme is repainting one with the other.
+  [collision] --app-border and --app-surface-raised both resolve to #1E293B in theme "root". They are separate roles, and theme "winter" declares them apart — so this theme is repainting one with the other. Declared at lines 41 and 33.
+  [collision] --app-cta and --app-success both resolve to #22C55E in theme "root". They are separate roles, and theme "winter" declares them apart — so this theme is repainting one with the other. Declared at lines 29 and 54.
   … 9 more, across both themes
 
 dead-token (2)
@@ -90,12 +90,12 @@ dead-token (2)
   [dead-token] --transition-slow is declared at :root:407 and no var() in this stylesheet references it.
 
 scale-collapse (2)
-  [scale-collapse] --app-accent-ink-hover is ΔL* 3.90 from --app-accent-ink in theme "root" — under the 4 needed for a visible step, so the hover state is not distinguishable from the resting one.
-  [scale-collapse] --app-accent-ink-hover is ΔL* 3.45 from --app-accent-ink in theme "winter" — under the 4 needed for a visible step, so the hover state is not distinguishable from the resting one.
+  [scale-collapse] --app-accent-ink-hover is ΔL* 3.90 from --app-accent-ink in theme "root" — under the 4 needed for a visible step, so the hover state is not distinguishable from the resting one. Declared at lines 376 and 375.
+  [scale-collapse] --app-accent-ink-hover is ΔL* 3.45 from --app-accent-ink in theme "winter" — under the 4 needed for a visible step, so the hover state is not distinguishable from the resting one. Declared at lines 551 and 550.
 
 family-consistency (7)
-  [family-consistency] --app-cta-solid-hover is inherited from :root in theme "winter" (resolving to #4ADE80) while the same theme declares --app-cta, --app-cta-hover — the theme tunes this family, so the member it does not re-declare silently keeps the base value.
-  [family-consistency] --app-success is inherited from :root in theme "winter" (resolving to #22C55E) while the same theme declares --app-success-border, --app-success-on-surface, --app-success-soft, --app-success-surface, --app-success-toast-surface — the theme tunes this family, so the member it does not re-declare silently keeps the base value.
+  [family-consistency] --app-cta-solid-hover is inherited from :root in theme "winter" (resolving to #4ADE80) while the same theme declares --app-cta, --app-cta-hover — the theme tunes this family, so the member it does not re-declare silently keeps the base value. Declared at line 312.
+  [family-consistency] --app-success is inherited from :root in theme "winter" (resolving to #22C55E) while the same theme declares --app-success-border, --app-success-on-surface, --app-success-soft, --app-success-surface, --app-success-toast-surface — the theme tunes this family, so the member it does not re-declare silently keeps the base value. Declared at line 54.
   … 5 more
 
 skipped (0)
@@ -231,7 +231,13 @@ console.log(report.countsByRule); // { collision: 11, "dead-token": 2, "scale-co
 ```
 
 Types ship with the package. Every finding carries the `evidence` behind it, so a verdict can be checked
-rather than taken. A library caller with the same need as the CLI — findings it has itself judged
+rather than taken — and three of the four rules also carry `sites`, the declaration each measured token
+resolved from (`{ name, line }`), which is the same position their message ends with. It cites the
+**cascade winner**: `--app-border` is declared twice in the fixture, at `:root`'s line 41 and winter's
+line 438, and the root finding cites 41 while the winter one cites 438. `dead-token` carries no `sites` —
+it already names `:root:402` in its own message, with a selector the merged theme tables cannot supply.
+
+A library caller with the same need as the CLI — findings it has itself judged
 deliberate — passes them as the optional second argument, and reads `report.suppressed` under the same
 counted-not-silent discipline:
 

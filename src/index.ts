@@ -38,7 +38,9 @@ export type { SuppressionEntry } from "./config.js";
 
 export {
   sortFindings,
+  positionClause,
   type Finding,
+  type FindingSite,
   type RuleId,
 } from "./rules/finding.js";
 

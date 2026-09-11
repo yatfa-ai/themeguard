@@ -74,7 +74,7 @@
 
 import { ROOT_THEME, type ResolvedStylesheet } from "../resolve.js";
 import type { TokenKind } from "../resolve.js";
-import type { Finding } from "./finding.js";
+import { positionClause, type Finding, type FindingSite } from "./finding.js";
 import { TokenNames } from "./tokens.js";
 
 /** Whether the theme declares the base token itself or inherits it. */
@@ -194,6 +194,14 @@ export function familyConsistencyRule(
         token.resolvedValue === null
           ? `its var() chain does not resolve in this theme`
           : `resolving to ${token.resolvedValue}`;
+      // WHERE the inherited value comes from: the `:root` declaration this
+      // theme is silently reading. The token's origin is `inherited` by the
+      // guard at the top of the loop, so `line` is the BASE declaration's line
+      // — the one to copy into the theme's own block, which is exactly the
+      // remedy this finding implies and the question it could not answer
+      // before. (It is never a line in the theme's block: a theme that declared
+      // the member would not be inheriting it.)
+      const sites: FindingSite[] = [{ name: token.name, line: token.line }];
       findings.push({
         rule: "family-consistency",
         theme,
@@ -202,7 +210,9 @@ export function familyConsistencyRule(
           `${token.name} is inherited from :root in theme "${theme}" (${valueClause}) ` +
           `while the same theme declares ` +
           `${overriddenSiblings.join(", ")} — the theme tunes this family, so ` +
-          `the member it does not re-declare silently keeps the base value.`,
+          `the member it does not re-declare silently keeps the base value. ` +
+          positionClause(sites),
+        sites,
         evidence: {
           familyHead: head,
           /** The `:root` declaration's value, as written. */

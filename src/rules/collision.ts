@@ -73,7 +73,7 @@
  */
 
 import type { ResolvedStylesheet } from "../resolve.js";
-import type { Finding } from "./finding.js";
+import { positionClause, type Finding, type FindingSite } from "./finding.js";
 import { TokenNames } from "./tokens.js";
 
 /** A set of names that hold the same value in every theme. */
@@ -151,6 +151,21 @@ export function collisionRule(
       const entries = [...families.entries()].sort(([a], [b]) => a.localeCompare(b));
       const roles = entries.map(([, cls]) => cls.representative);
 
+      // WHERE the collision is, and it is the CASCADE WINNER's line — the
+      // declaration this theme actually resolves through, never every place the
+      // name is written. `--app-border` is declared at :root:41 and again at
+      // winter:438; the root finding cites 41 and the winter finding cites 438,
+      // because those are the two declarations the two findings were measured
+      // from. A role always resolves here (it passed filter 1, which drops a
+      // name the theme cannot resolve), so a missing token is impossible rather
+      // than merely unlikely — but the filter keeps the types honest without a
+      // cast, and a role that somehow vanished is dropped from `sites` rather
+      // than printed as a fabricated line.
+      const sites: FindingSite[] = roles.flatMap((role) => {
+        const token = resolved.token(role, theme);
+        return token === undefined ? [] : [{ name: role, line: token.line }];
+      });
+
       // Does another theme SHOW these roles apart, or is this theme simply the
       // only place either of them is written? The finding is the same either
       // way — the roles hold one value here and they are separate roles — but
@@ -183,7 +198,9 @@ export function collisionRule(
             ? `They are separate roles, and theme "${witness}" declares them apart — ` +
               `so this theme is repainting one with the other.`
             : `They are separate roles, and no other theme declares them apart, so ` +
-              `nothing here shows the equality is intended.`),
+              `nothing here shows the equality is intended.`) +
+          (sites.length > 0 ? ` ${positionClause(sites)}` : ""),
+        sites,
         evidence: {
           value: group.value,
           roles,
