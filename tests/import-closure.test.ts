@@ -283,6 +283,82 @@ describe("the rules' lookups hit imported declarations with no predicate change"
   });
 });
 
+describe("an origin names the file the item was WRITTEN in, at any depth", () => {
+  // The stamp must survive the hops: `load`'s recursive frame returns the
+  // child's ENTIRE closure, deeper items already carrying their own correct
+  // entry-relative origins, and an unconditional spread at this frame would
+  // overwrite every one of them with THIS edge's target — citing any item two
+  // or more hops in with the wrong file. Nothing at one hop can see that (the
+  // wrong name is still an imported file's name), so these pins are the only
+  // guard the suite has, and each drives a different consumer of the origin:
+  // dead-token's own scope walk, unresolved-reference's use sites, and the
+  // resolver's `importOrigin` flowing into `siteFromToken`-shaped `sites`.
+  it("a dead token declared two hops in cites the file it was written in, at that file's line", () => {
+    writeSheet("deep-tokens.css", ":root {\n  --deep-dead: #00AA00;\n}");
+    writeSheet("deep-mid.css", '@import "./deep-tokens.css";\n\n:root { --mid-own: #222222; }');
+    const path = writeSheet("deep-app.css", '@import "./deep-mid.css";\n\n.btn { color: red; }');
+    // `--deep-dead` is WRITTEN at line 2 of deep-tokens.css. deep-mid.css
+    // also has a line 2 — its own `:root` — so under the wrong-stamp
+    // regression this message cited `deep-mid.css:2`, a named file whose
+    // named line points at someone else's declaration: a citation with false
+    // authority, worse than a bare number.
+    expect(messagesOf(path)).toEqual([
+      "--deep-dead is declared at deep-tokens.css:2 and no var() in this stylesheet references it.",
+      "--mid-own is declared at deep-mid.css:3 and no var() in this stylesheet references it.",
+    ]);
+  });
+
+  it("a dangling var() written two hops in cites the file the USE was written in", () => {
+    writeSheet(
+      "hop2-deep.css",
+      ":root { --hop-ok: #303030; --hop-dead: #404040; }\n\n.deep-use { color: var(--hop-missing); }",
+    );
+    writeSheet(
+      "hop2-mid.css",
+      '@import "./hop2-deep.css";\n\n:root { --hop-mid: #202020; }\n.mid-use { color: var(--hop-dead); }',
+    );
+    const path = writeSheet(
+      "hop2-app.css",
+      '@import "./hop2-mid.css";\n\n.btn { color: var(--hop-mid); background: var(--hop-ok); }',
+    );
+    // The `var(--hop-missing)` is written in hop2-deep.css at line 3.
+    // hop2-mid.css also has a line 3, so the wrong stamp renders a
+    // plausible-looking citation for the wrong file.
+    expect(messagesOf(path)).toEqual([
+      "--hop-missing is used at hop2-deep.css:3 and no scope in this stylesheet declares it.",
+    ]);
+  });
+
+  it("a collision whose winner sits two hops in carries origin through siteFromToken into sites", () => {
+    writeSheet("col2-part.css", ":root { --deep-fill: #3366AA; }");
+    writeSheet(
+      "col2-mid.css",
+      '@import "./col2-part.css";\n\n:root { --mid-fill: #123456; }\n.use { color: var(--mid-fill); }',
+    );
+    const path = writeSheet(
+      "col2-app.css",
+      '@import "./col2-mid.css";\n\n:root { --root-fill: #3366AA; }\n.use { color: var(--deep-fill); background: var(--root-fill); }',
+    );
+    // The `ResolvedToken.importOrigin` leg itself: the root-theme winner of
+    // `--deep-fill` was written in col2-part.css at line 1 — not spliced from
+    // col2-mid.css, the file that merely imported it onward.
+    const resolved = resolveStylesheet(loadStylesheet(path));
+    const deep = resolved.token("--deep-fill", "root");
+    expect(deep?.importOrigin).toBe("col2-part.css");
+    expect(deep?.line).toBe(1);
+    // And that leg is what `siteFromToken` reads: the structured `sites` —
+    // the same data collision's message clause renders — cite each side by
+    // its own file.
+    const collision = audit(resolved).findings.find((f) => f.rule === "collision");
+    expect(collision?.tokens).toEqual(["--deep-fill", "--root-fill"]);
+    expect(collision?.sites).toEqual([
+      { name: "--deep-fill", line: 1, origin: "col2-part.css" },
+      { name: "--root-fill", line: 3 },
+    ]);
+    expect(collision?.message).toContain("Declared at col2-part.css:1 and line 3.");
+  });
+});
+
 describe("a root-only sheet is byte-identical through the loader to today's one-file read", () => {
   it("produces the same findings object resolveCss produces on the same text", () => {
     const css = [

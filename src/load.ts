@@ -67,6 +67,11 @@
  * byte-identically to before, so no existing report changes unless an import
  * was actually followed.
  *
+ * One stamp per item, and it names the file the item was WRITTEN in: a file
+ * two hops in is stamped by its own edge, never overwritten by an outer
+ * edge's target — a citation that names a file but points at someone else's
+ * declaration carries false authority, which is worse than a bare number.
+ *
  * An unreadable ENTRY file throws — that is the caller's error to render (the
  * CLI already turns it into exit 2 with the path named), and swallowing it
  * here would audit nothing and call it a pass.
@@ -123,8 +128,21 @@ export function loadStylesheet(entryPath: string): Stylesheet {
       // shares one coordinate system: `tokens.css`, `shared/props.css`, from
       // however many hops deep the statement was written.
       const origin = relative(entryDir, target);
-      scopes.push(...child.scopes.map((s) => ({ ...s, origin })));
-      references.push(...child.references.map((r) => ({ ...r, origin })));
+      // Stamp ONLY what lacks an origin. `child` is the child's ENTIRE
+      // closure — scopes spliced in from the child's OWN imports already
+      // carry their correct entry-relative origins, stamped by their own
+      // recursive frame, and an unconditional spread would overwrite every
+      // deeper one with THIS edge's target, citing any item two or more hops
+      // in with the wrong file. `parse` sets no origin and nothing else
+      // stamps one, so `origin === undefined` selects exactly the child's
+      // own items: one stamp per item, naming the file the item was written
+      // in.
+      scopes.push(
+        ...child.scopes.map((s) => (s.origin === undefined ? { ...s, origin } : s)),
+      );
+      references.push(
+        ...child.references.map((r) => (r.origin === undefined ? { ...r, origin } : r)),
+      );
     }
 
     scopes.push(...sheet.scopes);
