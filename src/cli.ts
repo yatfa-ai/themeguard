@@ -32,8 +32,9 @@
  *
  * ── The config ────────────────────────────────────────────────────────────
  * `themeguard.config.json`, OPTIONAL, is discovered NEXT TO THE STYLESHEET —
- * not the process CWD: a run is `themeguard <file.css>`, so the config that
- * governs a file is the one beside it. Absent file ⇒ no suppressions: no
+ * not the process CWD: a run names stylesheets — `themeguard <file.css>
+ * [file.css…]` — and the config that governs a file is the one beside it.
+ * Absent file ⇒ no suppressions: no
  * existing line of the report changes and the exit codes are unchanged — the
  * only addition is the counted `suppressed` section, printed even at zero.
  * Each entry lists a rule id, a token dimension (one `token`, or a `tokens`
