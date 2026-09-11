@@ -47,7 +47,20 @@
  * one finding per NAME with every use site listed. A name used only from
  * another stylesheet, or consumed by generated utility classes that a source
  * read cannot see, is beyond what a single-file read can know — the finding
- * says where the use is so a human can check. Deliberately NOT reported:
+ * says where the use is so a human can check.
+ *
+ * One KNOWN FALSE POSITIVE, named rather than left for a user to discover: an
+ * `@property` block registers a custom property at the CSS level, but the
+ * block carries no `--`-prefixed declarations, so the parser emits no scope
+ * for it and this rule's lookup — which reads scope declarations — cannot see
+ * the registration. A name registered there and declared in no scope IS
+ * reported; with an `initial-value` the property resolves to that value at
+ * runtime, nothing falls back, and the finding is a false positive. The
+ * standing remedy is the ordinary one — declare the name in a scope, or
+ * suppress the finding — because reading `@property` registrations into the
+ * lookup is a parser change this rule deliberately does not make.
+ *
+ * Deliberately NOT reported:
  * `kind: "cycle"` chains (a var() loop is a different defect shape), and no
  * did-you-mean nearest-name guess — the finding stays factual; intent is the
  * reader's to supply.

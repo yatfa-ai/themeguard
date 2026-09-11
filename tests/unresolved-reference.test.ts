@@ -16,7 +16,8 @@ import { fixtureCss } from "./fixture.js";
  * no scope — over data the parser already collects. These tests pin the four
  * populations that used to pass silent, the masking shape where the tool's one
  * old signal pointed AWAY from the defect, the one-per-name aggregation, the
- * `@theme inline` lookup subtlety, suppression through BOTH doors (the config
+ * `@theme inline` lookup subtlety, the known `@property` false positive the
+ * rule's docstring names, suppression through BOTH doors (the config
  * entry and the site-scoped directive, the latter reading the rule's
  * `evidence.usedIn` positions), the exit code, and the preservation of the
  * calibration fixture's census — derived member-by-member, never asserted from
@@ -177,6 +178,37 @@ describe("the unresolved-reference rule — the four silent populations", () => 
 `);
     expect(unresolvedReferenceRule(sheet)).toEqual([]);
     expect(audit(sheet).countsByRule["unresolved-reference"]).toBe(0);
+  });
+
+  it("an @property registration is invisible to the lookup — the named false positive, pinned as a known state", () => {
+    // The parser emits no scope for an `@property` block (its body carries no
+    // `--`-prefixed declarations), so a name REGISTERED there but declared in
+    // no scope is reported — even though with an `initial-value` it resolves
+    // at runtime and the finding is a false positive. The rule's docstring
+    // names this limit rather than letting it read as a bug; this test pins
+    // the behaviour so the day it changes (a parser that models `@property`
+    // registrations is a deliberate follow-up, fenced out of this rule) the
+    // change is chosen, not accidental. The same sheet also carries the
+    // control: `--app-surface` is declared in a real scope and reported by
+    // nothing.
+    const sheet = resolveCss(`
+@property --brand-ramp {
+  syntax: "<color>";
+  inherits: false;
+  initial-value: #3B82F6;
+}
+:root { --app-surface: #FFFFFF; }
+.hero { background: var(--brand-ramp); color: var(--app-surface); }
+`);
+    const findings = unresolvedReferenceRule(sheet);
+    expect(findings).toHaveLength(1);
+    expect(findings[0].rule).toBe("unresolved-reference");
+    expect(findings[0].theme).toBe(null);
+    expect(findings[0].tokens).toEqual(["--brand-ramp"]);
+    expect(findings[0].message).toBe(
+      "--brand-ramp is used at .hero:8 and no scope in this stylesheet declares it.",
+    );
+    expect(audit(sheet).countsByRule["unresolved-reference"]).toBe(1);
   });
 });
 
