@@ -322,7 +322,10 @@ export function audit(
   //     `stylesheet` gets the same honest no-match for a scoped entry: an
   //     entry cannot claim a file the audit was never told about.
   const findingLines = (finding: Finding): readonly number[] => {
-    if (finding.sites !== undefined) return finding.sites.map((s) => s.line);
+    if (finding.sites !== undefined)
+      return finding.sites
+        .filter((s) => s.origin === undefined)
+        .map((s) => s.line);
     // A rule that carries no `sites` (dead-token) still publishes its lines —
     // as `evidence.declaredIn` strings in `":root:4"` shape. That is public,
     // honestly named data the finding already reports; reading it here adds a
@@ -331,13 +334,28 @@ export function audit(
     // key that names them honestly (`usedIn`) — a directive annotating the
     // declaration that holds the dangling `var()` is a judgement at the site
     // the finding lives at, exactly as it is for a declaration site.
+    //
+    // A citation of an IMPORTED file (`tokens.css:4`) is skipped: directives
+    // are read from the entry file's text only, so a judgement written here
+    // cannot govern a site living in another file — and since line numbers
+    // restart per file, matching on the bare number would let an entry-file
+    // directive silence a finding spliced in from a closure file whose line
+    // happened to coincide. The known origins come from the sheet itself, so
+    // the skip is exact rather than a shape guess.
     const declared: unknown =
       finding.evidence["declaredIn"] ?? finding.evidence["usedIn"];
     if (!Array.isArray(declared)) return [];
+    const origins = new Set<string>();
+    for (const s of resolved.stylesheet.scopes) if (s.origin !== undefined) origins.add(s.origin);
+    for (const r of resolved.stylesheet.references)
+      if (r.origin !== undefined) origins.add(r.origin);
     const lines: number[] = [];
     for (const entry of declared as readonly unknown[]) {
-      const at = /:(\d+)$/.exec(String(entry));
-      if (at !== null) lines.push(Number(at[1]));
+      const text = String(entry);
+      const at = /:(\d+)$/.exec(text);
+      if (at === null) continue;
+      if (origins.has(text.slice(0, text.length - at[0].length))) continue;
+      lines.push(Number(at[1]));
     }
     return lines;
   };

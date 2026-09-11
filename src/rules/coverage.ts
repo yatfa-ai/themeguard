@@ -74,7 +74,7 @@
 
 import { ROOT_THEME, type ResolvedStylesheet } from "../resolve.js";
 import type { TokenKind } from "../resolve.js";
-import { positionClause, type Finding, type FindingSite } from "./finding.js";
+import { positionClause, siteFromToken, type Finding, type FindingSite } from "./finding.js";
 import { TokenNames } from "./tokens.js";
 
 /** Whether the theme declares the base token itself or inherits it. */
@@ -200,8 +200,11 @@ export function familyConsistencyRule(
       // — the one to copy into the theme's own block, which is exactly the
       // remedy this finding implies and the question it could not answer
       // before. (It is never a line in the theme's block: a theme that declared
-      // the member would not be inheriting it.)
-      const sites: FindingSite[] = [{ name: token.name, line: token.line }];
+      // the member would not be inheriting it.) When the base declaration was
+      // spliced in over an `@import` edge, `siteFromToken` carries its file, so
+      // the citation names the file to copy from rather than a line in the
+      // reader's own.
+      const sites: FindingSite[] = [siteFromToken(token.name, token)];
       findings.push({
         rule: "family-consistency",
         theme,

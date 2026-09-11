@@ -86,7 +86,7 @@
  */
 
 import { ROOT_THEME, type ResolvedStylesheet } from "../resolve.js";
-import { positionClause, type Finding, type FindingSite } from "./finding.js";
+import { positionClause, siteFromToken, type Finding, type FindingSite } from "./finding.js";
 
 /**
  * The cycle tokens of one theme, grouped by loop set. The key is the sorted
@@ -138,7 +138,10 @@ export function cycleReferenceRule(resolved: ResolvedStylesheet): Finding[] {
       const members = [...new Set(chain)];
       const loopText = chain.join(" → ");
 
-      // Each member's cascade-winner line in the theme measured. A member of
+      // Each member's cascade-winner line in the theme measured, plus the
+      // imported file it was spliced from when it came in over an `@import`
+      // edge (a loop can span a closure: one link written in `tokens.css`,
+      // the closing one in the entry). A member of
       // the loop always resolves here (its own walk produced a cycle token),
       // so a missing lookup is impossible rather than merely unlikely — but
       // the guard keeps the types honest without a cast, and a member that
@@ -146,7 +149,7 @@ export function cycleReferenceRule(resolved: ResolvedStylesheet): Finding[] {
       // fabricated line.
       const sites: FindingSite[] = members.flatMap((name) => {
         const token = resolved.token(name, theme);
-        return token === undefined ? [] : [{ name, line: token.line }];
+        return token === undefined ? [] : [siteFromToken(name, token)];
       });
 
       findings.push({

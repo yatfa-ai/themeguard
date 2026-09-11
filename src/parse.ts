@@ -114,6 +114,16 @@ export interface Scope {
    * silent guess. See {@link colorSchemeOf}.
    */
   readonly colorScheme?: "dark" | "light";
+  /**
+   * The imported file this scope was spliced from — the target's path relative
+   * to the audit's ENTRY file, normalized (`tokens.css`, `shared/props.css`) —
+   * set by {@link loadStylesheet} on everything it follows an `@import` edge
+   * to, and ABSENT on a scope read from the entry file itself. The absence is
+   * load-bearing: every site string a rule renders (`selector:line`) keys on
+   * it, so root-file output stays byte-identical whether or not any import was
+   * followed.
+   */
+  readonly origin?: string;
   /** 1-based line of the block's opening brace. */
   readonly line: number;
   readonly declarations: readonly Declaration[];
@@ -158,12 +168,48 @@ export interface Reference {
   readonly kinds: readonly ScopeKind[];
   /** 1-based line of the declaration the use was written in. */
   readonly line: number;
+  /**
+   * The imported file this use was spliced from — same contract as
+   * {@link Scope.origin}: set by {@link loadStylesheet} on references that
+   * arrived over an `@import` edge, absent on the entry file's own.
+   */
+  readonly origin?: string;
+}
+
+/**
+ * One honored `@import` statement: where it points, and where it was written.
+ *
+ * COLLECTED, never followed — following is {@link loadStylesheet}'s job. The
+ * parser has the position information (an `@import` is only live before the
+ * first qualified rule) and no file system; the loader has the file system and
+ * no position information. Each does its half.
+ */
+export interface StylesheetImport {
+  /**
+   * The URL exactly as written — quotes or a `url(…)` wrapper stripped, any
+   * media query after it dropped, no resolution attempted. `./tokens.css`,
+   * `tailwindcss`, `xterm/css/xterm.css` are all collected as written; telling
+   * a relative edge from a package specifier is the LOADER's decision, and
+   * needs the raw text.
+   */
+  readonly specifier: string;
+  /** 1-based line of the `@import` statement. */
+  readonly line: number;
 }
 
 export interface Stylesheet {
   readonly scopes: readonly Scope[];
   /** Every `var()` use in the stylesheet, in source order. */
   readonly references: readonly Reference[];
+  /**
+   * The `@import` statements in the CSS-legal position — top level, before the
+   * first qualified rule — in source order. A later `@import` is dead text by
+   * CSS's own rules (every browser ignores it) and is not collected, so this
+   * list is exactly what a loader is entitled to follow. Most is not all:
+   * a collected import may still name a bare package specifier or a file that
+   * does not exist, both of which {@link loadStylesheet} skips.
+   */
+  readonly imports: readonly StylesheetImport[];
 }
 
 const DATA_THEME = /\[\s*data-theme\s*=\s*["']?([^"'\]]+)["']?\s*\]/;
@@ -807,8 +853,17 @@ export function parseStylesheet(source: string): Stylesheet {
   const lines = lineIndex(css);
   const scopes: Scope[] = [];
   const references: Reference[] = [];
+  // `@import` preludes, collected where CSS makes them live. `sawQualifiedRule`
+  // ends the legal region: the first top-level `selector { … }` block is the
+  // point past which every browser ignores an `@import`, so collecting one
+  // there would invite the loader to follow dead text. At-rules with bodies
+  // (`@media …`) do not end the region — only a qualified rule does — and
+  // neither does a statement at-rule like `@charset`; this tracks CSS's own
+  // line, not a guess about style.
+  const imports: StylesheetImport[] = [];
+  let sawQualifiedRule = false;
 
-  const walk = (from: number, to: number, parent: string | null, scheme: "dark" | "light" | null): void => {
+  const walk = (from: number, to: number, parent: string | null, scheme: "dark" | "light" | null, topLevel = false): void => {
     let i = from;
     let preludeStart = from;
     let depth = 0;
@@ -898,6 +953,10 @@ export function parseStylesheet(source: string): Stylesheet {
               }
             }
           } else {
+            // A qualified rule (`selector { … }`). At the top level its
+            // closing is the boundary past which `@import` is dead text, so
+            // the collector above stops collecting from here on.
+            if (topLevel) sawQualifiedRule = true;
             const declarations = readDeclarations(body, bodyStart, lines);
             references.push(
               ...readReferences(
@@ -937,13 +996,62 @@ export function parseStylesheet(source: string): Stylesheet {
         continue;
       }
       if (depth === 0 && ch === ";") {
-        // A statement at-rule (`@import …;`) — nothing to collect.
+        // A statement at-rule. `@import` is the one whose prelude carries DATA
+        // — the URL this file is composed from — so it is collected rather
+        // than discarded, but only where CSS makes it live (see the
+        // `sawQualifiedRule` note above; nested walks are never top level, so
+        // an `@import` inside a block is never collected either). Every other
+        // statement at-rule (`@charset`, a `@layer` statement) is still
+        // nothing to collect.
+        if (topLevel && !sawQualifiedRule) {
+          // The region since the previous statement starts with whatever
+          // whitespace separated them, so the @import test runs on the
+          // TRIMMED prelude — and `lead` is what dates the statement to its
+          // own line, not the blank line before it (the same
+          // leading-whitespace skip `readPairs` uses to date a declaration).
+          const prelude = css.slice(preludeStart, i);
+          const trimmed = prelude.trimStart();
+          if (/^@import\b/i.test(trimmed)) {
+            const specifier = importSpecifierOf(trimmed);
+            if (specifier !== null) {
+              const lead = prelude.length - trimmed.length;
+              imports.push({ specifier, line: lines[preludeStart + lead] ?? 1 });
+            }
+          }
+        }
         preludeStart = i + 1;
       }
       i += 1;
     }
   };
 
-  walk(0, css.length, null, null);
-  return { scopes, references };
+  walk(0, css.length, null, null, true);
+  return { scopes, references, imports };
+}
+
+/**
+ * The URL an `@import` prelude names — quotes or a `url(…)` wrapper stripped,
+ * any media query after it dropped — or `null` when the prelude names no plain
+ * URL.
+ *
+ * Both spellings extract, with or without a media suffix:
+ * `@import "./tokens.css";` and `@import url("./tokens.css");` yield
+ * `./tokens.css`; `@import "tailwindcss" screen;` yields `tailwindcss` — which
+ * the LOADER, not this function, decides what to do with. An empty URL, a
+ * prelude that is not an import at all, and a `url()` carrying neither a plain
+ * nor a quoted token all return `null` and collect nothing: inventing a
+ * specifier for a prelude the source did not clearly write would be a guess
+ * printed as data.
+ */
+function importSpecifierOf(prelude: string): string | null {
+  const rest = prelude.replace(/^@import\b/i, "").trim();
+  if (rest === "") return null;
+  const urlForm = rest.match(/^url\(\s*(?:"([^"]*)"|'([^']*)'|([^)'"]*?))\s*\)/i);
+  if (urlForm) {
+    const spec = (urlForm[1] ?? urlForm[2] ?? urlForm[3] ?? "").trim();
+    return spec === "" ? null : spec;
+  }
+  const quoted = rest.match(/^"([^"]*)"/) ?? rest.match(/^'([^']*)'/);
+  const spec = (quoted?.[1] ?? "").trim();
+  return spec === "" ? null : spec;
 }

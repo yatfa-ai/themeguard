@@ -99,8 +99,8 @@ beforeAll(() => {
 afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 
 describe("the manifest, before anything is packed", () => {
-  it("is version 0.1.11 — 0.1.6 added the fifth rule, unresolved-reference; 0.1.7 takes one invocation over several stylesheets; 0.1.9 adds the sixth rule, cycle-reference: a var() loop is a defect, judged from the resolver's kind:\"cycle\" chains; 0.1.11 lets a config judgement name the stylesheet it was recorded against", () => {
-    expect(manifest.version).toBe("0.1.11");
+  it("is version 0.1.10 — 0.1.6 added the fifth rule, unresolved-reference; 0.1.7 takes one invocation over several stylesheets; 0.1.9 adds the sixth rule, cycle-reference: a var() loop is a defect, judged from the resolver's kind:\"cycle\" chains; 0.1.11 lets a config judgement name the stylesheet it was recorded against; 0.1.10 makes the audit unit the file's import closure", () => {
+    expect(manifest.version).toBe("0.1.10");
   });
 
   it("declares the bin at a path the build actually emits", () => {
@@ -268,13 +268,13 @@ describe("publication readiness", () => {
    * `dist/cli.js` above — so what is left for this test is the manifest
    * validation the dry run performs, which is what it asserts.
    */
-  it("passes `npm publish --dry-run` and reports the 0.1.11 tarball", () => {
+  it("passes `npm publish --dry-run` and reports the 0.1.10 tarball", () => {
     const output = execFileSync("npm", ["publish", "--dry-run", "--ignore-scripts"], {
       cwd: repo,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
     });
     const combined = output.toString();
-    expect(combined).toContain("themeguard@0.1.11");
+    expect(combined).toContain("themeguard@0.1.10");
   }, 300_000);
 });
