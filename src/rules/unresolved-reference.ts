@@ -44,10 +44,15 @@
  * ── What an unresolved reference is NOT ────────────────────────────────────
  * Not theme-scoped, same stance as `dead-token`: a name is missing from the
  * STYLESHEET or it is not, so the finding carries `theme: null` and there is
- * one finding per NAME with every use site listed. A name used only from
- * another stylesheet, or consumed by generated utility classes that a source
- * read cannot see, is beyond what a single-file read can know — the finding
- * says where the use is so a human can check.
+ * one finding per NAME with every use site listed. The STYLESHEET is the
+ * audited file's `@import` closure — the audit follows the composition the
+ * source declares (`loadStylesheet`), so a `var()` naming a token declared in
+ * an imported file resolves and reports nothing. Beyond that closure — a
+ * bundler's virtual sheet, a sibling file with no import edge, a consumer only
+ * a build step generates — the read cannot know, and the finding says where
+ * the use is so a human can check. A use site read from an imported file cites
+ * the file (`tokens.css:5`) rather than a bare `selector:line`, whose line
+ * number would point into whichever file the reader had open.
  *
  * One KNOWN FALSE POSITIVE, named rather than left for a user to discover: an
  * `@property` block registers a custom property at the CSS level, but the
@@ -68,6 +73,7 @@
 
 import type { ResolvedStylesheet } from "../resolve.js";
 import type { Finding } from "./finding.js";
+import { siteString } from "./finding.js";
 import { TokenNames } from "./tokens.js";
 
 export function unresolvedReferenceRule(
@@ -78,10 +84,14 @@ export function unresolvedReferenceRule(
   // kept, deliberately: two `var()`s naming the same missing token from one
   // declaration is a fact about the stylesheet, and the list is the finding's
   // whole map of where the defect lives.
-  const usedAt = new Map<string, { selector: string; line: number }[]>();
+  const usedAt = new Map<string, { selector: string; line: number; origin?: string }[]>();
   for (const ref of resolved.stylesheet.references) {
     const sites = usedAt.get(ref.name) ?? [];
-    sites.push({ selector: ref.selector, line: ref.line });
+    sites.push({
+      selector: ref.selector,
+      line: ref.line,
+      ...(ref.origin !== undefined ? { origin: ref.origin } : {}),
+    });
     usedAt.set(ref.name, sites);
   }
 
@@ -95,10 +105,10 @@ export function unresolvedReferenceRule(
       theme: null,
       tokens: [name],
       message:
-        `${name} is used at ${sites.map((s) => `${s.selector}:${s.line}`).join(", ")} ` +
+        `${name} is used at ${sites.map(siteString).join(", ")} ` +
         `and no scope in this stylesheet declares it.`,
       evidence: {
-        usedIn: sites.map((s) => `${s.selector}:${s.line}`),
+        usedIn: sites.map(siteString),
         useCount: sites.length,
       },
     });

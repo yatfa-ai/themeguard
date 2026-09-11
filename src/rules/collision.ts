@@ -73,7 +73,7 @@
  */
 
 import type { ResolvedStylesheet } from "../resolve.js";
-import { positionClause, type Finding, type FindingSite } from "./finding.js";
+import { positionClause, siteFromToken, type Finding, type FindingSite } from "./finding.js";
 import { TokenNames } from "./tokens.js";
 
 /** A set of names that hold the same value in every theme. */
@@ -160,10 +160,13 @@ export function collisionRule(
       // name the theme cannot resolve), so a missing token is impossible rather
       // than merely unlikely — but the filter keeps the types honest without a
       // cast, and a role that somehow vanished is dropped from `sites` rather
-      // than printed as a fabricated line.
+      // than printed as a fabricated line. `siteFromToken` also carries the
+      // imported file a winner was spliced from, so a collision whose two sides
+      // live in two files of a closure cites each by file instead of printing
+      // two per-file line numbers side by side.
       const sites: FindingSite[] = roles.flatMap((role) => {
         const token = resolved.token(role, theme);
-        return token === undefined ? [] : [{ name: role, line: token.line }];
+        return token === undefined ? [] : [siteFromToken(role, token)];
       });
 
       // Does another theme SHOW these roles apart, or is this theme simply the

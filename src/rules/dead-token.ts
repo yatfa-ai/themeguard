@@ -36,13 +36,21 @@
  * ── What a dead token is NOT ───────────────────────────────────────────────
  * Not theme-scoped. A token is dead in the STYLESHEET or not at all, so a name
  * declared in `:root` and overridden in a theme is one candidate, not two, and
- * the finding carries `theme: null`. A token used only by an unreachable rule,
- * or used from another stylesheet, is beyond what a single-file source read can
- * see; the finding says where the declaration is so a human can check.
+ * the finding carries `theme: null`. The STYLESHEET is the audited file's
+ * `@import` closure — the audit follows the composition the source declares
+ * (`loadStylesheet`), so a token spliced in from an imported file is declared
+ * here, and one a composing sheet reaches over the import edge is referenced
+ * here. Beyond that closure — a bundler's virtual sheet, a sibling file with
+ * no import edge, a consumer only a build step generates — the read cannot
+ * see, and the finding says where the declaration is so a human can check. A
+ * site read from an imported file cites the file (`tokens.css:2`) rather than
+ * a bare `selector:line`, whose line number would point into whichever file
+ * the reader had open.
  */
 
 import type { ResolvedStylesheet } from "../resolve.js";
 import type { Finding } from "./finding.js";
+import { siteString } from "./finding.js";
 import { TokenNames } from "./tokens.js";
 
 export function deadTokenRule(
@@ -52,12 +60,16 @@ export function deadTokenRule(
   const referenced = new Set(resolved.stylesheet.references.map((r) => r.name));
 
   // One candidate per NAME, remembering every place it is declared.
-  const declaredAt = new Map<string, { selector: string; line: number }[]>();
+  const declaredAt = new Map<string, { selector: string; line: number; origin?: string }[]>();
   for (const scope of resolved.stylesheet.scopes) {
     if (scope.kind === "theme-inline") continue; // reference layer, not judged
     for (const d of scope.declarations) {
       const sites = declaredAt.get(d.name) ?? [];
-      sites.push({ selector: scope.matchedSelector, line: d.line });
+      sites.push({
+        selector: scope.matchedSelector,
+        line: d.line,
+        ...(scope.origin !== undefined ? { origin: scope.origin } : {}),
+      });
       declaredAt.set(d.name, sites);
     }
   }
@@ -71,10 +83,10 @@ export function deadTokenRule(
       theme: null,
       tokens: [name],
       message:
-        `${name} is declared at ${sites.map((s) => `${s.selector}:${s.line}`).join(", ")} ` +
+        `${name} is declared at ${sites.map(siteString).join(", ")} ` +
         `and no var() in this stylesheet references it.`,
       evidence: {
-        declaredIn: sites.map((s) => `${s.selector}:${s.line}`),
+        declaredIn: sites.map(siteString),
         declarationCount: sites.length,
         referenceCount: 0,
       },

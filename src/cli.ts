@@ -3,21 +3,29 @@
  * The command — `themeguard <file.css> [file.css…]`.
  *
  * One command, zero options; the positionals repeat. Each named stylesheet is
- * read from disk, run through the same `audit(resolveCss(css))` the library
- * exposes, and printed under its own `themeguard — <path>` header. It adds
+ * read from disk, run through the same
+ * `audit(resolveStylesheet(loadStylesheet(path)))` the library exposes — that
+ * file's IMPORT CLOSURE, not the file alone — and printed under its own
+ * `themeguard — <path>` header. It adds
  * no rule, no heuristic and no judgement of its own: everything here is I/O and
  * presentation over reports the library already produced.
  *
- * The files are audited INDEPENDENTLY — the single-file contract unchanged per
- * file. References do not cross files: one stylesheet's tokens are invisible to
- * the next, and the config beside each stylesheet governs it alone. A
- * suppression is worth exactly the file it was recorded against — and since
- * 0.1.11 that is true by DECLARATION, not by accident of where the config
- * sits: an entry may name the file it was judged against (`file`, relative to
- * the config's own directory), and a file-scoped entry governs that one
+ * The files are audited INDEPENDENTLY, each through its own import closure.
+ * One POSITIONAL's tokens are invisible to the next — files named together on
+ * a command line state no relationship, and none is invented; what crosses is
+ * only what a file's own text declares, along the `@import` edges its audit
+ * follows. The config beside each stylesheet governs it alone. A suppression
+ * is worth exactly the stylesheet it was recorded against — and since 0.1.11
+ * that is true by DECLARATION, not by accident of where the config sits: an
+ * entry may name the file it was judged against (`file`, relative to the
+ * config's own directory), and a file-scoped entry governs that one
  * stylesheet — so a directory sharing one ledger among siblings can record a
  * judgement for `tokens.css` without it silencing `buttons.css`. An entry
- * without the field keeps the whole-config reading it has always had. The
+ * without the field keeps the whole-stylesheet reading it has always had —
+ * and since the audit unit is the closure, that whole is the file's import
+ * closure: an unscoped entry beside the root governs findings spliced in from
+ * imported files too, and a file-scoped entry names the ENTRY stylesheet, the
+ * closure's root. The
  * invocation fails fast on the first file that cannot be audited, and the
  * per-file outcomes aggregate into ONE exit code for the invocation — the
  * precedence is stated in the exit contract below, because a caller in a
@@ -74,6 +82,11 @@
  * comment's line, never a silent skip. The two mechanisms merge at the single
  * `suppressions` seam below; the config stays the project-level mechanism,
  * the directive its site-level one, and neither changed the other's semantics.
+ * Since 0.1.10 the audit sees the file's import closure, but directives are
+ * still scanned from the ENTRY file's text only — the config is the mechanism
+ * that governs the whole closure; a directive is a judgement written at one
+ * site, and an imported file's directives are not read (a stated limit, not a
+ * silent one).
  *
  * ── The unmatched ─────────────────────────────────────────────────────────
  * The complement of `suppressed`, under the same counted-even-at-zero
@@ -151,7 +164,8 @@ import { fileURLToPath } from "node:url";
 import { audit, type SiteScopedSuppressionEntry } from "./audit.js";
 import { ConfigError, loadConfig, type SuppressionEntry } from "./config.js";
 import { DirectiveError, scanIgnoreDirectives } from "./directives.js";
-import { resolveCss } from "./resolve.js";
+import { loadStylesheet } from "./load.js";
+import { resolveStylesheet } from "./resolve.js";
 import type { TokenKind } from "./resolve.js";
 import type { RuleId } from "./rules/finding.js";
 
@@ -349,6 +363,10 @@ function auditStylesheet(path: string, io: CliIo): number {
   // Config entries come first, so a config/directive tie resolves to the
   // config's reason — the same first-wins rule the list itself has.
   //
+  // The audit unit is the file's IMPORT CLOSURE, not the file alone: the file
+  // is loaded through `loadStylesheet`, which follows the `@import` edges its
+  // text declares.
+  //
   // File-scoped entries are resolved HERE, the only place that knows both
   // halves: the entry carries `file` relative to the CONFIG's own directory,
   // and this function knows that directory (the stylesheet's — the config
@@ -358,14 +376,17 @@ function auditStylesheet(path: string, io: CliIo): number {
   // so the report's ` [file: …]` clause prints what the user wrote. Entries
   // without the field pass through as the SAME objects — no scope, no copy,
   // byte-identical behaviour. The audited stylesheet travels alongside as
-  // `stylesheet`, normalized the same way, which is what the conjunct
-  // compares against.
+  // `stylesheet`, normalized the same way — the ENTRY file, which is the file
+  // scope a closure-level judgement names: an entry scoped to the root
+  // governs every finding the closure produced, imported or not (whatever the
+  // audited unit covers, the entry governs), while an unscoped entry governs
+  // the same span by having no file axis at all.
   const scoped = (suppressions ?? []).map((entry) =>
     entry.file === undefined
       ? entry
       : { ...entry, fileResolved: resolve(dirname(path), entry.file) },
   );
-  const report = audit(resolveCss(css), {
+  const report = audit(resolveStylesheet(loadStylesheet(path)), {
     suppressions: [...scoped, ...directives],
     stylesheet: resolve(path),
   });
