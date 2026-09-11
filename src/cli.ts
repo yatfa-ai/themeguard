@@ -35,6 +35,20 @@
  * and a scoped entry says so there (` [theme: …]` / ` [tokens: …]` after the
  * reason), so a run that exits 0 shows how far each judgement reached.
  *
+ * ── The directives ────────────────────────────────────────────────────────
+ * `/* themeguard-ignore … *\/` comments in the stylesheet are the SITE-level
+ * complement: the same structured entry, written where a reader of the CSS
+ * can see it and bound to the position it was recorded at — a trailing
+ * comment on the judged declaration, or a standalone comment on the line
+ * directly above. Matching is the config entry's, plus the one conjunct the
+ * site contributes; a refactored defect moves away from its directive, the
+ * directive orphans, and the finding prints and moves the exit code again —
+ * the self-announcing miss, never a silence. A malformed directive (unknown
+ * rule id, missing reason) is the config's own contract: exit 2 naming the
+ * comment's line, never a silent skip. The two mechanisms merge at the single
+ * `suppressions` seam below; the config stays the project-level mechanism,
+ * the directive its site-level one, and neither changed the other's semantics.
+ *
  * `coverage` is printed under the same precedent. It is the fact inventory rule
  * 4 is measured over — per theme, every base-theme token marked overridden or
  * inherited, with the colour/non-colour split of the inherited set — and it is
@@ -71,8 +85,9 @@
 
 import { readFileSync, realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { audit } from "./audit.js";
+import { audit, type SiteScopedSuppressionEntry } from "./audit.js";
 import { ConfigError, loadConfig, type SuppressionEntry } from "./config.js";
+import { DirectiveError, scanIgnoreDirectives } from "./directives.js";
 import { resolveCss } from "./resolve.js";
 import type { TokenKind } from "./resolve.js";
 import type { RuleId } from "./rules/finding.js";
@@ -115,6 +130,18 @@ function scopeSuffix(entry: SuppressionEntry): string {
   if (entry.theme !== undefined) segments.push(`theme: ${entry.theme}`);
   if (entry.tokens !== undefined) segments.push(`tokens: ${entry.tokens.join(", ")}`);
   return segments.length === 0 ? "" : ` [${segments.join(", ")}]`;
+}
+
+/**
+ * Where a directive-sourced judgement lives, printed after its reason (and
+ * after any token scope) as `[sheet.css:4]`. A config entry has no site and
+ * no clause, which keeps every config line byte-identical to before; a
+ * directive's clause is what makes an exit-0 run answer "judged where?" for
+ * an in-source judgement — the same disclosure duty `scopeSuffix` serves for
+ * a scoped config entry.
+ */
+function sourceClause(entry: SuppressionEntry | SiteScopedSuppressionEntry): string {
+  return "source" in entry ? ` [${entry.source}]` : "";
 }
 
 /**
@@ -166,8 +193,31 @@ export function runCli(args: readonly string[], io: CliIo): number {
     return EXIT_ERROR;
   }
 
+  // The in-source complement: `/* themeguard-ignore … *\/` directives,
+  // scanned from the ORIGINAL stylesheet text — the judgement recorded where
+  // a reader of the CSS can see it, bound to its site by construction. A
+  // malformed directive is the config's own contract: exit 2 naming the
+  // comment's line, never a silent skip.
+  let directives;
+  try {
+    directives = scanIgnoreDirectives(css, path);
+  } catch (error) {
+    io.err(
+      error instanceof DirectiveError
+        ? `themeguard: ${error.message}`
+        : `themeguard: cannot scan themeguard-ignore directives — ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+    );
+    return EXIT_ERROR;
+  }
+
+  // The merge seam: a directive entry is structurally a config entry carrying
+  // one extra conjunct (its line), so the audit sees one suppression list.
+  // Config entries come first, so a config/directive tie resolves to the
+  // config's reason — the same first-wins rule the list itself has.
   const report = audit(resolveCss(css), {
-    suppressions: suppressions ?? [],
+    suppressions: [...(suppressions ?? []), ...directives],
   });
   for (const line of formatReport(path, report)) io.out(line);
 
@@ -206,7 +256,8 @@ export function formatReport(
   lines.push("");
 
   // The same counted-not-silent discipline, for what the USER has judged: a
-  // finding marked deliberate in themeguard.config.json leaves the counts
+  // finding marked deliberate — in themeguard.config.json, or in a
+  // themeguard-ignore directive in the stylesheet itself — leaves the counts
   // above — and the exit code — but never the record. It is named here with
   // the reason its suppressor gave, so a run that exits 0 still says what it
   // chose not to hold against the stylesheet. The headline prints even at
@@ -217,10 +268,10 @@ export function formatReport(
     lines.push("  nothing suppressed — every finding above is one the report stands behind.");
   } else {
     lines.push(
-      "  findings marked deliberate in themeguard.config.json. Counted here, named below with the reason each was given — out of the counts and the exit code by declaration, never by silence.",
+      "  findings marked deliberate — in themeguard.config.json or in a themeguard-ignore directive in the stylesheet. Counted here, named below with the reason each was given — out of the counts and the exit code by declaration, never by silence.",
     );
     for (const { finding, reason, entry } of report.suppressed) {
-      lines.push(`  [suppressed] [${finding.rule}] ${finding.message} — "${reason}"${scopeSuffix(entry)}`);
+      lines.push(`  [suppressed] [${finding.rule}] ${finding.message} — "${reason}"${scopeSuffix(entry)}${sourceClause(entry)}`);
     }
   }
   lines.push("");

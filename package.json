@@ -1,6 +1,6 @@
 {
   "name": "themeguard",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Audits a project's CSS colour variables: value collisions between roles, dead tokens, ramps that collapse between themes, and families a theme tunes everywhere except the members it silently inherits.",
   "license": "MIT",
   "homepage": "https://github.com/yatfa-ai/themeguard",
@@ -29,7 +29,7 @@
     "build": "tsc -p tsconfig.build.json",
     "prepublishOnly": "npm run typecheck && npm test && npm run build"
   },
-  "//": "0.1.0 is the first release with something to run: `themeguard <file.css>` audits a stylesheet from a terminal, and the library is importable via the exports map. The tarball ships dist/ only — src/ and tests/ (including the 96 KB vendored calibration fixture) are development assets and stay out of it. 0.1.1 adds the optional themeguard.config.json, discovered beside the stylesheet, for marking specific findings deliberate. 0.1.2 lets an entry scope what it suppresses: a `tokens` set the finding must carry in full (a deliberate pair as ONE entry), and a `theme` narrowing the entry to findings measured in that theme — printed as [theme: …] / [tokens: …] on the suppressed line. 0.1.3 says WHERE: collision, scale-collapse and family-consistency findings now carry `sites` — the declaration each measured token resolved from — and end their message with it (`Declared at lines 41 and 33.`), citing the cascade winner rather than every place the name is written; dead-token, which already named `:root:402`, is unchanged.",
+  "//": "0.1.0 is the first release with something to run: `themeguard <file.css>` audits a stylesheet from a terminal, and the library is importable via the exports map. The tarball ships dist/ only — src/ and tests/ (including the 96 KB vendored calibration fixture) are development assets and stay out of it. 0.1.1 adds the optional themeguard.config.json, discovered beside the stylesheet, for marking specific findings deliberate. 0.1.2 lets an entry scope what it suppresses: a `tokens` set the finding must carry in full (a deliberate pair as ONE entry), and a `theme` narrowing the entry to findings measured in that theme — printed as [theme: …] / [tokens: …] on the suppressed line. 0.1.3 says WHERE: collision, scale-collapse and family-consistency findings now carry `sites` — the declaration each measured token resolved from — and end their message with it (`Declared at lines 41 and 33.`), citing the cascade winner rather than every place the name is written; dead-token, which already named `:root:402`, is unchanged. 0.1.4 adds the site-scoped half of suppression: a `/* themeguard-ignore <rule> [--token …] -- <why> */` comment in the stylesheet itself — trailing on the judged declaration or standalone on the line above — suppresses only findings living at its site, so a refactored defect re-reports instead of being held down by a judgement recorded elsewhere, and the report's suppressed section prints the directive's `[file:line]` source clause.",
   "bin": {
     "themeguard": "dist/cli.js"
   },

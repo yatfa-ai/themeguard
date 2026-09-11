@@ -201,6 +201,47 @@ config file beside the stylesheet means no suppression at all: no existing line 
 the exit codes are unchanged, and the only difference from a run without the feature is the counted
 `suppressed` section appended at zero.
 
+### Marking it at the site — `/* themeguard-ignore … */`
+
+The config records a judgement *next to* the stylesheet; a directive records it *in* the stylesheet, on
+the line it is about — which makes it site-precise by construction:
+
+```css
+:root {
+  /* themeguard-ignore collision --accent --success -- vendor brand: accent is deliberately the success green */
+  --accent: #16a34a;
+}
+
+--app-cta: #22c55e; /* themeguard-ignore collision --app-cta --app-success -- the cta is the success colour, judged here */
+```
+
+The grammar is one comment: the keyword, then the rule id (one of the four), then optional `--`-prefixed
+token names — the same meaning as a config entry's `tokens` set, the finding must carry every name listed
+— then a bare `--` separator and a required reason, which the report quotes back. A directive that names
+no token is legitimate: there the *site* is the judgement, and every finding of that rule living at the
+line is covered.
+
+A directive covers a finding only while the finding still lives at its site — trailing on the judged
+declaration's own line, or standalone on the line directly above it, the two placements
+`eslint-disable-next-line` and `stylelint-disable-line` established. Refactor the code away from the
+annotation and the directive orphans: nothing matches, the finding prints again and moves the exit code.
+The miss is self-announcing — exactly like a config entry that matches nothing — and deliberately not a
+silence. That is the property the config cannot have: its entries match a finding's *identity*, so a
+judgement recorded about one line keeps suppressing after the code moves to another. Use the config for
+project-level judgements; use a directive when the judgement belongs to the file and should travel with
+it into vendored, regenerated or forked copies. The two work together — both merge into the same
+`suppressions` section, where a directive's line carries its `[file:line]` source clause:
+
+```
+  [suppressed] [collision] --accent and --success both resolve to #16a34a in theme "root". … — "vendor brand: accent is deliberately the success green" [tokens: --accent, --success] [vendor.css:4]
+```
+
+A directive the package cannot honour — an unknown rule id, no rule id at all, a missing or empty reason,
+a word in the head that is neither a rule id nor a `--` token name — exits `2` naming the comment's line,
+under the config's own never-silently-ignored discipline. In fact the *values* a directive may say are
+validated by the config's own parser, so the two mechanisms cannot drift apart on what a suppression may
+name. The keyword is recognized only in real comments: the same text inside a CSS string is prose.
+
 ### Exit codes
 
 | Code | Meaning |
@@ -212,10 +253,12 @@ the exit codes are unchanged, and the only difference from a run without the fea
 `1` and `2` are kept apart on purpose: in a pipeline or a pre-commit hook the number is all a caller has,
 and a real finding must never be confusable with a typo in the path — nor with a clean stylesheet.
 
-Suppression moves a finding between those codes **by declaration**: what a `themeguard.config.json` marks
-deliberate leaves `1`'s population for `0`'s, and is still printed and counted in the report's
-`suppressed` section — the exit is computed over unsuppressed findings only. Code `2` also covers a config
-that exists but cannot be honoured: the offending entry is named on stderr, never silently skipped.
+Suppression moves a finding between those codes **by declaration**: what a `themeguard.config.json`
+entry — or a `themeguard-ignore` directive in the stylesheet itself — marks deliberate leaves `1`'s
+population for `0`'s, and is still printed and counted in the report's `suppressed` section — the exit
+is computed over unsuppressed findings only. Code `2` also covers a config that exists but cannot be
+honoured, or a directive that cannot be parsed: the offending entry — or the comment's line — is named
+on stderr, never silently skipped.
 
 ### As a library
 
