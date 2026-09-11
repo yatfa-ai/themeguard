@@ -7,6 +7,7 @@ import {
   familyConsistencyRule,
 } from "../src/rules/coverage.js";
 import { collisionRule } from "../src/rules/collision.js";
+import { positionClause } from "../src/rules/finding.js";
 import { deadTokenRule } from "../src/rules/dead-token.js";
 import { scaleCollapseRule, VISIBLE_STEP_LSTAR } from "../src/rules/scale-collapse.js";
 import { TokenNames } from "../src/rules/tokens.js";
@@ -1131,5 +1132,233 @@ describe("a prefers-color-scheme stylesheet is audited, not folded", () => {
     expect(sheet.themes).toEqual(["root"]);
     // The wider block wins the fold (last declaration), exactly as before.
     expect(sheet.token("--btn", "root")?.resolvedValue).toBe("#388bfd");
+  });
+});
+
+/**
+ * ── WHERE the finding lives ─────────────────────────────────────────────────
+ *
+ * Three of the four rules named tokens, theme and measurement and never a
+ * position, while the resolver had computed one all along: `ResolvedToken.line`
+ * is "the 1-based line of the declaration this token resolves from". A pasted
+ * `--app-border and --app-surface-raised both resolve to #1E293B` left the
+ * receiver to re-derive the cascade by hand on a 5,000-line sheet, for a
+ * finding the resolver had ALREADY resolved.
+ *
+ * The line these tests defend is the CASCADE WINNER's, which is the whole
+ * difficulty: `--app-border` is declared at 41 AND at 438, and only one of them
+ * is the declaration a given finding was measured from. A rule that cited "every
+ * place the name is written" would be right about the stylesheet and useless
+ * about the finding.
+ */
+describe("finding position — the declaration each rule actually judged", () => {
+  const collisions = report.findings.filter((f) => f.rule === "collision");
+  const scale = report.findings.filter((f) => f.rule === "scale-collapse");
+  const family = report.findings.filter((f) => f.rule === "family-consistency");
+  const dead = report.findings.filter((f) => f.rule === "dead-token");
+
+  it("cites the fixture's known lines for the famous collision pair", () => {
+    // tests/fixtures/application.tailwind.css declares --app-surface-raised at
+    // line 33 and --app-border at line 41, both in the base `:root` block.
+    const border = collisions.find(
+      (f) => f.theme === "root" && f.tokens.join() === "--app-border,--app-surface-raised",
+    );
+    expect(border?.sites).toEqual([
+      { name: "--app-border", line: 41 },
+      { name: "--app-surface-raised", line: 33 },
+    ]);
+    // The clause reads in the SAME order the sentence names the roles, so a
+    // reader pairs name with line positionally rather than matching them up.
+    expect(border?.message).toContain("--app-border and --app-surface-raised");
+    expect(border?.message).toContain("Declared at lines 41 and 33.");
+    // Appended AFTER the existing sentence — every message pin above is a
+    // `toContain`, and this is why they all still pass.
+    expect(border?.message).toContain("#1E293B");
+    expect(border?.message).toContain('theme "winter" declares them apart');
+  });
+
+  /**
+   * THE CASCADE-WINNER TEST, and the reason `sites` is not just "where the name
+   * appears". `--app-border` is declared TWICE in this fixture — `:root`'s line
+   * 41 and winter's line 438 — and the two findings about it were measured from
+   * DIFFERENT declarations. Citing 41 in the winter finding would name a line
+   * whose value winter never reads.
+   */
+  it("cites the winning declaration per theme, not every place the name is written", () => {
+    const inRoot = collisions.find(
+      (f) => f.theme === "root" && f.tokens.includes("--app-border"),
+    );
+    const inWinter = collisions.find(
+      (f) => f.theme === "winter" && f.tokens.includes("--app-border"),
+    );
+    const lineOf = (f: typeof inRoot, name: string) =>
+      f?.sites?.find((s) => s.name === name)?.line;
+
+    expect(lineOf(inRoot, "--app-border")).toBe(41);
+    expect(lineOf(inWinter, "--app-border")).toBe(438);
+    // The resolver agrees — the same two declarations, read directly.
+    expect(resolved.token("--app-border", "root")?.line).toBe(41);
+    expect(resolved.token("--app-border", "winter")?.line).toBe(438);
+    // And the same holds for the pair's other half: 33 in root, 421 in winter.
+    expect(lineOf(inRoot, "--app-surface-raised")).toBe(33);
+    expect(
+      collisions.find(
+        (f) => f.theme === "winter" && f.tokens.includes("--app-surface-raised"),
+      )?.sites?.find((s) => s.name === "--app-surface-raised")?.line,
+    ).toBe(421);
+  });
+
+  it("lists three lines for a three-role collision, in the order the sentence names them", () => {
+    // winter's #E2E8F0 group — the fixture's only collision above a pair, so the
+    // clause's multi-site form is pinned against real data rather than a mock.
+    const trio = collisions.find((f) => f.tokens.length === 3);
+    expect(trio?.tokens).toEqual(["--app-border", "--app-primary", "--app-surface-active"]);
+    expect(trio?.sites?.map((s) => s.line)).toEqual([438, 415, 488]);
+    expect(trio?.message).toContain("Declared at lines 438, 415 and 488.");
+  });
+
+  it("cites base and state for a scale collapse, in the order the sentence reads them", () => {
+    // --app-accent-ink at 375, --app-accent-ink-hover at 376 in root; 550/551 in
+    // winter. The MESSAGE reads state-then-base ("X-hover is ΔL* … from X"),
+    // and `tokens`/`sites` read base-then-state — so the two orders differ on
+    // purpose, and each is the order its own reader needs.
+    const root = scale.find((f) => f.theme === "root");
+    expect(root?.sites).toEqual([
+      { name: "--app-accent-ink", line: 375 },
+      { name: "--app-accent-ink-hover", line: 376 },
+    ]);
+    expect(root?.message).toContain("Declared at lines 376 and 375.");
+    expect(root?.message).toContain("ΔL* 3.90");
+
+    const winter = scale.find((f) => f.theme === "winter");
+    expect(winter?.sites).toEqual([
+      { name: "--app-accent-ink", line: 550 },
+      { name: "--app-accent-ink-hover", line: 551 },
+    ]);
+    expect(winter?.message).toContain("Declared at lines 551 and 550.");
+  });
+
+  it("cites the BASE declaration a family-consistency finding inherits from", () => {
+    // The remedy is "add the missing declaration to the theme's block", and the
+    // line to copy is the `:root` one the theme is silently reading — never a
+    // line in winter, which by definition does not declare the member.
+    const success = family.find((f) => f.tokens[0] === "--app-success");
+    expect(success?.theme).toBe("winter");
+    expect(success?.sites).toEqual([{ name: "--app-success", line: 54 }]);
+    expect(success?.message).toContain("Declared at line 54.");
+    expect(resolved.token("--app-success", "winter")?.origin).toBe("inherited");
+    expect(resolved.token("--app-success", "root")?.line).toBe(54);
+    // Singular for one site: "line", never "lines".
+    expect(success?.message).not.toContain("Declared at lines");
+  });
+
+  it("gives every one of the three rules' findings a site per token, and dead-token none", () => {
+    for (const finding of [...collisions, ...scale, ...family]) {
+      expect(finding.sites, `${finding.rule}/${finding.tokens.join(",")}`).toHaveLength(
+        finding.tokens.length,
+      );
+      // Every site names a token of the finding, and every line is a real
+      // 1-based position rather than a 0 standing in for "unknown".
+      for (const site of finding.sites ?? []) {
+        expect(finding.tokens).toContain(site.name);
+        expect(site.line).toBeGreaterThan(0);
+      }
+    }
+    // dead-token is UNTOUCHED: it already says `:root:402`, with a selector the
+    // merged theme tables cannot supply, so its absence here is a fact rather
+    // than an omission.
+    expect(dead).toHaveLength(2);
+    for (const finding of dead) {
+      expect(finding.sites).toBeUndefined();
+      expect(finding.message).not.toContain("Declared at line");
+    }
+    expect(dead[0]?.message).toBe(
+      "--topbar-height is declared at :root:402 and no var() in this stylesheet references it.",
+    );
+    expect(dead[1]?.message).toBe(
+      "--transition-slow is declared at :root:407 and no var() in this stylesheet references it.",
+    );
+  });
+
+  it("leaves the suppression path untouched — a suppressed finding keeps its clause", () => {
+    // audit.ts filters on the finding's own fields and moves it whole, so the
+    // position rides along with no suppression change. Pinned because "it should
+    // just work" is exactly the claim that quietly stops being true.
+    const suppressed = audit(resolved, {
+      suppressions: [
+        {
+          rule: "collision",
+          tokens: ["--app-border", "--app-surface-raised"],
+          theme: "root",
+          reason: "known",
+        },
+      ],
+    });
+    expect(suppressed.countsByRule.collision).toBe(10);
+    const moved = suppressed.suppressed[0]?.finding;
+    expect(moved?.sites).toEqual([
+      { name: "--app-border", line: 41 },
+      { name: "--app-surface-raised", line: 33 },
+    ]);
+    expect(moved?.message).toContain("Declared at lines 41 and 33.");
+  });
+
+  /**
+   * The clause's own grammar, away from the fixture — the singular/plural fork
+   * and the serial-and are prose a reader depends on, and a rule reproducing
+   * them by hand would drift.
+   */
+  it("builds the clause in dead-token's voice, minus the selector", () => {
+    expect(positionClause([{ name: "--a", line: 7 }])).toBe("Declared at line 7.");
+    expect(
+      positionClause([
+        { name: "--a", line: 7 },
+        { name: "--b", line: 9 },
+      ]),
+    ).toBe("Declared at lines 7 and 9.");
+    expect(
+      positionClause([
+        { name: "--a", line: 7 },
+        { name: "--b", line: 9 },
+        { name: "--c", line: 11 },
+      ]),
+    ).toBe("Declared at lines 7, 9 and 11.");
+    // Two tokens resolving from ONE declaration is a fact about the stylesheet,
+    // and de-duplicating would break the positional name↔line pairing.
+    expect(
+      positionClause([
+        { name: "--a", line: 7 },
+        { name: "--b", line: 7 },
+      ]),
+    ).toBe("Declared at lines 7 and 7.");
+    expect(positionClause([])).toBe("");
+  });
+
+  /**
+   * A hand-written sheet for the case the fixture cannot pose: a collision
+   * inside a theme where one role is DECLARED by the theme and the other is
+   * INHERITED. The two lines come from different blocks, and each is still the
+   * declaration that theme resolves through.
+   */
+  it("cites an inherited role's base line beside a declared role's own line", () => {
+    const css = [
+      ":root {",
+      "  --panel: #111111;", // line 2
+      "  --edge: #222222;", // line 3
+      "}",
+      '[data-theme="night"] {',
+      "  --edge: #111111;", // line 6 — night repaints the edge onto the panel
+      "}",
+      ".x { background: var(--panel); border: 1px solid var(--edge); }",
+    ].join("\n");
+    const findings = collisionRule(resolveCss(css));
+    const night = findings.find((f) => f.theme === "night");
+    expect(night?.tokens).toEqual(["--edge", "--panel"]);
+    // --edge from night's own block (6); --panel inherited, so :root's line (2).
+    expect(night?.sites).toEqual([
+      { name: "--edge", line: 6 },
+      { name: "--panel", line: 2 },
+    ]);
+    expect(night?.message).toContain("Declared at lines 6 and 2.");
   });
 });
