@@ -164,7 +164,7 @@ describe("themeguard <file.css> over the vendored calibration fixture", () => {
     // EVERY line of those three rules carries one — a clause on the famous
     // examples and nowhere else would be a demo, not a feature.
     const positioned = result.out.filter((l) =>
-      /^ {2}\[(collision|scale-collapse|family-consistency|unresolved-reference)\]/.test(l),
+      /^ {2}\[(collision|scale-collapse|family-consistency)\]/.test(l),
     );
     expect(positioned).toHaveLength(20);
     for (const l of positioned) expect(l).toMatch(/Declared at lines? [\d, and]+\.$/);
