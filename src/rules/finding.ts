@@ -8,7 +8,7 @@
  * one.
  */
 
-/** Which of the five questions a finding answers. */
+/** Which of the six questions a finding answers. */
 export type RuleId =
   /** Two token names that must differ hold byte-identical colours. */
   | "collision"
@@ -27,7 +27,15 @@ export type RuleId =
    * so it resolves to nothing — the property falls back to unset/inherit, or to
    * whatever fallback was written.
    */
-  | "unresolved-reference";
+  | "unresolved-reference"
+  /**
+   * A `var()` chain returns to a name already on it. Every property in the
+   * loop — and every `var()` consuming a member — is invalid at computed-value
+   * time; the finding is scoped by authorship, `theme: null` for a loop the
+   * base declarations (or the alias namespace) author, theme-scoped for one a
+   * theme's own declarations close.
+   */
+  | "cycle-reference";
 
 /**
  * WHERE a finding's token was declared — the declaration the resolver actually
@@ -116,6 +124,7 @@ export function sortFindings(findings: readonly Finding[]): Finding[] {
     "scale-collapse": 2,
     "family-consistency": 3,
     "unresolved-reference": 4,
+    "cycle-reference": 5,
   };
   return [...findings].sort(
     (a, b) =>

@@ -162,6 +162,7 @@ const RULE_ORDER: readonly RuleId[] = [
   "scale-collapse",
   "family-consistency",
   "unresolved-reference",
+  "cycle-reference",
 ];
 
 /**

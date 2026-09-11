@@ -50,6 +50,7 @@ const RULE_IDS: readonly RuleId[] = [
   "scale-collapse",
   "family-consistency",
   "unresolved-reference",
+  "cycle-reference",
 ];
 
 /**
