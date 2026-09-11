@@ -1,0 +1,10 @@
+{
+  "suppress": [
+    {
+      "rule": "collision",
+      "tokens": ["--accent", "--primary"],
+      "file": "tokens.css",
+      "reason": "brand tokens are identical by design"
+    }
+  ]
+}

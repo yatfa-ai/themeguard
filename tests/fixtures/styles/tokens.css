@@ -1,0 +1,17 @@
+/* The "brand tokens" half of the shared-config pair.
+ *
+ * One directory, ONE themeguard.config.json governing both stylesheets in it
+ * — the standard component-library layout. The config's single entry names
+ * `file: "tokens.css"`: the collision below is the deliberate brand equality
+ * the entry was recorded against, and the entry must suppress it HERE and
+ * nowhere else. Its sibling `buttons.css` carries an unrelated finding and
+ * must still report it, with the entry named as unmatched-because-aimed-
+ * elsewhere rather than as retireable. See tests/file-scoped.test.ts. */
+
+:root {
+  --accent: #16A34A;
+  --primary: #16A34A;
+}
+
+.a { color: var(--accent); }
+.b { color: var(--primary); }

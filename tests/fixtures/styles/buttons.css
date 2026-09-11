@@ -1,0 +1,19 @@
+/* The sibling half of the shared-config pair.
+ *
+ * Same directory, same themeguard.config.json — but the entry in it was
+ * recorded against `tokens.css`, so nothing here is suppressed. This file
+ * carries one genuine finding: the `var(--btn-background)` below names a
+ * custom property no scope in this stylesheet declares, which is
+ * `unresolved-reference`'s whole question. The report must print it AND name
+ * the config's entry as unmatched with its ` [file: tokens.css]` clause —
+ * the judgement aims elsewhere, it is not retireable on this file's report.
+ * See tests/file-scoped.test.ts. */
+
+:root {
+  --btn-foreground: #101010;
+}
+
+button {
+  color: var(--btn-foreground);
+  background: var(--btn-background);
+}
