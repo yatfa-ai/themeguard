@@ -962,9 +962,11 @@ describe("the audit entry point", () => {
       "dead-token",
       "family-consistency",
       "scale-collapse",
+      "unresolved-reference",
     ]);
     expect(empty.countsByRule.collision).toBe(0);
     expect(empty.countsByRule["family-consistency"]).toBe(0);
+    expect(empty.countsByRule["unresolved-reference"]).toBe(0);
   });
 
   it("totals its per-rule counts exactly", () => {
@@ -981,6 +983,7 @@ describe("the audit entry point", () => {
         "dead-token": 1,
         "scale-collapse": 2,
         "family-consistency": 3,
+        "unresolved-reference": 4,
       } as const;
       return order[a] - order[b];
     }));

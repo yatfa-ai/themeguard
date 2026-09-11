@@ -99,8 +99,8 @@ beforeAll(() => {
 afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 
 describe("the manifest, before anything is packed", () => {
-  it("is version 0.1.5 — 0.1.4 bound a suppression to its site; 0.1.5 names the suppression that binds to nothing", () => {
-    expect(manifest.version).toBe("0.1.5");
+  it("is version 0.1.6 — 0.1.5 named the suppression that binds to nothing; 0.1.6 adds the fifth rule, unresolved-reference", () => {
+    expect(manifest.version).toBe("0.1.6");
   });
 
   it("declares the bin at a path the build actually emits", () => {
@@ -164,7 +164,7 @@ describe("a project that has installed the package", () => {
     expect(result.stdout).toContain("scale-collapse (2)");
     expect(result.stdout).toContain("family-consistency (7)");
     expect(result.stdout).toContain(
-      "22 findings: 11 collision, 2 dead-token, 2 scale-collapse, 7 family-consistency.",
+      "22 findings: 11 collision, 2 dead-token, 2 scale-collapse, 7 family-consistency, 0 unresolved-reference.",
     );
     expect(result.code).toBe(1);
   });
@@ -189,7 +189,7 @@ describe("a project that has installed the package", () => {
       ].join("\n"),
     );
     expect(sh(process.execPath, [script], consumer).trim()).toBe(
-      '{"collision":11,"dead-token":2,"scale-collapse":2,"family-consistency":7}',
+      '{"collision":11,"dead-token":2,"scale-collapse":2,"family-consistency":7,"unresolved-reference":0}',
     );
   });
 
@@ -246,7 +246,7 @@ describe("the README, which is the tarball's only prose", () => {
   it("documents the command, the exit codes and the worked census", () => {
     expect(readme).toContain("npx themeguard path/to/application.css");
     expect(readme).toContain(
-      "22 findings: 11 collision, 2 dead-token, 2 scale-collapse, 7 family-consistency.",
+      "22 findings: 11 collision, 2 dead-token, 2 scale-collapse, 7 family-consistency, 0 unresolved-reference.",
     );
     expect(readme).toMatch(/\| `0` \| The audit ran and reported nothing\. \|/);
     expect(readme).toMatch(/\| `1` \| The audit ran and reported findings\. \|/);
@@ -268,13 +268,13 @@ describe("publication readiness", () => {
    * `dist/cli.js` above — so what is left for this test is the manifest
    * validation the dry run performs, which is what it asserts.
    */
-  it("passes `npm publish --dry-run` and reports the 0.1.5 tarball", () => {
+  it("passes `npm publish --dry-run` and reports the 0.1.6 tarball", () => {
     const output = execFileSync("npm", ["publish", "--dry-run", "--ignore-scripts"], {
       cwd: repo,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
     });
     const combined = output.toString();
-    expect(combined).toContain("themeguard@0.1.5");
+    expect(combined).toContain("themeguard@0.1.6");
   }, 300_000);
 });

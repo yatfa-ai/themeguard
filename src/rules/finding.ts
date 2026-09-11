@@ -8,7 +8,7 @@
  * one.
  */
 
-/** Which of the four questions a finding answers. */
+/** Which of the five questions a finding answers. */
 export type RuleId =
   /** Two token names that must differ hold byte-identical colours. */
   | "collision"
@@ -21,7 +21,13 @@ export type RuleId =
    * at least one sibling sharing the token's declared family head is
    * overridden, so the un-restated member silently keeps the base value.
    */
-  | "family-consistency";
+  | "family-consistency"
+  /**
+   * A `var()` names a custom property that no scope in the stylesheet declares,
+   * so it resolves to nothing — the property falls back to unset/inherit, or to
+   * whatever fallback was written.
+   */
+  | "unresolved-reference";
 
 /**
  * WHERE a finding's token was declared — the declaration the resolver actually
@@ -109,6 +115,7 @@ export function sortFindings(findings: readonly Finding[]): Finding[] {
     "dead-token": 1,
     "scale-collapse": 2,
     "family-consistency": 3,
+    "unresolved-reference": 4,
   };
   return [...findings].sort(
     (a, b) =>
