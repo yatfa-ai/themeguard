@@ -433,9 +433,34 @@ describe("the unmatched section — judgements that matched nothing, counted and
       "  declared suppressions no finding matched. Either the defect was fixed and the judgement can be retired, or the entry never aimed at a finding that exists — the report cannot tell which.",
     );
     expect(result.out.filter((l) => l.startsWith("  [unmatched] "))).toEqual([
-      '  [unmatched] [scale-collapse] — "deliberate hover, signed off 2026-02-01"',
-      '  [unmatched] [dead-token] — "reserved for the pricing page, signed off 2026-03-10"',
+      '  [unmatched] [scale-collapse] — "deliberate hover, signed off 2026-02-01" [token: --page-ink-hover]',
+      '  [unmatched] [dead-token] — "reserved for the pricing page, signed off 2026-03-10" [token: --legacy-ink]',
       '  [unmatched] [collision] — "reviewed 2025-11-20, kept for the print theme" [tokens: --page-bg, --page-ink]',
+    ]);
+  });
+
+  it("distinguishes entries that share a rule and a reason — the scalar token is the only difference, and it prints", () => {
+    // The reviewer's probe shape: a batch of tokens signed off together —
+    // same rule, same reason, different scalar tokens. These three entries
+    // are distinguishable ONLY by their token dimension, and the unmatched
+    // line has no finding to name it instead, so the token MUST render or
+    // the three lines collapse into one another.
+    config(
+      JSON.stringify({
+        suppress: [
+          { rule: "dead-token", token: "--legacy-ink", reason: "reserved, signed off 2026-03-10" },
+          { rule: "dead-token", token: "--legacy-accent", reason: "reserved, signed off 2026-03-10" },
+          { rule: "dead-token", token: "--legacy-panel", reason: "reserved, signed off 2026-03-10" },
+        ],
+      }),
+    );
+    const result = run(fx("same-shape.css", CLEAN_CSS));
+    expect(result.code).toBe(EXIT_OK);
+    expect(result.stdout).toContain("unmatched (3)");
+    expect(result.out.filter((l) => l.startsWith("  [unmatched] "))).toEqual([
+      '  [unmatched] [dead-token] — "reserved, signed off 2026-03-10" [token: --legacy-ink]',
+      '  [unmatched] [dead-token] — "reserved, signed off 2026-03-10" [token: --legacy-accent]',
+      '  [unmatched] [dead-token] — "reserved, signed off 2026-03-10" [token: --legacy-panel]',
     ]);
   });
 

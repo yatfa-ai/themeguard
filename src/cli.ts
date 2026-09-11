@@ -170,6 +170,22 @@ function sourceClause(entry: SuppressionEntry | SiteScopedSuppressionEntry): str
 }
 
 /**
+ * The scalar `token` spelling of a config entry's token dimension, as
+ * ` [token: --name]` — `""` for every other entry. DELIBERATELY NOT folded
+ * into `scopeSuffix`: the `suppressed` line's format is pinned byte-identical
+ * and needs no token segment, because the finding's own message sits in the
+ * middle of that line and already names the tokens the judgement covered. An
+ * `unmatched` line has no finding by definition, so the token dimension is
+ * the only field that can distinguish one entry from another — omitting it
+ * here would render three different judgements about three different tokens
+ * as three byte-identical lines. It rides this line alone for exactly that
+ * reason; `scopeSuffix` stays untouched.
+ */
+function tokenScope(entry: SuppressionEntry | SiteScopedSuppressionEntry): string {
+  return entry.token !== undefined ? ` [token: ${entry.token}]` : "";
+}
+
+/**
  * Run the command over `args` (the arguments AFTER the program name) and return
  * the exit code. Pure but for the file read: everything printed goes through
  * `io`, so a test reads the report instead of scraping a subprocess.
@@ -329,7 +345,7 @@ export function formatReport(
     );
     for (const entry of report.unmatchedSuppressions) {
       lines.push(
-        `  [unmatched] [${entry.rule}] — "${entry.reason}"${scopeSuffix(entry)}${sourceClause(entry)}`,
+        `  [unmatched] [${entry.rule}] — "${entry.reason}"${tokenScope(entry)}${scopeSuffix(entry)}${sourceClause(entry)}`,
       );
     }
   }

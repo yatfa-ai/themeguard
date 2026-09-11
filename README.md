@@ -267,12 +267,15 @@ entry, config or directive, that no finding matched:
 unmatched (2)
   declared suppressions no finding matched. Either the defect was fixed and the judgement can be retired, or the entry never aimed at a finding that exists — the report cannot tell which.
   [unmatched] [collision] — "vendor brand, signed off 2026-01-15" [tokens: --page-bg, --page-ink] [app.css:3]
-  [unmatched] [scale-collapse] — "reviewed 2025-11-20, kept for the print theme"
+  [unmatched] [scale-collapse] — "reviewed 2025-11-20, kept for the print theme" [token: --page-ink-hover]
 ```
 
-Each line names the entry's rule, its declared scope (`[theme: …]` / `[tokens: …]`), its `[file:line]`
-source where it is a directive, and its reason quoted — the same vocabulary a `suppressed` line uses,
-because an unmatched entry is an entry like any other, only without a finding behind it.
+Each line names the entry's rule, its declared scope (`[token: …]` / `[theme: …]` / `[tokens: …]`), its
+`[file:line]` source where it is a directive, and its reason quoted — the same vocabulary a `suppressed`
+line uses, because an unmatched entry is an entry like any other, only without a finding behind it. A
+`suppressed` line needs no `[token: …]` segment — the finding's own message already names the tokens the
+judgement covered — but an unmatched line has no finding to point at, so the token dimension is printed
+there instead; without it, two entries differing only in their token would be indistinguishable.
 
 **The section prints even at zero.** An empty section is the proof that every recorded judgement is
 still doing work, and a section that vanished at zero would reproduce exactly the silence this exists to
