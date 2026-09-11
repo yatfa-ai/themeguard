@@ -34,8 +34,10 @@
  * deliberate — passes `suppressions`, and matching findings move from
  * `findings` to the report's `suppressed` leg with their reason attached.
  * Suppression is a post-audit, explicit, structured declaration (rule id +
- * token name, never message scraping): it filters a finished report and edits
- * no rule, so every rule module stays a pure function of the resolver's data.
+ * token dimension, optionally scoped to the theme and the exact token set the
+ * finding was measured over — never message scraping): it filters a finished
+ * report and edits no rule, so every rule module stays a pure function of the
+ * resolver's data.
  *
  * Each module's docstring carries its judgement heuristics and — more usefully
  * — what it deliberately does NOT report, because for every rule the raw
@@ -94,7 +96,9 @@ export interface AuditReport {
 export interface AuditOptions {
   /**
    * Findings to suppress, as STRUCTURED declarations — a rule id and a token
-   * name matched against the finding's own fields, never message scraping. A
+   * dimension (the scalar `token`, or the `tokens` set) matched against the
+   * finding's own fields, never message scraping, plus an optional `theme`
+   * scope that narrows the entry to findings measured in that one theme. A
    * finding matching any entry moves from `findings` to `suppressed` with the
    * entry's reason; its absence from the counts is the user's recorded
    * judgement, and the report still names it. When several entries match one
@@ -106,12 +110,16 @@ export interface AuditOptions {
 /**
  * A finding the caller has declared deliberate: the finding itself, kept
  * whole so the reader can still check the measurement it was reported with,
- * and the reason the user gave for setting it aside.
+ * and the reason the user gave for setting it aside. The matching entry is
+ * carried too, so a reader — the CLI's `suppressed` section in particular —
+ * can see the scope the entry declared rather than only that one matched.
  */
 export interface SuppressedFinding {
   readonly finding: Finding;
   /** The user's reason, verbatim — quoted in the CLI's `suppressed` section. */
   readonly reason: string;
+  /** The entry that matched, whole — its declared `theme`/`tokens` scope included. */
+  readonly entry: SuppressionEntry;
 }
 
 /**
@@ -137,6 +145,25 @@ export function audit(
   // marked deliberate. The partition reads the FINDING's own fields, so it
   // cannot be fooled by reworded messages; the order of `suppressed` is the
   // same reading order as `findings`, so the two legs read as one list.
+  //
+  // Matching is structured on three of the finding's own dimensions, each
+  // narrowed only when the entry actually names it:
+  //   - `rule` — always required.
+  //   - `theme` — a scoped entry matches only findings measured in that
+  //     theme. `undefined` (key absent) is the unscoped every-theme reading,
+  //     exactly the behaviour before this field existed. Strict `===` also
+  //     keeps a scoped entry off the theme-less findings (`theme: null` — a
+  //     dead token is measured stylesheet-wide, not in a theme); no coercion.
+  //   - the token dimension — the scalar `token` matches when the finding
+  //     carries that ONE name; the `tokens` set matches only when the finding
+  //     carries EVERY name listed, which is the precision a collision PAIR
+  //     needs. Validation guarantees one spelling or the other.
+  const matches = (entry: SuppressionEntry, finding: Finding): boolean => {
+    if (entry.rule !== finding.rule) return false;
+    if (entry.theme !== undefined && entry.theme !== finding.theme) return false;
+    const named = entry.tokens ?? [entry.token as string];
+    return named.every((name) => finding.tokens.includes(name));
+  };
   const suppressions = options.suppressions ?? [];
   const suppressed: SuppressedFinding[] = [];
   const kept: Finding[] = [];
@@ -146,11 +173,9 @@ export function audit(
     ...scale.findings,
     ...family,
   ])) {
-    const entry = suppressions.find(
-      (s) => s.rule === finding.rule && finding.tokens.includes(s.token),
-    );
+    const entry = suppressions.find((s) => matches(s, finding));
     if (entry === undefined) kept.push(finding);
-    else suppressed.push({ finding, reason: entry.reason });
+    else suppressed.push({ finding, reason: entry.reason, entry });
   }
 
   return {

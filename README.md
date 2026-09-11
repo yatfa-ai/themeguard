@@ -151,14 +151,47 @@ put a `themeguard.config.json` **next to the stylesheet**:
 }
 ```
 
-Each entry names the `rule` that reports the finding, one token the finding carries, and the `reason` —
-which the report quotes back. Matching is against the finding's structured fields (`rule`, `tokens`),
-never against message prose. A suppressed finding leaves the per-rule counts and the exit code, and moves
-to its own `suppressed (N)` section — counted, named, reason quoted, never silently dropped, under the
-same discipline as `skipped`. `rule` and `token` and `reason` are all required, and a config the package
-cannot honour — an unknown rule id, a missing token, unreadable JSON — exits `2` naming the offending
-entry: a config that silently did nothing would leave you believing a finding was marked deliberate when
-it was reported after all.
+Scoped entries — a deliberate collision pair in one theme, and nothing else:
+
+```json
+{
+  "suppress": [
+    {
+      "rule": "collision",
+      "tokens": ["--app-cta", "--app-success"],
+      "theme": "root",
+      "reason": "the cta is deliberately the success colour, in the base palette only"
+    }
+  ]
+}
+```
+
+Each entry names the `rule` that reports the finding, a token dimension, an optional scope, and the
+`reason` — which the report quotes back. Matching is against the finding's structured fields (`rule`,
+`theme`, `tokens`), never against message prose. A suppressed finding leaves the per-rule counts and the
+exit code, and moves to its own `suppressed (N)` section — counted, named, reason quoted, never silently
+dropped, under the same discipline as `skipped`.
+
+**Scope an entry, or it reaches everywhere.** An entry names its token dimension either as the scalar
+`token` — any one token the finding carries — or as the `tokens` array — a set the finding must carry in
+FULL, which is how a deliberate collision *pair* is recorded as one entry rather than a stroke across
+every finding that happens to carry one of its members. An entry may also carry `theme`, narrowing it to
+findings measured in that one theme — so a deliberate equality in your base palette never silences the
+same question in a `prefers-color-scheme` or `[data-theme=…]` theme, where the equality may be a real
+defect. A theme-scoped entry never matches a finding that is not about a theme at all (a dead token is
+measured stylesheet-wide). Omitted keys are the unscoped reading: `token` alone, no `theme` — exactly
+what one-line configs have always meant. A scoped entry says so in the report, where its finding is
+printed:
+
+```
+  [suppressed] [collision] --accent and --success both resolve to #ff0000 in theme "root". … — "cta deliberately equals success" [theme: root, tokens: --accent, --success]
+```
+
+`rule` and `reason` and one of `token`/`tokens` are required, and a config the package cannot honour — an
+unknown rule id, a missing token dimension, `token` AND `tokens` together (two spellings of one
+dimension), an empty `tokens` array (which would match every finding), a malformed `theme`, unreadable
+JSON — exits `2` naming the offending entry: a config that silently did nothing — or silently did too
+much — would leave you believing a finding was marked deliberate when it was reported after all.
 
 **Discovery is stylesheet-adjacent, deliberately.** The config is read from the directory of the
 stylesheet you point the command at — not from the process working directory — so the same command means

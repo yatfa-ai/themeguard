@@ -26,11 +26,14 @@
  * governs a file is the one beside it. Absent file ⇒ no suppressions: no
  * existing line of the report changes and the exit codes are unchanged — the
  * only addition is the counted `suppressed` section, printed even at zero.
- * Each entry lists a rule id, a token name and a reason, strictly
- * validated: a config this package cannot honour exits 2 naming the entry,
- * never a silent skip. Matching findings move out of the per-rule counts and
- * into a `suppressed` section with their reason quoted — counted, named, never
- * dropped, and out of the exit code by declaration rather than by silence.
+ * Each entry lists a rule id, a token dimension (one `token`, or a `tokens`
+ * set), an optional `theme` scope, and a `reason`, strictly validated: a
+ * config this package cannot honour exits 2 naming the entry, never a silent
+ * skip. Matching findings move out of the per-rule counts and into a
+ * `suppressed` section with their reason quoted — counted, named, never
+ * dropped, and out of the exit code by declaration rather than by silence —
+ * and a scoped entry says so there (` [theme: …]` / ` [tokens: …]` after the
+ * reason), so a run that exits 0 shows how far each judgement reached.
  *
  * `coverage` is printed under the same precedent. It is the fact inventory rule
  * 4 is measured over — per theme, every base-theme token marked overridden or
@@ -69,7 +72,7 @@
 import { readFileSync, realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { audit } from "./audit.js";
-import { ConfigError, loadConfig } from "./config.js";
+import { ConfigError, loadConfig, type SuppressionEntry } from "./config.js";
 import { resolveCss } from "./resolve.js";
 import type { TokenKind } from "./resolve.js";
 import type { RuleId } from "./rules/finding.js";
@@ -98,6 +101,21 @@ const RULE_ORDER: readonly RuleId[] = [
   "scale-collapse",
   "family-consistency",
 ];
+
+/**
+ * The scope a suppression entry declared, printed after its reason so a line
+ * that suppressed a finding says how far the judgement reached — an unscoped
+ * entry suppresses across every theme and every token set, and the reader is
+ * owed the difference. `""` for an unscoped entry, which keeps today's line
+ * byte-identical; ` [theme: winter]`, ` [tokens: --accent, --success]`, or
+ * both segments in one bracket when the entry names both.
+ */
+function scopeSuffix(entry: SuppressionEntry): string {
+  const segments: string[] = [];
+  if (entry.theme !== undefined) segments.push(`theme: ${entry.theme}`);
+  if (entry.tokens !== undefined) segments.push(`tokens: ${entry.tokens.join(", ")}`);
+  return segments.length === 0 ? "" : ` [${segments.join(", ")}]`;
+}
 
 /**
  * Run the command over `args` (the arguments AFTER the program name) and return
@@ -201,8 +219,8 @@ export function formatReport(
     lines.push(
       "  findings marked deliberate in themeguard.config.json. Counted here, named below with the reason each was given — out of the counts and the exit code by declaration, never by silence.",
     );
-    for (const { finding, reason } of report.suppressed) {
-      lines.push(`  [suppressed] [${finding.rule}] ${finding.message} — "${reason}"`);
+    for (const { finding, reason, entry } of report.suppressed) {
+      lines.push(`  [suppressed] [${finding.rule}] ${finding.message} — "${reason}"${scopeSuffix(entry)}`);
     }
   }
   lines.push("");

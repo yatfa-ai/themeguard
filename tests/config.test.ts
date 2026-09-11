@@ -201,6 +201,119 @@ describe("parseConfig — what the package can honour", () => {
       /entry 1 of "suppress" must be an object/,
     );
   });
+
+  it("reads the scoped shape: theme, and the tokens array form", () => {
+    expect(
+      parseConfig(
+        JSON.stringify({
+          suppress: [
+            {
+              rule: "collision",
+              tokens: ["--app-cta", "--app-success"],
+              theme: "root",
+              reason: "cta deliberately equals success",
+            },
+            { rule: "dead-token", token: "--x", theme: "winter", reason: "kept for a theme" },
+          ],
+        }),
+        "mem/config.json",
+      ),
+    ).toEqual([
+      {
+        rule: "collision",
+        tokens: ["--app-cta", "--app-success"],
+        theme: "root",
+        reason: "cta deliberately equals success",
+      },
+      { rule: "dead-token", token: "--x", theme: "winter", reason: "kept for a theme" },
+    ]);
+  });
+
+  it("rejects a malformed theme — non-string and empty string, naming the entry", () => {
+    expect(() =>
+      parseConfig(
+        JSON.stringify({ suppress: [{ rule: "dead-token", token: "--x", theme: 5, reason: "r" }] }),
+        "mem/config.json",
+      ),
+    ).toThrowError(/entry 1 of "suppress": "theme" must be a non-empty string/);
+    expect(() =>
+      parseConfig(
+        JSON.stringify({ suppress: [{ rule: "dead-token", token: "--x", theme: "", reason: "r" }] }),
+        "mem/config.json",
+      ),
+    ).toThrowError(/entry 1 of "suppress": "theme" must be a non-empty string/);
+    expect(() =>
+      parseConfig(
+        JSON.stringify({ suppress: [{ rule: "dead-token", token: "--x", theme: null, reason: "r" }] }),
+        "mem/config.json",
+      ),
+    ).toThrowError(/entry 1 of "suppress": "theme" must be a non-empty string/);
+  });
+
+  it("rejects a non-array tokens — a bare string is the scalar spelling, not a set of one", () => {
+    expect(() =>
+      parseConfig(
+        JSON.stringify({ suppress: [{ rule: "dead-token", tokens: "--x", reason: "r" }] }),
+        "mem/config.json",
+      ),
+    ).toThrowError(/entry 1 of "suppress": "tokens" must be a non-empty array/);
+    expect(() =>
+      parseConfig(
+        JSON.stringify({ suppress: [{ rule: "dead-token", tokens: 7, reason: "r" }] }),
+        "mem/config.json",
+      ),
+    ).toThrowError(/entry 1 of "suppress": "tokens" must be a non-empty array/);
+  });
+
+  it("rejects an EMPTY tokens array — under the every-name reading it would match every finding and suppress what was never judged", () => {
+    expect(() =>
+      parseConfig(
+        JSON.stringify({ suppress: [{ rule: "dead-token", tokens: [], reason: "r" }] }),
+        "mem/config.json",
+      ),
+    ).toThrowError(
+      /entry 1 of "suppress": "tokens" must be a non-empty array of token names — an empty array would match every finding/,
+    );
+  });
+
+  it("rejects a non-string or empty tokens MEMBER, naming the entry", () => {
+    expect(() =>
+      parseConfig(
+        JSON.stringify({ suppress: [{ rule: "collision", tokens: ["--a", 5], reason: "r" }] }),
+        "mem/config.json",
+      ),
+    ).toThrowError(/entry 1 of "suppress": "tokens" members must each be a non-empty string/);
+    expect(() =>
+      parseConfig(
+        JSON.stringify({ suppress: [{ rule: "collision", tokens: ["--a", ""], reason: "r" }] }),
+        "mem/config.json",
+      ),
+    ).toThrowError(/entry 1 of "suppress": "tokens" members must each be a non-empty string/);
+  });
+
+  it("rejects token AND tokens together — two spellings of one dimension is an ambiguity, named like every other refusal", () => {
+    expect(() =>
+      parseConfig(
+        JSON.stringify({
+          suppress: [{ rule: "collision", token: "--a", tokens: ["--b"], reason: "r" }],
+        }),
+        "mem/config.json",
+      ),
+    ).toThrowError(
+      /entry 1 of "suppress": "token" and "tokens" are two spellings of one dimension/,
+    );
+  });
+
+  it("an entry with NEITHER token nor tokens keeps the scalar spelling's error, and now names the array form as the other way to satisfy it", () => {
+    expect(() =>
+      parseConfig(
+        JSON.stringify({ suppress: [{ rule: "dead-token", reason: "r" }] }),
+        "mem/config.json",
+      ),
+    ).toThrowError(
+      /entry 1 of "suppress": "token" must be a non-empty string.*an entry carries "token" \(one name\) or "tokens" \(the set\)/s,
+    );
+  });
 });
 
 describe("loadConfig — discovery is stylesheet-adjacent, not CWD-adjacent", () => {
@@ -287,6 +400,128 @@ describe("audit(resolved, { suppressions }) — the additive second parameter", 
       "family-consistency": 7,
     });
     expect(report.suppressed).toEqual([]);
+  });
+});
+
+/**
+ * Two themes, one deliberate collision and one accidental one — the shape the
+ * scoping fields exist for. Root holds `--accent` equal to `--success` (the
+ * deliberate pair; winter shows the two roles apart); winter holds `--danger`
+ * equal to `--success` (accidental; nothing witnesses it as intended). The
+ * sheet produces EXACTLY two findings, both `collision`, so every assertion
+ * below is over a fully known report.
+ */
+const TWO_THEME_CSS = `
+:root {
+  --accent: #ff0000;
+  --success: #ff0000;
+}
+
+[data-theme="winter"] {
+  --accent: #00ff00;
+  --success: #0000ff;
+  --danger: #0000ff;
+}
+
+.a { color: var(--accent); }
+.s { color: var(--success); }
+.d { border-color: var(--danger); }
+`;
+
+/** One stylesheet-wide dead token: a finding with `theme: null`, the case a theme-scoped entry must NOT touch. */
+const DEAD_TOKEN_CSS = `
+:root {
+  --used: #101010;
+  --unused: #202020;
+}
+.x { color: var(--used); }
+`;
+
+describe("audit(resolved, { suppressions }) — the scope dimensions", () => {
+  const resolved = resolveCss(TWO_THEME_CSS);
+
+  it("reports exactly the two collisions the fixture was built to hold, with their themes and token pairs", () => {
+    expect(resolved.themes).toEqual(["root", "winter"]);
+    expect(audit(resolved).countsByRule).toEqual({
+      collision: 2,
+      "dead-token": 0,
+      "scale-collapse": 0,
+      "family-consistency": 0,
+    });
+    expect(audit(resolved).findings.map((f) => [f.theme, f.tokens])).toEqual([
+      ["root", ["--accent", "--success"]],
+      ["winter", ["--danger", "--success"]],
+    ]);
+  });
+
+  it("a theme-scoped entry suppresses only ITS theme's finding — the other theme's finding still reports", () => {
+    const report = audit(resolved, {
+      suppressions: [
+        { rule: "collision", token: "--success", theme: "root", reason: "root: cta deliberately equals success" },
+      ],
+    });
+    expect(report.suppressed).toHaveLength(1);
+    expect(report.suppressed[0]?.finding.theme).toBe("root");
+    expect(report.findings).toHaveLength(1);
+    expect(report.findings[0]?.theme).toBe("winter");
+    expect(report.findings[0]?.tokens).toEqual(["--danger", "--success"]);
+    expect(report.countsByRule.collision).toBe(1);
+  });
+
+  it("an unscoped entry matches every theme — exactly today's behaviour, pinned so the field stays opt-in", () => {
+    const report = audit(resolved, {
+      suppressions: [{ rule: "collision", token: "--success", reason: "fleet-wide on purpose" }],
+    });
+    expect(report.suppressed).toHaveLength(2);
+    expect(report.findings).toHaveLength(0);
+  });
+
+  it("a tokens-pair entry matches only findings carrying ALL the named tokens — findings with other partners stay live", () => {
+    const report = audit(resolved, {
+      suppressions: [
+        { rule: "collision", tokens: ["--accent", "--success"], theme: "root", reason: "the deliberate pair, as one entry" },
+      ],
+    });
+    expect(report.suppressed).toHaveLength(1);
+    expect(report.suppressed[0]?.finding.tokens).toEqual(["--accent", "--success"]);
+    // Winter's pair [--danger, --success] carries --success but not --accent:
+    // one shared member is not the judged pair.
+    expect(report.findings).toHaveLength(1);
+    expect(report.findings[0]?.tokens).toEqual(["--danger", "--success"]);
+  });
+
+  it("a tokens entry is order-insensitive over the finding's set — the SET is matched, not the message order", () => {
+    const report = audit(resolved, {
+      suppressions: [
+        { rule: "collision", tokens: ["--success", "--accent"], theme: "root", reason: "same pair, reversed" },
+      ],
+    });
+    expect(report.suppressed).toHaveLength(1);
+  });
+
+  it("a theme-scoped entry does NOT match a theme-less finding — dead-token carries theme: null, and null never equals a name", () => {
+    const deadResolved = resolveCss(DEAD_TOKEN_CSS);
+    const scoped = audit(deadResolved, {
+      suppressions: [{ rule: "dead-token", token: "--unused", theme: "root", reason: "scoped" }],
+    });
+    expect(scoped.findings).toHaveLength(1);
+    expect(scoped.findings[0]?.theme).toBeNull();
+    expect(scoped.suppressed).toHaveLength(0);
+    // The unscoped spelling still reaches it — the scoping is opt-in.
+    const unscoped = audit(deadResolved, {
+      suppressions: [{ rule: "dead-token", token: "--unused", reason: "unscoped" }],
+    });
+    expect(unscoped.findings).toHaveLength(0);
+    expect(unscoped.suppressed).toHaveLength(1);
+  });
+
+  it("carries the MATCHED entry on the suppressed leg, so a reader can see the scope the judgement declared", () => {
+    const entry = { rule: "collision", tokens: ["--accent", "--success"], theme: "root", reason: "why" } as const;
+    const report = audit(resolved, { suppressions: [entry] });
+    expect(report.suppressed[0]?.entry).toEqual(entry);
+    // And an unscoped entry carries itself — absence of scope is legible.
+    const bare = { rule: "collision", token: "--success", reason: "why" } as const;
+    expect(audit(resolved, { suppressions: [bare] }).suppressed[0]?.entry).toEqual(bare);
   });
 });
 
@@ -436,6 +671,117 @@ describe("themeguard <file.css> with themeguard.config.json beside the styleshee
     const bare = run(FIXTURE_COPY);
     expect(bare.stdout).toContain("22 findings");
     expect(bare.stdout).toContain("suppressed (0)");
+  });
+
+  it("a theme-scoped entry suppresses only its theme's finding: the other theme's finding still reports and the exit stays 1", () => {
+    const dir = join(tmp, "scoped-theme");
+    mkdirSync(dir);
+    const cssPath = join(dir, "two-theme.css");
+    writeFileSync(cssPath, TWO_THEME_CSS, "utf8");
+    writeConfig(
+      dir,
+      JSON.stringify({
+        suppress: [
+          { rule: "collision", token: "--success", theme: "root", reason: "root: cta deliberately equals success" },
+        ],
+      }),
+    );
+    const result = run(cssPath);
+    // Root's finding moved; winter's accidental one did not.
+    expect(result.stdout).toContain("collision (1)");
+    expect(result.stdout).toContain("suppressed (1)");
+    expect(result.stdout).toContain("1 finding: 1 collision, 0 dead-token, 0 scale-collapse, 0 family-consistency.");
+    expect(result.out.some((l) => l.startsWith("  [collision] --danger and --success"))).toBe(true);
+    expect(result.code).toBe(EXIT_FINDINGS);
+  });
+
+  it("the SAME config without the theme suppresses BOTH findings — the fleet-wide stroke scoped entries exist to narrow, kept as the back-compat pin", () => {
+    const dir = join(tmp, "unscoped-fleet");
+    mkdirSync(dir);
+    const cssPath = join(dir, "two-theme.css");
+    writeFileSync(cssPath, TWO_THEME_CSS, "utf8");
+    writeConfig(
+      dir,
+      JSON.stringify({
+        suppress: [{ rule: "collision", token: "--success", reason: "deliberate in every theme" }],
+      }),
+    );
+    const result = run(cssPath);
+    expect(result.stdout).toContain("collision (0)");
+    expect(result.stdout).toContain("suppressed (2)");
+    expect(result.stdout).toContain("No findings.");
+    expect(result.code).toBe(EXIT_OK);
+  });
+
+  it("a tokens-pair entry matches the pair and leaves findings with other partners live", () => {
+    const dir = join(tmp, "scoped-tokens");
+    mkdirSync(dir);
+    const cssPath = join(dir, "two-theme.css");
+    writeFileSync(cssPath, TWO_THEME_CSS, "utf8");
+    writeConfig(
+      dir,
+      JSON.stringify({
+        suppress: [
+          {
+            rule: "collision",
+            tokens: ["--accent", "--success"],
+            theme: "root",
+            reason: "root: cta deliberately equals success",
+          },
+        ],
+      }),
+    );
+    const result = run(cssPath);
+    expect(result.stdout).toContain("collision (1)");
+    expect(result.stdout).toContain("suppressed (1)");
+    expect(result.code).toBe(EXIT_FINDINGS);
+  });
+
+  it("a scoped entry says so where its finding is printed: [theme: …] and [tokens: …] after the reason; an unscoped line is byte-identical to before", () => {
+    const dir = join(tmp, "scope-disclosure");
+    mkdirSync(dir);
+    const cssPath = join(dir, "two-theme.css");
+    writeFileSync(cssPath, TWO_THEME_CSS, "utf8");
+    writeConfig(
+      dir,
+      JSON.stringify({
+        suppress: [
+          {
+            rule: "collision",
+            tokens: ["--accent", "--success"],
+            theme: "root",
+            reason: "root: cta deliberately equals success",
+          },
+          { rule: "collision", tokens: ["--danger", "--success"], reason: "winter pair, whole" },
+        ],
+      }),
+    );
+    const result = run(cssPath);
+    const lines = result.out.filter((l) => l.startsWith("  [suppressed] [collision]"));
+    expect(lines).toHaveLength(2);
+    // Both scope segments, in one bracket, theme first.
+    expect(lines[0]).toContain(
+      `— "root: cta deliberately equals success" [theme: root, tokens: --accent, --success]`,
+    );
+    // The tokens-only spelling, with no theme segment and no empty bracket.
+    expect(lines[1]).toMatch(/— "winter pair, whole" \[tokens: --danger, --success\]$/);
+    // An entry with no scope at all keeps today's exact line shape: the reason
+    // is the last thing on the line, nothing appended.
+    const bareDir = join(tmp, "scope-disclosure-bare");
+    mkdirSync(bareDir);
+    writeFileSync(join(bareDir, "two-theme.css"), TWO_THEME_CSS, "utf8");
+    writeConfig(
+      bareDir,
+      JSON.stringify({
+        suppress: [{ rule: "collision", token: "--success", reason: "unscoped, as always" }],
+      }),
+    );
+    const bare = run(join(bareDir, "two-theme.css"));
+    for (const line of bare.out.filter((l) => l.startsWith("  [suppressed] [collision]"))) {
+      expect(line).toMatch(/— "unscoped, as always"$/);
+      expect(line).not.toContain("[theme:");
+      expect(line).not.toContain("[tokens:");
+    }
   });
 });
 

@@ -9,18 +9,21 @@
  * "point it at a file" usage, and independent of wherever the command happens
  * to be invoked from. An absent file changes nothing at all.
  *
- * The entries are STRUCTURED — a rule id and a token name, matched against the
- * finding's own `rule` and `tokens` fields — never message scraping. A message
- * is prose for a human; matching on it would couple the config to wording.
+ * The entries are STRUCTURED — a rule id and a token dimension (a scalar
+ * `token`, or a `tokens` set the finding must carry in full), optionally
+ * scoped to the `theme` the finding was measured in — matched against the
+ * finding's own fields, never message scraping. A message is prose for a
+ * human; matching on it would couple the config to wording.
  *
  * Validation is strict on purpose, and it is the same discipline as the
  * report's own: a config the tool cannot honour is never silently ignored.
- * A malformed entry — an unknown rule id, a missing token, a missing reason,
- * an unrecognised key, unreadable JSON — is an ERROR naming the offending
- * entry, because a config that silently did nothing is a user who believes a
- * finding was marked deliberate when it was reported after all. An entry whose
- * shape is valid but which matches no finding is NOT an error: the finding it
- * would have named still prints and still moves the exit code, so the miss is
+ * A malformed entry — an unknown rule id, a missing token dimension, a
+ * malformed `theme` or `tokens`, a missing reason, an unrecognised key,
+ * unreadable JSON — is an ERROR naming the offending entry, because a config
+ * that silently did nothing is a user who believes a finding was marked
+ * deliberate when it was reported after all. An entry whose shape is valid
+ * but which matches no finding is NOT an error: the finding it would have
+ * named still prints and still moves the exit code, so the miss is
  * self-announcing.
  */
 
@@ -39,16 +42,40 @@ const RULE_IDS: readonly RuleId[] = [
   "family-consistency",
 ];
 
-/** One deliberate finding: the rule that reported it, a token it names, and why. */
+/**
+ * One deliberate finding: the rule that reported it, the token dimension it
+ * names — a scalar {@link token}, or the whole set via {@link tokens} — an
+ * optional {@link theme} scope, and why.
+ */
 export interface SuppressionEntry {
   /** The rule id the finding was reported under. */
   readonly rule: RuleId;
   /**
    * A token the finding carries. A finding is suppressed when its rule matches
-   * and its `tokens` include this name — one token per entry, so a deliberate
-   * pair is recorded token by token.
+   * and its `tokens` include this name. Optional: the token dimension is named
+   * EITHER by this scalar — any one token the finding carries — OR by the
+   * {@link tokens} set, never both. The scalar stays the spelling for
+   * single-token findings and for every config written before sets existed.
    */
-  readonly token: string;
+  readonly token?: string;
+  /**
+   * The token SET the finding must carry: the finding is suppressed only when
+   * every name listed is among its `tokens`. This is what gives a collision
+   * PAIR the precision the docstring always promised — an entry on the pair,
+   * not a stroke across every finding that happens to carry one member.
+   * Optional; must be non-empty when present (an empty set would match every
+   * finding and suppress what was never judged).
+   */
+  readonly tokens?: readonly string[];
+  /**
+   * The theme the finding was measured in. A scoped entry matches only
+   * findings measured in THAT theme, so a deliberate equality in one theme
+   * never silences the same question in another. Optional: `undefined` (the
+   * key absent) keeps the unscoped, every-theme behaviour. Findings that are
+   * not theme-specific — a dead token is measured stylesheet-wide — carry
+   * `theme: null` and are never matched by a scoped entry.
+   */
+  readonly theme?: string;
   /** Why this finding is deliberate — printed verbatim in the report. */
   readonly reason: string;
 }
@@ -141,12 +168,12 @@ function parseEntry(item: unknown, index: number, path: string): SuppressionEntr
     throw new ConfigError(path, `${where} must be an object, got ${JSON.stringify(item)}`);
   }
 
-  const allowed = ["rule", "token", "reason"];
+  const allowed = ["rule", "token", "tokens", "theme", "reason"];
   for (const key of Object.keys(item)) {
     if (!allowed.includes(key)) {
       throw new ConfigError(
         path,
-        `${where}: unknown key "${key}" — expected "rule", "token", "reason". A key this package does not know would otherwise do nothing, silently.`,
+        `${where}: unknown key "${key}" — expected "rule", "token", "tokens", "theme", "reason". A key this package does not know would otherwise do nothing, silently.`,
       );
     }
   }
@@ -159,11 +186,62 @@ function parseEntry(item: unknown, index: number, path: string): SuppressionEntr
     );
   }
 
-  const token = item["token"];
-  if (typeof token !== "string" || token.length === 0) {
+  // The token dimension, in one of two spellings. Carrying both is an error
+  // for the same reason an unknown key is: two spellings of one dimension is
+  // an ambiguity, and an ambiguity this package honoured would suppress by
+  // whichever reading happened to be implemented.
+  const rawToken = item["token"];
+  const rawTokens = item["tokens"];
+  if (rawToken !== undefined && rawTokens !== undefined) {
     throw new ConfigError(
       path,
-      `${where}: "token" must be a non-empty string naming the token the finding carries, got ${JSON.stringify(token ?? null)}`,
+      `${where}: "token" and "tokens" are two spellings of one dimension — an entry carries one or the other, never both`,
+    );
+  }
+
+  let token: string | undefined;
+  let tokens: readonly string[] | undefined;
+  if (rawToken !== undefined) {
+    if (typeof rawToken !== "string" || rawToken.length === 0) {
+      throw new ConfigError(
+        path,
+        `${where}: "token" must be a non-empty string naming the token the finding carries, got ${JSON.stringify(rawToken ?? null)}`,
+      );
+    }
+    token = rawToken;
+  } else if (rawTokens !== undefined) {
+    if (!Array.isArray(rawTokens) || rawTokens.length === 0) {
+      // The empty array is rejected outright, not merely typed: under the
+      // matcher's "the finding carries every name listed" reading, an empty
+      // list is carried by EVERY finding — an entry that would suppress
+      // everything while looking like it named nothing.
+      throw new ConfigError(
+        path,
+        `${where}: "tokens" must be a non-empty array of token names — an empty array would match every finding, silently suppressing what was never judged`,
+      );
+    }
+    if (rawTokens.some((t) => typeof t !== "string" || t.length === 0)) {
+      throw new ConfigError(
+        path,
+        `${where}: "tokens" members must each be a non-empty string naming one token the finding carries, got ${JSON.stringify(rawTokens)}`,
+      );
+    }
+    tokens = rawTokens as readonly string[];
+  } else {
+    // Neither spelling — the same error the scalar-only schema raised, so a
+    // pre-`tokens` config validates byte-identically; the sentence now names
+    // the array form as the other way to satisfy the requirement.
+    throw new ConfigError(
+      path,
+      `${where}: "token" must be a non-empty string naming the token the finding carries, got null — an entry carries "token" (one name) or "tokens" (the set)`,
+    );
+  }
+
+  const theme = item["theme"];
+  if (theme !== undefined && (typeof theme !== "string" || theme.length === 0)) {
+    throw new ConfigError(
+      path,
+      `${where}: "theme" must be a non-empty string naming the theme the finding was measured in, got ${JSON.stringify(theme ?? null)}`,
     );
   }
 
@@ -175,5 +253,14 @@ function parseEntry(item: unknown, index: number, path: string): SuppressionEntr
     );
   }
 
-  return { rule: rule as RuleId, token, reason };
+  // Only the keys the user wrote are carried — absence IS the unscoped
+  // reading the matcher tests for, so an entry is never padded with nulls or
+  // empty shapes that a reader (or a future key) could mistake for a scope.
+  return {
+    rule: rule as RuleId,
+    reason,
+    ...(token !== undefined ? { token } : {}),
+    ...(tokens !== undefined ? { tokens } : {}),
+    ...(theme !== undefined ? { theme } : {}),
+  };
 }
