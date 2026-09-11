@@ -209,9 +209,25 @@ Scoped entries — a deliberate collision pair in one theme, and nothing else:
 }
 ```
 
+A file-scoped entry — a judgement recorded against one stylesheet of a directory that shares one config:
+
+```json
+{
+  "suppress": [
+    {
+      "rule": "collision",
+      "tokens": ["--accent", "--primary"],
+      "file": "tokens.css",
+      "reason": "brand tokens are identical by design"
+    }
+  ]
+}
+```
+
 Each entry names the `rule` that reports the finding, a token dimension, an optional scope, and the
 `reason` — which the report quotes back. Matching is against the finding's structured fields (`rule`,
-`theme`, `tokens`), never against message prose. A suppressed finding leaves the per-rule counts and the
+`theme`, `tokens`), never against message prose — plus the stylesheet the entry names, when it names
+one, compared against the file being audited. A suppressed finding leaves the per-rule counts and the
 exit code, and moves to its own `suppressed (N)` section — counted, named, reason quoted, never silently
 dropped, under the same discipline as `skipped`.
 
@@ -222,7 +238,15 @@ every finding that happens to carry one of its members. An entry may also carry 
 findings measured in that one theme — so a deliberate equality in your base palette never silences the
 same question in a `prefers-color-scheme` or `[data-theme=…]` theme, where the equality may be a real
 defect. A theme-scoped entry never matches a finding that is not about a theme at all (a dead token is
-measured stylesheet-wide). Omitted keys are the unscoped reading: `token` alone, no `theme` — exactly
+measured stylesheet-wide). And it may carry `file` — the stylesheet the judgement was recorded against,
+relative to the config's own directory — narrowing it to findings reported for that ONE stylesheet. This
+is what makes a shared-config directory honest: when `styles/` keeps one `themeguard.config.json` beside
+`tokens.css` and `buttons.css`, an entry with `"file": "tokens.css"` suppresses the brand collision it
+was written about and says nothing about buttons.css's findings — the header's own sentence, "a
+suppression is worth exactly the file it was recorded against", true by declaration rather than by
+accident of where the config sits. `file` must be RELATIVE — an absolute path would make the same config
+mean different things from different checkouts, so it exits `2` naming the entry, as would an empty or
+non-string one. Omitted keys are the unscoped reading: `token` alone, no `theme`, no `file` — exactly
 what one-line configs have always meant. A scoped entry says so in the report, where its finding is
 printed:
 
@@ -234,7 +258,9 @@ printed:
 unknown rule id, a missing token dimension, `token` AND `tokens` together (two spellings of one
 dimension), an empty `tokens` array (which would match every finding), a malformed `theme`, unreadable
 JSON — exits `2` naming the offending entry: a config that silently did nothing — or silently did too
-much — would leave you believing a finding was marked deliberate when it was reported after all.
+much — would leave you believing a finding was marked deliberate when it was reported after all. A
+malformed `file` — empty, non-string, or ABSOLUTE — is the same refusal, for the same reason: the field
+must mean the same stylesheet from every checkout this config travels through.
 
 **Discovery is stylesheet-adjacent, deliberately.** The config is read from the directory of the
 stylesheet you point the command at — not from the process working directory — so the same command means
@@ -310,6 +336,13 @@ line uses, because an unmatched entry is an entry like any other, only without a
 `suppressed` line needs no `[token: …]` segment — the finding's own message already names the tokens the
 judgement covered — but an unmatched line has no finding to point at, so the token dimension is printed
 there instead; without it, two entries differing only in their token would be indistinguishable.
+
+**One unmatched entry the prose can vouch for.** The dichotomy above — expired, or mis-aimed — has a
+third reading since `file` scopes exist: an entry carrying a ` [file: …]` clause matched nothing here
+because it was recorded against ANOTHER stylesheet, which this config governs too. When the section
+holds such an entry, a line beside the prose says exactly that, and names the file the clause names —
+the judgement is neither retireable on this report's word nor unaccounted for: the file it aims at is
+the one whose report states its fate.
 
 **The section prints even at zero.** An empty section is the proof that every recorded judgement is
 still doing work, and a section that vanished at zero would reproduce exactly the silence this exists to

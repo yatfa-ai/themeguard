@@ -10,8 +10,14 @@
  *
  * The files are audited INDEPENDENTLY — the single-file contract unchanged per
  * file. References do not cross files: one stylesheet's tokens are invisible to
- * the next, the config beside each stylesheet governs it alone, and a
- * suppression is worth exactly the file it was recorded against. The
+ * the next, and the config beside each stylesheet governs it alone. A
+ * suppression is worth exactly the file it was recorded against — and since
+ * 0.1.11 that is true by DECLARATION, not by accident of where the config
+ * sits: an entry may name the file it was judged against (`file`, relative to
+ * the config's own directory), and a file-scoped entry governs that one
+ * stylesheet — so a directory sharing one ledger among siblings can record a
+ * judgement for `tokens.css` without it silencing `buttons.css`. An entry
+ * without the field keeps the whole-config reading it has always had. The
  * invocation fails fast on the first file that cannot be audited, and the
  * per-file outcomes aggregate into ONE exit code for the invocation — the
  * precedence is stated in the exit contract below, because a caller in a
@@ -40,11 +46,16 @@
  * Each entry lists a rule id, a token dimension (one `token`, or a `tokens`
  * set), an optional `theme` scope, and a `reason`, strictly validated: a
  * config this package cannot honour exits 2 naming the entry, never a silent
- * skip. Matching findings move out of the per-rule counts and into a
- * `suppressed` section with their reason quoted — counted, named, never
- * dropped, and out of the exit code by declaration rather than by silence —
- * and a scoped entry says so there (` [theme: …]` / ` [tokens: …]` after the
- * reason), so a run that exits 0 shows how far each judgement reached.
+ * skip. An entry may also name the STYLESHEET the judgement was recorded
+ * against — `file`, relative to the config's own directory, resolved there
+ * before matching; an entry scoped that way governs that one stylesheet and
+ * no sibling, which is what makes a shared-config directory's ledger honest
+ * (see the independence paragraph above). Matching findings move out of the
+ * per-rule counts and into a `suppressed` section with their reason quoted —
+ * counted, named, never dropped, and out of the exit code by declaration
+ * rather than by silence — and a scoped entry says so there (` [theme: …]` /
+ * ` [tokens: …]` / ` [file: …]` after the reason), so a run that exits 0
+ * shows how far each judgement reached.
  *
  * ── The directives ────────────────────────────────────────────────────────
  * `/* themeguard-ignore … *\/` comments in the stylesheet are the SITE-level
@@ -77,7 +88,12 @@
  * is hygiene, never a defect, and never moves the exit code. Its prose names
  * the two possible causes and stops — the tool cannot tell an expired
  * judgement (defect fixed, retire the entry) from a mis-aimed one, and must
- * not pretend to.
+ * not pretend to. One cause it CAN tell, and since 0.1.11 says so: an entry
+ * carrying a ` [file: …]` clause names the stylesheet it was recorded
+ * against, so its presence on this report is neither expiry nor mis-aim — it
+ * aims at a sibling file this config governs, and that file's report is the
+ * one that states its fate. A clause-carrying entry is never advised retired
+ * on this report's word.
  *
  * `coverage` is printed under the same precedent. It is the fact inventory rule
  * 4 is measured over — per theme, every base-theme token marked overridden or
@@ -130,6 +146,7 @@
  */
 
 import { readFileSync, realpathSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { audit, type SiteScopedSuppressionEntry } from "./audit.js";
 import { ConfigError, loadConfig, type SuppressionEntry } from "./config.js";
@@ -190,6 +207,22 @@ function scopeSuffix(entry: SuppressionEntry): string {
  */
 function sourceClause(entry: SuppressionEntry | SiteScopedSuppressionEntry): string {
   return "source" in entry ? ` [${entry.source}]` : "";
+}
+
+/**
+ * The stylesheet a file-scoped config entry was recorded against, as
+ * ` [file: tokens.css]` — the spelling AS WRITTEN in the config, not the
+ * resolved path matching used (that half is the audit's business; the report
+ * quotes the user's own ledger back to them). `""` for an unscoped entry,
+ * which keeps today's line byte-identical. It joins the `scopeSuffix` /
+ * `sourceClause` family in both sections where an entry is named: a
+ * `suppressed` line shows how far the judgement reached, and an `unmatched`
+ * line shows where the judgement DOES aim — the difference between "this
+ * entry matched nothing" and "this entry was never about this file", which
+ * is exactly the ambiguity the section's prose otherwise cannot resolve.
+ */
+function fileClause(entry: SuppressionEntry): string {
+  return entry.file !== undefined ? ` [file: ${entry.file}]` : "";
 }
 
 /**
@@ -315,8 +348,26 @@ function auditStylesheet(path: string, io: CliIo): number {
   // one extra conjunct (its line), so the audit sees one suppression list.
   // Config entries come first, so a config/directive tie resolves to the
   // config's reason — the same first-wins rule the list itself has.
+  //
+  // File-scoped entries are resolved HERE, the only place that knows both
+  // halves: the entry carries `file` relative to the CONFIG's own directory,
+  // and this function knows that directory (the stylesheet's — the config
+  // sits beside it). Each scoped entry is shallow-copied with the resolved
+  // absolute path as an additive annotation, the same treatment the 0.1.4
+  // site scope gave a directive; the written spelling rides along untouched,
+  // so the report's ` [file: …]` clause prints what the user wrote. Entries
+  // without the field pass through as the SAME objects — no scope, no copy,
+  // byte-identical behaviour. The audited stylesheet travels alongside as
+  // `stylesheet`, normalized the same way, which is what the conjunct
+  // compares against.
+  const scoped = (suppressions ?? []).map((entry) =>
+    entry.file === undefined
+      ? entry
+      : { ...entry, fileResolved: resolve(dirname(path), entry.file) },
+  );
   const report = audit(resolveCss(css), {
-    suppressions: [...(suppressions ?? []), ...directives],
+    suppressions: [...scoped, ...directives],
+    stylesheet: resolve(path),
   });
   for (const line of formatReport(path, report)) io.out(line);
 
@@ -370,7 +421,7 @@ export function formatReport(
       "  findings marked deliberate — in themeguard.config.json or in a themeguard-ignore directive in the stylesheet. Counted here, named below with the reason each was given — out of the counts and the exit code by declaration, never by silence.",
     );
     for (const { finding, reason, entry } of report.suppressed) {
-      lines.push(`  [suppressed] [${finding.rule}] ${finding.message} — "${reason}"${scopeSuffix(entry)}${sourceClause(entry)}`);
+      lines.push(`  [suppressed] [${finding.rule}] ${finding.message} — "${reason}"${scopeSuffix(entry)}${fileClause(entry)}${sourceClause(entry)}`);
     }
   }
   lines.push("");
@@ -391,7 +442,13 @@ export function formatReport(
   // is an entry like any other, only without a finding behind it. The prose
   // names the two causes honestly and stops: the tool cannot tell an expired
   // judgement (defect fixed, retire the entry) from a mis-aimed one, and
-  // must not pretend to.
+  // must not pretend to. ONE case it can tell, and the carve-out line below
+  // says so whenever this section carries such an entry: an entry with a
+  // `file` scope names the stylesheet it was recorded against, so its
+  // unmatchedness HERE is neither expiry nor mis-aim — it aims at a sibling
+  // this config governs, and that file's report states its fate. The carve-
+  // out prints only when at least one unmatched entry carries the clause, so
+  // every section it does not apply to stays byte-identical.
   lines.push(`unmatched (${report.unmatchedSuppressions.length})`);
   if (report.unmatchedSuppressions.length === 0) {
     lines.push(
@@ -401,9 +458,14 @@ export function formatReport(
     lines.push(
       "  declared suppressions no finding matched. Either the defect was fixed and the judgement can be retired, or the entry never aimed at a finding that exists — the report cannot tell which.",
     );
+    if (report.unmatchedSuppressions.some((entry) => entry.file !== undefined)) {
+      lines.push(
+        "  an entry carrying a [file: …] clause names the stylesheet it was recorded against — for it, this report can tell: the judgement aims at that file, which this config governs too, and it neither expired here nor mis-aimed here. That file's report is the one that states its fate.",
+      );
+    }
     for (const entry of report.unmatchedSuppressions) {
       lines.push(
-        `  [unmatched] [${entry.rule}] — "${entry.reason}"${tokenScope(entry)}${scopeSuffix(entry)}${sourceClause(entry)}`,
+        `  [unmatched] [${entry.rule}] — "${entry.reason}"${tokenScope(entry)}${scopeSuffix(entry)}${fileClause(entry)}${sourceClause(entry)}`,
       );
     }
   }

@@ -250,6 +250,71 @@ describe("parseConfig — what the package can honour", () => {
     ).toThrowError(/entry 1 of "suppress": "theme" must be a non-empty string/);
   });
 
+  it("reads a file-scoped entry — the stylesheet the judgement was recorded against, kept as written", () => {
+    expect(
+      parseConfig(
+        JSON.stringify({
+          suppress: [
+            {
+              rule: "collision",
+              tokens: ["--accent", "--primary"],
+              file: "tokens.css",
+              reason: "brand tokens are identical by design",
+            },
+          ],
+        }),
+        "mem/config.json",
+      ),
+    ).toEqual([
+      {
+        rule: "collision",
+        tokens: ["--accent", "--primary"],
+        file: "tokens.css",
+        reason: "brand tokens are identical by design",
+      },
+    ]);
+  });
+
+  it("rejects a malformed file — non-string, empty, and null, naming the entry", () => {
+    expect(() =>
+      parseConfig(
+        JSON.stringify({ suppress: [{ rule: "dead-token", token: "--x", file: 42, reason: "r" }] }),
+        "mem/config.json",
+      ),
+    ).toThrowError(
+      /entry 1 of "suppress": "file" must be a non-empty string naming the stylesheet the judgement was recorded against, relative to this config's directory, got 42/,
+    );
+    expect(() =>
+      parseConfig(
+        JSON.stringify({ suppress: [{ rule: "dead-token", token: "--x", file: "", reason: "r" }] }),
+        "mem/config.json",
+      ),
+    ).toThrowError(
+      /entry 1 of "suppress": "file" must be a non-empty string naming the stylesheet/,
+    );
+    expect(() =>
+      parseConfig(
+        JSON.stringify({ suppress: [{ rule: "dead-token", token: "--x", file: null, reason: "r" }] }),
+        "mem/config.json",
+      ),
+    ).toThrowError(
+      /entry 1 of "suppress": "file" must be a non-empty string naming the stylesheet/,
+    );
+  });
+
+  it("rejects an ABSOLUTE file — the same config must mean the same thing from any checkout", () => {
+    expect(() =>
+      parseConfig(
+        JSON.stringify({
+          suppress: [{ rule: "collision", token: "--x", file: "/proj/styles/tokens.css", reason: "r" }],
+        }),
+        "mem/config.json",
+      ),
+    ).toThrowError(
+      /entry 1 of "suppress": "file" must be a path relative to this config's directory — an absolute path/,
+    );
+  });
+
   it("rejects a non-array tokens — a bare string is the scalar spelling, not a set of one", () => {
     expect(() =>
       parseConfig(
@@ -663,6 +728,23 @@ describe("themeguard <file.css> with themeguard.config.json beside the styleshee
     const result = run(cssPath);
     expect(result.code).toBe(EXIT_ERROR);
     expect(result.stderr).toContain('entry 1 of "suppress": "token" must be a non-empty string');
+    expect(result.out).toEqual([]);
+  });
+
+  it("an ABSOLUTE file exits 2 naming the entry — the checkout-independence rule is validation, not advice", () => {
+    const dir = join(tmp, "absolute-file");
+    mkdirSync(dir);
+    const cssPath = join(dir, "one-finding.css");
+    writeFileSync(cssPath, ONE_FINDING_CSS, "utf8");
+    writeConfig(
+      dir,
+      JSON.stringify({
+        suppress: [{ rule: "scale-collapse", token: "--panel-hover", file: "/proj/one-finding.css", reason: "r" }],
+      }),
+    );
+    const result = run(cssPath);
+    expect(result.code).toBe(EXIT_ERROR);
+    expect(result.stderr).toContain('entry 1 of "suppress": "file" must be a path relative');
     expect(result.out).toEqual([]);
   });
 

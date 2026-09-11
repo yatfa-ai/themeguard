@@ -11,19 +11,21 @@
  *
  * The entries are STRUCTURED — a rule id and a token dimension (a scalar
  * `token`, or a `tokens` set the finding must carry in full), optionally
- * scoped to the `theme` the finding was measured in — matched against the
- * finding's own fields, never message scraping. A message is prose for a
- * human; matching on it would couple the config to wording.
+ * scoped to the `theme` the finding was measured in and to the stylesheet
+ * (`file`, relative to this config's own directory) the judgement was
+ * recorded against — matched against the finding's own fields, never message
+ * scraping. A message is prose for a human; matching on it would couple the
+ * config to wording.
  *
  * Validation is strict on purpose, and it is the same discipline as the
  * report's own: a config the tool cannot honour is never silently ignored.
  * A malformed entry — an unknown rule id, a missing token dimension, a
- * malformed `theme` or `tokens`, a missing reason, an unrecognised key,
- * unreadable JSON — is an ERROR naming the offending entry, because a config
- * that silently did nothing is a user who believes a finding was marked
- * deliberate when it was reported after all. An entry whose shape is valid
- * but which matches no finding is NOT an error: the finding it would have
- * named still prints and still moves the exit code, so the miss is
+ * malformed `theme`, `tokens` or `file`, a missing reason, an unrecognised
+ * key, unreadable JSON — is an ERROR naming the offending entry, because a
+ * config that silently did nothing is a user who believes a finding was
+ * marked deliberate when it was reported after all. An entry whose shape is
+ * valid but which matches no finding is NOT an error: the finding it would
+ * have named still prints and still moves the exit code, so the miss is
  * self-announcing.
  *
  * That reasoning is SCOPED to the mis-aimed entry — the finding it missed
@@ -37,7 +39,7 @@
  */
 
 import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join } from "node:path";
 import type { RuleId } from "./rules/finding.js";
 
 /** The file name, discovered beside the stylesheet. */
@@ -87,6 +89,23 @@ export interface SuppressionEntry {
    * `theme: null` and are never matched by a scoped entry.
    */
   readonly theme?: string;
+  /**
+   * The stylesheet the judgement was recorded against, relative to the
+   * config's own directory. A scoped entry matches only findings reported
+   * for THAT stylesheet, which is what makes the config's own doctrine —
+   * "a suppression is worth exactly the file it was recorded against" — true
+   * by declaration rather than by accident of where the file sits: the
+   * standard component-library layout shares ONE config among sibling
+   * stylesheets, and without this field a judgement written for one of them
+   * silently governed all of them. RELATIVE on purpose (directory
+   * independence): an absolute path would make the same config mean
+   * different things from different checkouts, so it is a validation error,
+   * not a shape. Optional: `undefined` (the key absent) keeps the
+   * whole-config reading — the CLI resolves the field against the config's
+   * own directory before matching, so the same relative spelling means the
+   * same file wherever the checkout lives.
+   */
+  readonly file?: string;
   /** Why this finding is deliberate — printed verbatim in the report. */
   readonly reason: string;
 }
@@ -179,12 +198,12 @@ function parseEntry(item: unknown, index: number, path: string): SuppressionEntr
     throw new ConfigError(path, `${where} must be an object, got ${JSON.stringify(item)}`);
   }
 
-  const allowed = ["rule", "token", "tokens", "theme", "reason"];
+  const allowed = ["rule", "token", "tokens", "theme", "file", "reason"];
   for (const key of Object.keys(item)) {
     if (!allowed.includes(key)) {
       throw new ConfigError(
         path,
-        `${where}: unknown key "${key}" — expected "rule", "token", "tokens", "theme", "reason". A key this package does not know would otherwise do nothing, silently.`,
+        `${where}: unknown key "${key}" — expected "rule", "token", "tokens", "theme", "file", "reason". A key this package does not know would otherwise do nothing, silently.`,
       );
     }
   }
@@ -256,6 +275,27 @@ function parseEntry(item: unknown, index: number, path: string): SuppressionEntr
     );
   }
 
+  const file = item["file"];
+  if (file !== undefined) {
+    if (typeof file !== "string" || file.length === 0) {
+      throw new ConfigError(
+        path,
+        `${where}: "file" must be a non-empty string naming the stylesheet the judgement was recorded against, relative to this config's directory, got ${JSON.stringify(file ?? null)}`,
+      );
+    }
+    if (isAbsolute(file)) {
+      // Absolute is rejected, not merely resolved: the field's meaning is
+      // "the file this judgement is about", and that meaning has to survive
+      // the config moving between checkouts. An absolute path would bind the
+      // judgement to one machine's directory layout — the same config would
+      // suppress on one checkout and report on another.
+      throw new ConfigError(
+        path,
+        `${where}: "file" must be a path relative to this config's directory — an absolute path (${JSON.stringify(file)}) would make the same config mean different things from different checkouts`,
+      );
+    }
+  }
+
   const reason = item["reason"];
   if (typeof reason !== "string" || reason.trim().length === 0) {
     throw new ConfigError(
@@ -273,5 +313,6 @@ function parseEntry(item: unknown, index: number, path: string): SuppressionEntr
     ...(token !== undefined ? { token } : {}),
     ...(tokens !== undefined ? { tokens } : {}),
     ...(theme !== undefined ? { theme } : {}),
+    ...(file !== undefined ? { file } : {}),
   };
 }

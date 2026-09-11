@@ -47,3 +47,19 @@ properties.
 Re-copy from the yatfa repo and update the commit and the counts above **and**
 the baseline constants in `tests/census.test.ts` in the same change, so the
 census numbers always name a specific source revision.
+
+## `styles/` — the shared-config pair
+
+One directory, ONE `themeguard.config.json`, two stylesheets — the standard
+component-library layout that makes file-scoped suppression entries
+meaningful:
+
+| file | carries | the config's single entry does |
+|---|---|---|
+| `tokens.css` | one `collision` (`--accent` == `--primary`, the brand equality) | suppresses it — the entry names `file: "tokens.css"` |
+| `buttons.css` | one `unresolved-reference` (`var(--btn-background)`, declared nowhere) | nothing — and the entry prints on this report as `unmatched` WITH its ` [file: tokens.css]` clause |
+
+The pair is the live contradiction the file scope exists to resolve: before
+`file` existed, the sibling audit inherited the ledger and advised retiring a
+judgement that was doing exactly its job one report up. Driven by
+`tests/file-scoped.test.ts`.

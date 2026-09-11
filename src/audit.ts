@@ -46,7 +46,11 @@
  * resolver's data. An entry may additionally carry its SITE (`line`), the
  * shape an in-source `themeguard-ignore` directive arrives in — the judgement
  * bound to the position it was recorded at, so the config stays the
- * project-level mechanism and the directive its site-level complement.
+ * project-level mechanism and the directive its site-level complement. It may
+ * equally carry a FILE SCOPE (`file`), naming the stylesheet the judgement
+ * was recorded against — the config's answer to a directory that shares one
+ * ledger among sibling stylesheets, where an unscoped judgement would
+ * otherwise govern every file beside it.
  *
  * Each module's docstring carries its judgement heuristics and — more usefully
  * — what it deliberately does NOT report, because for every rule the raw
@@ -100,11 +104,18 @@ export interface AuditReport {
    * moves the exit code (the exit stays the unsuppressed-findings question).
    * The report cannot tell an EXPIRED judgement — the defect was fixed, the
    * entry should be retired — from a MIS-AIMED one that never matched
-   * anything real; it carries both and names neither, and the CLI's prose for
-   * this section says so rather than pretending to know.
+   * anything real — in the general case. It carries both and, for an entry
+   * WITHOUT a declared file scope, names neither — the CLI's prose for this
+   * section says so rather than pretending to know. An entry that DOES name
+   * its file (a {@link FileScopedSuppressionEntry}, the `file` field
+   * resolved) is a third, knowable case: it matched nothing HERE because it
+   * aims at another stylesheet, and the entry itself says which — so this
+   * leg carries the judgement whole, with its `file` spelling, and the CLI's
+   * prose carves that case out of the retirement advice instead of pretending
+   * the dichotomy still covers it.
    */
   readonly unmatchedSuppressions: readonly (
-    SuppressionEntry | SiteScopedSuppressionEntry
+    SuppressionEntry | SiteScopedSuppressionEntry | FileScopedSuppressionEntry
   )[];
   /**
    * Per theme, every base-theme token marked `overridden` or `inherited`, with
@@ -141,13 +152,38 @@ export interface AuditOptions {
    * bound to its site by construction. A config entry never carries one, and
    * config entries behave byte-identically to before this dimension existed.
    *
+   * An entry may also carry a FILE SCOPE — `file`, naming the stylesheet the
+   * judgement was recorded against. The CLI resolves the spelling against the
+   * config's directory and passes the audited ENTRY stylesheet as
+   * {@link AuditOptions.stylesheet}; the entry then matches only findings
+   * reported for that one stylesheet, so a judgement written for one member
+   * of a directory that shares one config never silences its siblings'
+   * questions. The scope is the audited ENTRY stylesheet — the unit the
+   * invocation asked about — so whatever that unit covers, a matching entry
+   * governs. An entry without `file` matches every stylesheet the config
+   * governs, exactly the behaviour before this dimension existed.
+   *
    * The complement is reported too: a declared entry that matches NO finding
    * moves nothing and stays an error-free no-op, and is carried on the
    * report's `unmatchedSuppressions` leg — counted and named, never an
    * error — so a judgement that has outlived its defect can say so instead
    * of going silent.
    */
-  readonly suppressions?: readonly (SuppressionEntry | SiteScopedSuppressionEntry)[];
+  readonly suppressions?: readonly (
+    SuppressionEntry | SiteScopedSuppressionEntry | FileScopedSuppressionEntry
+  )[];
+
+  /**
+   * The stylesheet being audited, normalized the same way the CLI normalizes
+   * an entry's resolved `file` (`path.resolve`). Optional and additive: a
+   * caller that omits it gets today's semantics for every entry — except
+   * that an entry declaring a `file` scope cannot claim a match against a
+   * stylesheet the audit was never told about, so such an entry matches
+   * nothing and lands on `unmatchedSuppressions`, which is the honest
+   * reading: the entry claims a file the report does not cover. Omitted by
+   * the one-arg call.
+   */
+  readonly stylesheet?: string;
 }
 
 /**
@@ -172,6 +208,33 @@ export interface SuppressionSite {
 export type SiteScopedSuppressionEntry = SuppressionEntry & SuppressionSite;
 
 /**
+ * WHERE a file-scoped suppression aims — the half the CLI computes and the
+ * config never stores. A config entry's `file` is the stylesheet it was
+ * recorded against, RELATIVE to the config's own directory; before matching,
+ * the CLI resolves that spelling against the config's directory into this
+ * absolute, normalized annotation — the same additive treatment
+ * {@link SuppressionSite} gives a directive. `fileResolved` is the only half
+ * matching reads; the entry's own `file` keeps the spelling the user wrote,
+ * which is what the report's ` [file: …]` clause prints.
+ */
+export interface SuppressionFileScope {
+  /** The entry's `file`, resolved against the config's directory. */
+  readonly fileResolved: string;
+}
+
+/**
+ * A suppression entry that carries its resolved file scope — a config entry
+ * naming the stylesheet it was recorded against, annotated by the CLI at the
+ * merge seam. Structurally a config entry (rule id, token dimension, the
+ * `file` spelling), so it merges into `suppressions` at the one seam the CLI
+ * already had, with the resolved path as the added conjunct that keeps the
+ * judgement on the file it was recorded against. An entry without the field
+ * — config or directive — is untouched, and behaves byte-identically to
+ * before this dimension existed.
+ */
+export type FileScopedSuppressionEntry = SuppressionEntry & SuppressionFileScope;
+
+/**
  * A finding the caller has declared deliberate: the finding itself, kept
  * whole so the reader can still check the measurement it was reported with,
  * and the reason the user gave for setting it aside. The matching entry is
@@ -183,10 +246,11 @@ export interface SuppressedFinding {
   /** The user's reason, verbatim — quoted in the CLI's `suppressed` section. */
   readonly reason: string;
   /**
-   * The entry that matched, whole — its declared `theme`/`tokens` scope
-   * included, and for a directive-sourced entry the site it was recorded at.
+   * The entry that matched, whole — its declared `theme`/`tokens`/`file`
+   * scope included, and for a directive-sourced entry the site it was
+   * recorded at.
    */
-  readonly entry: SuppressionEntry | SiteScopedSuppressionEntry;
+  readonly entry: SuppressionEntry | SiteScopedSuppressionEntry | FileScopedSuppressionEntry;
 }
 
 /**
@@ -244,6 +308,19 @@ export function audit(
   //     there is nothing left to announce anything, which is the gap the
   //     `unmatchedSuppressions` leg below exists to close — the orphaned
   //     judgement is named there, still without becoming an error.
+  //   - the FILE SCOPE — carried only by a config entry that names the
+  //     stylesheet it was recorded against (`file`, resolved by the CLI into
+  //     `fileResolved`; see `config.ts` for the field). The conjunct compares
+  //     that resolved scope against `options.stylesheet` — the audited ENTRY
+  //     stylesheet, the unit this invocation asked about — so a judgement
+  //     written for one member of a directory that shares one config never
+  //     governs its siblings. An entry without the scope matches every
+  //     stylesheet, exactly the behaviour before this conjunct existed; an
+  //     entry WITH one that names some other file matches nothing HERE — the
+  //     truthful outcome, and it is self-announcing on the leg below, where
+  //     the entry now can SAY which file it does aim at. A caller that omits
+  //     `stylesheet` gets the same honest no-match for a scoped entry: an
+  //     entry cannot claim a file the audit was never told about.
   const findingLines = (finding: Finding): readonly number[] => {
     if (finding.sites !== undefined) return finding.sites.map((s) => s.line);
     // A rule that carries no `sites` (dead-token) still publishes its lines —
@@ -265,7 +342,7 @@ export function audit(
     return lines;
   };
   const matches = (
-    entry: SuppressionEntry | SiteScopedSuppressionEntry,
+    entry: SuppressionEntry | SiteScopedSuppressionEntry | FileScopedSuppressionEntry,
     finding: Finding,
   ): boolean => {
     if (entry.rule !== finding.rule) return false;
@@ -273,6 +350,15 @@ export function audit(
     const named = entry.tokens ?? (entry.token !== undefined ? [entry.token] : undefined);
     if (named !== undefined && !named.every((name) => finding.tokens.includes(name))) {
       return false;
+    }
+    if ("file" in entry) {
+      // The resolved scope when the CLI supplied one, the entry's own
+      // spelling otherwise — a library caller passing a scope hands the
+      // spelling it wants compared. Against `options.stylesheet` this is the
+      // one conjunct: defined and different ⇒ the entry aims at another
+      // stylesheet and matches nothing here.
+      const scope = "fileResolved" in entry ? entry.fileResolved : entry.file;
+      if (scope !== undefined && scope !== options.stylesheet) return false;
     }
     if ("line" in entry) {
       const at = findingLines(finding);
@@ -303,7 +389,7 @@ export function audit(
     if (index === -1) kept.push(finding);
     else {
       matched[index] = true;
-      const entry = suppressions[index] as SuppressionEntry | SiteScopedSuppressionEntry;
+      const entry = suppressions[index] as SuppressionEntry | SiteScopedSuppressionEntry | FileScopedSuppressionEntry;
       suppressed.push({ finding, reason: entry.reason, entry });
     }
   }
