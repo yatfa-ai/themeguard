@@ -104,6 +104,9 @@ skipped (0)
 suppressed (0)
   nothing suppressed — every finding above is one the report stands behind.
 
+unmatched (0)
+  nothing unmatched — every recorded judgement still covers a finding this report carries.
+
 coverage (2 themes, 73 base tokens)
   root: declares all 73 base tokens, inherits 0.
   winter: declares 51 of 73 base tokens, inherits 22 (8 color / 14 non-color).
@@ -135,6 +138,12 @@ same discipline as `skipped` and `coverage` — an empty `suppressed` section is
 nothing was set aside. When a `themeguard.config.json` sits beside the stylesheet (see the next section),
 its findings move here with their reasons quoted: out of the counts and the exit code by declaration,
 never by silence.
+
+**`unmatched` is what your judgements have to say about this run.** The complement of `suppressed`:
+declared entries — config or directive — that no finding matched, named with their reasons so a
+judgement that has outlived its defect announces that instead of going silent. It prints even at zero,
+and like `skipped` and `coverage` it never moves the exit code. See
+[When a judgement matches nothing](#when-a-judgement-matches-nothing--unmatched-n).
 
 ### Suppressing deliberate findings — `themeguard.config.json`
 
@@ -199,7 +208,7 @@ the same thing no matter where it is invoked from, and a project can keep one co
 (or one per stylesheet directory) instead of relying on wherever the shell happens to be standing. No
 config file beside the stylesheet means no suppression at all: no existing line of the report changes,
 the exit codes are unchanged, and the only difference from a run without the feature is the counted
-`suppressed` section appended at zero.
+`suppressed` section appended at zero — with its `unmatched` complement beside it, also at zero.
 
 ### Marking it at the site — `/* themeguard-ignore … */`
 
@@ -225,12 +234,15 @@ A directive covers a finding only while the finding still lives at its site — 
 declaration's own line, or standalone on the line directly above it, the two placements
 `eslint-disable-next-line` and `stylelint-disable-line` established. Refactor the code away from the
 annotation and the directive orphans: nothing matches, the finding prints again and moves the exit code.
-The miss is self-announcing — exactly like a config entry that matches nothing — and deliberately not a
-silence. That is the property the config cannot have: its entries match a finding's *identity*, so a
-judgement recorded about one line keeps suppressing after the code moves to another. Use the config for
-project-level judgements; use a directive when the judgement belongs to the file and should travel with
-it into vendored, regenerated or forked copies. The two work together — both merge into the same
-`suppressions` section, where a directive's line carries its `[file:line]` source clause:
+The miss is self-announcing — exactly like a config entry that matches nothing but whose finding still
+exists — and deliberately not a silence. A defect FIXED rather than moved leaves no finding to announce
+anything: there the orphaned judgement is named in the report's counted `unmatched (N)` section instead,
+still without becoming an error. That is the property the config cannot have: its entries match a
+finding's *identity*, so a judgement recorded about one line keeps suppressing after the code moves to
+another. Use the config for project-level judgements; use a directive when the judgement belongs to the
+file and should travel with it into vendored, regenerated or forked copies. The two work together — both
+merge into the same `suppressions` section, where a directive's line carries its `[file:line]` source
+clause:
 
 ```
   [suppressed] [collision] --accent and --success both resolve to #16a34a in theme "root". … — "vendor brand: accent is deliberately the success green" [tokens: --accent, --success] [vendor.css:4]
@@ -241,6 +253,42 @@ a word in the head that is neither a rule id nor a `--` token name — exits `2`
 under the config's own never-silently-ignored discipline. In fact the *values* a directive may say are
 validated by the config's own parser, so the two mechanisms cannot drift apart on what a suppression may
 name. The keyword is recognized only in real comments: the same text inside a CSS string is prose.
+
+### When a judgement matches nothing — `unmatched (N)`
+
+Suppression is a standing ledger of exceptions — entries accumulate, reasons carry sign-off dates, and
+nothing ever told you when one had outlived the defect it was written about. An expired entry was
+invisible to every surface: nothing matched it, so nothing printed, and a config carrying dead
+judgements was byte-indistinguishable from no config at all. The report therefore carries a counted
+`unmatched (N)` section — the complement of `suppressed`, in declaration order — naming every declared
+entry, config or directive, that no finding matched:
+
+```
+unmatched (2)
+  declared suppressions no finding matched. Either the defect was fixed and the judgement can be retired, or the entry never aimed at a finding that exists — the report cannot tell which.
+  [unmatched] [collision] — "vendor brand, signed off 2026-01-15" [tokens: --page-bg, --page-ink] [app.css:3]
+  [unmatched] [scale-collapse] — "reviewed 2025-11-20, kept for the print theme"
+```
+
+Each line names the entry's rule, its declared scope (`[theme: …]` / `[tokens: …]`), its `[file:line]`
+source where it is a directive, and its reason quoted — the same vocabulary a `suppressed` line uses,
+because an unmatched entry is an entry like any other, only without a finding behind it.
+
+**The section prints even at zero.** An empty section is the proof that every recorded judgement is
+still doing work, and a section that vanished at zero would reproduce exactly the silence this exists to
+remove:
+
+```
+unmatched (0)
+  nothing unmatched — every recorded judgement still covers a finding this report carries.
+```
+
+**It never moves the exit code.** A stale entry is hygiene, not a defect in the stylesheet — the same
+posture `skipped` and `coverage` take. The report cannot tell the two causes apart, and its prose says
+so rather than pretending to: either the defect was fixed and the entry should be retired, or the entry
+never aimed at a finding that exists. What it will not do is stay silent, and what it will never do is
+fail your pipeline over a judgement you wrote — the exit stays exactly the question it has always been,
+were there unsuppressed findings.
 
 ### Exit codes
 
@@ -259,6 +307,10 @@ population for `0`'s, and is still printed and counted in the report's `suppress
 is computed over unsuppressed findings only. Code `2` also covers a config that exists but cannot be
 honoured, or a directive that cannot be parsed: the offending entry — or the comment's line — is named
 on stderr, never silently skipped.
+
+The `unmatched (N)` section is likewise outside the exit: a declared entry that matched nothing is a
+stale or mis-aimed *judgement*, not a defect in the stylesheet, so an expired judgement never turns a
+green pipeline red.
 
 ### As a library
 
@@ -294,6 +346,10 @@ for (const { finding, reason } of report.suppressed) {
   console.log(`[suppressed] [${finding.rule}] ${finding.message} — "${reason}"`);
 }
 ```
+
+The complement is on the report too: `report.unmatchedSuppressions` carries the declared entries that
+matched nothing — in declaration order, entries whole — under the same counted-not-silent discipline
+the CLI prints as its `unmatched (N)` section.
 
 Omit the second argument and the report is exactly the four-rule audit it has always been.
 

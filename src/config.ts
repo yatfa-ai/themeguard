@@ -25,6 +25,15 @@
  * but which matches no finding is NOT an error: the finding it would have
  * named still prints and still moves the exit code, so the miss is
  * self-announcing.
+ *
+ * That reasoning is SCOPED to the mis-aimed entry — the finding it missed
+ * still exists, so it announces the miss. It does NOT cover the expired
+ * entry: a judgement written about a defect that has since been FIXED has no
+ * finding left to announce anything, and would be invisible here. That case
+ * is what the audit report's counted `unmatchedSuppressions` leg — printed by
+ * the CLI as its `unmatched` section — exists for: the entry is named there,
+ * in declaration order with its reason quoted, still without becoming an
+ * error.
  */
 
 import { readFileSync } from "node:fs";
