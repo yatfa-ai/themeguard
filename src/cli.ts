@@ -140,6 +140,7 @@ const RULE_ORDER: readonly RuleId[] = [
   "dead-token",
   "scale-collapse",
   "family-consistency",
+  "unresolved-reference",
 ];
 
 /**

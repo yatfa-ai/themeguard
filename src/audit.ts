@@ -1,5 +1,5 @@
 /**
- * The audit entry point — the four rules over one resolved stylesheet.
+ * The audit entry point — the five rules over one resolved stylesheet.
  *
  * This is the stage the resolver's docstring promises: `resolve.ts` produces
  * DATA and passes no judgement, and `audit()` is where the judging happens.
@@ -15,7 +15,7 @@
  * for (const finding of report.findings) console.log(finding.message);
  * ```
  *
- * The four questions, and where each is argued:
+ * The five questions, and where each is argued:
  *
  * | rule id | question | module |
  * |---|---|---|
@@ -23,6 +23,7 @@
  * | `dead-token` | declared, and no `var()` references it | `rules/dead-token.ts` |
  * | `scale-collapse` | a state is under ΔL* 4 from its resting value | `rules/scale-collapse.ts` |
  * | `family-consistency` | a theme inherits a token whose family its own declarations tune | `rules/coverage.ts` |
+ * | `unresolved-reference` | a `var()` names a property no scope declares | `rules/unresolved-reference.ts` |
  *
  * Alongside the findings, `coverage` carries the fact inventory rule 4 is
  * measured over — per theme, every base-theme token marked overridden or
@@ -61,6 +62,7 @@ import {
   type ThemeCoverage,
 } from "./rules/coverage.js";
 import { deadTokenRule } from "./rules/dead-token.js";
+import { unresolvedReferenceRule } from "./rules/unresolved-reference.js";
 import { scaleCollapseRule, type SkippedPair } from "./rules/scale-collapse.js";
 import { sortFindings, type Finding, type RuleId } from "./rules/finding.js";
 import { TokenNames } from "./rules/tokens.js";
@@ -186,7 +188,7 @@ export interface SuppressedFinding {
 }
 
 /**
- * Run all four rules over a resolved stylesheet.
+ * Run all five rules over a resolved stylesheet.
  *
  * @param resolved the resolver's output — the facts to judge.
  * @param options optional caller declarations; omit for the plain report.
@@ -203,6 +205,7 @@ export function audit(
   const dead = deadTokenRule(resolved, names);
   const scale = scaleCollapseRule(resolved, names);
   const family = familyConsistencyRule(resolved, names);
+  const unresolved = unresolvedReferenceRule(resolved, names);
 
   // Partition the sorted report: kept findings, and the ones the caller has
   // marked deliberate. The partition reads the FINDING's own fields, so it
@@ -244,7 +247,12 @@ export function audit(
     // as `evidence.declaredIn` strings in `":root:4"` shape. That is public,
     // honestly named data the finding already reports; reading it here adds a
     // location dimension to suppression without asking any rule to change.
-    const declared: unknown = finding.evidence["declaredIn"];
+    // `unresolved-reference` publishes its USE sites the same way, under the
+    // key that names them honestly (`usedIn`) — a directive annotating the
+    // declaration that holds the dangling `var()` is a judgement at the site
+    // the finding lives at, exactly as it is for a declaration site.
+    const declared: unknown =
+      finding.evidence["declaredIn"] ?? finding.evidence["usedIn"];
     if (!Array.isArray(declared)) return [];
     const lines: number[] = [];
     for (const entry of declared as readonly unknown[]) {
@@ -285,6 +293,7 @@ export function audit(
     ...dead,
     ...scale.findings,
     ...family,
+    ...unresolved,
   ])) {
     const index = suppressions.findIndex((s) => matches(s, finding));
     if (index === -1) kept.push(finding);
@@ -302,6 +311,7 @@ export function audit(
       "dead-token": kept.filter((f) => f.rule === "dead-token").length,
       "scale-collapse": kept.filter((f) => f.rule === "scale-collapse").length,
       "family-consistency": kept.filter((f) => f.rule === "family-consistency").length,
+      "unresolved-reference": kept.filter((f) => f.rule === "unresolved-reference").length,
     },
     suppressed,
     // The complement, in declaration order: the caller's slots that no
