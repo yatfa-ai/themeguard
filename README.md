@@ -80,6 +80,23 @@ One command, zero options — point it at a CSS file.
 npx themeguard path/to/application.css
 ```
 
+Several stylesheets take one invocation — the positionals repeat:
+
+```bash
+npx themeguard web/app.css admin/panel.css
+```
+
+Each file is audited **independently**, and each prints its own report under its own
+`themeguard — <path>` header: the config beside a stylesheet governs that stylesheet alone, and
+references do not cross files — one file's tokens are invisible to the next. The invocation fails
+fast on the first file that cannot be audited (unreadable, an unhonourable config beside it, a
+malformed directive in it): the reports already printed stand, and the error names the file that
+stopped the run. Otherwise the per-file outcomes aggregate into **one exit code for the
+invocation**, precedence `2 > 1 > 0` — any file errored, `2`; else any file reported unsuppressed
+findings, `1`; else `0`. A pipeline or pre-commit hook gets one invocation and one verdict over a
+whole project's stylesheets, instead of N runs and a hand-ORed aggregate that one mistyped path
+silently poisons.
+
 Run over this repository's own calibration fixture (a real 97 KB Tailwind stylesheet with two themes,
 vendored at `tests/fixtures/application.tailwind.css`), it prints:
 
@@ -311,6 +328,13 @@ were there unsuppressed findings.
 
 `1` and `2` are kept apart on purpose: in a pipeline or a pre-commit hook the number is all a caller has,
 and a real finding must never be confusable with a typo in the path — nor with a clean stylesheet.
+
+Over one invocation naming several stylesheets, these codes **aggregate per invocation** with the
+precedence `2 > 1 > 0`: if any file errored, the invocation exits `2` — fail-fast, with the reports the
+files before it already printed left standing and the error naming the file that stopped the run; else
+if any file reported unsuppressed findings, it exits `1`; else `0`. Each file is still audited on its own
+terms — the config beside it governs it, and its report is its own — the aggregation is the invocation's
+one verdict over all of them.
 
 Suppression moves a finding between those codes **by declaration**: what a `themeguard.config.json`
 entry — or a `themeguard-ignore` directive in the stylesheet itself — marks deliberate leaves `1`'s
