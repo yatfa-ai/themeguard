@@ -32,6 +32,7 @@ export {
   type AuditReport,
   type AuditOptions,
   type SuppressedFinding,
+  type SiteScopedSuppressionEntry,
 } from "./audit.js";
 
 export type { SuppressionEntry } from "./config.js";

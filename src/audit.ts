@@ -37,7 +37,10 @@
  * token dimension, optionally scoped to the theme and the exact token set the
  * finding was measured over — never message scraping): it filters a finished
  * report and edits no rule, so every rule module stays a pure function of the
- * resolver's data.
+ * resolver's data. An entry may additionally carry its SITE (`line`), the
+ * shape an in-source `themeguard-ignore` directive arrives in — the judgement
+ * bound to the position it was recorded at, so the config stays the
+ * project-level mechanism and the directive its site-level complement.
  *
  * Each module's docstring carries its judgement heuristics and — more usefully
  * — what it deliberately does NOT report, because for every rule the raw
@@ -103,9 +106,37 @@ export interface AuditOptions {
    * entry's reason; its absence from the counts is the user's recorded
    * judgement, and the report still names it. When several entries match one
    * finding, the first in the list supplies the reason.
+   *
+   * An entry may also carry a SITE — `line` and `source`, the shape
+   * {@link SiteScopedSuppressionEntry} — which is how an in-source
+   * `themeguard-ignore` directive participates: the entry then matches only
+   * findings living at the directive's own position, so the judgement is
+   * bound to its site by construction. A config entry never carries one, and
+   * config entries behave byte-identically to before this dimension existed.
    */
-  readonly suppressions?: readonly SuppressionEntry[];
+  readonly suppressions?: readonly (SuppressionEntry | SiteScopedSuppressionEntry)[];
 }
+
+/**
+ * WHERE a site-scoped suppression was recorded — the half a config entry
+ * never carries. `line` is the directive comment's own 1-based line and the
+ * only half matching reads; `source` is the `file:line` provenance the
+ * report's `suppressed` section prints, so a run that exits 0 says where each
+ * in-source judgement lives.
+ */
+export interface SuppressionSite {
+  readonly line: number;
+  readonly source: string;
+}
+
+/**
+ * A suppression entry that carries its site — an in-source
+ * `themeguard-ignore` directive, scanned by `directives.ts`. Structurally a
+ * config entry (rule id, token dimension, reason), so it merges into
+ * `suppressions` at the one seam the CLI already had, with the site as the
+ * added conjunct that keeps the judgement where the code is.
+ */
+export type SiteScopedSuppressionEntry = SuppressionEntry & SuppressionSite;
 
 /**
  * A finding the caller has declared deliberate: the finding itself, kept
@@ -118,8 +149,11 @@ export interface SuppressedFinding {
   readonly finding: Finding;
   /** The user's reason, verbatim — quoted in the CLI's `suppressed` section. */
   readonly reason: string;
-  /** The entry that matched, whole — its declared `theme`/`tokens` scope included. */
-  readonly entry: SuppressionEntry;
+  /**
+   * The entry that matched, whole — its declared `theme`/`tokens` scope
+   * included, and for a directive-sourced entry the site it was recorded at.
+   */
+  readonly entry: SuppressionEntry | SiteScopedSuppressionEntry;
 }
 
 /**
@@ -157,12 +191,50 @@ export function audit(
   //   - the token dimension — the scalar `token` matches when the finding
   //     carries that ONE name; the `tokens` set matches only when the finding
   //     carries EVERY name listed, which is the precision a collision PAIR
-  //     needs. Validation guarantees one spelling or the other.
-  const matches = (entry: SuppressionEntry, finding: Finding): boolean => {
+  //     needs. Validation guarantees one spelling or the other — from the
+  //     CONFIG, that is: a site-scoped directive may carry neither, because
+  //     there the SITE is the judgement and the token dimension is genuinely
+  //     optional, matching any finding of the rule that lives at the site.
+  //   - the SITE — carried only by an in-source `themeguard-ignore` directive
+  //     (`line`, see `directives.ts`); a config entry never has one, and for
+  //     it this conjunct is absent, which is why config entries behave
+  //     byte-identically to before it existed. A directive matches when one
+  //     of the finding's own position lines equals the directive's line (a
+  //     trailing comment on the judged declaration) or the line directly
+  //     below it (a standalone comment on the preceding line) — the two
+  //     industry placements. Move the defect and the directive orphans:
+  //     nothing matches, the finding prints and moves the exit code — the
+  //     self-announcing miss, never a silence.
+  const findingLines = (finding: Finding): readonly number[] => {
+    if (finding.sites !== undefined) return finding.sites.map((s) => s.line);
+    // A rule that carries no `sites` (dead-token) still publishes its lines —
+    // as `evidence.declaredIn` strings in `":root:4"` shape. That is public,
+    // honestly named data the finding already reports; reading it here adds a
+    // location dimension to suppression without asking any rule to change.
+    const declared: unknown = finding.evidence["declaredIn"];
+    if (!Array.isArray(declared)) return [];
+    const lines: number[] = [];
+    for (const entry of declared as readonly unknown[]) {
+      const at = /:(\d+)$/.exec(String(entry));
+      if (at !== null) lines.push(Number(at[1]));
+    }
+    return lines;
+  };
+  const matches = (
+    entry: SuppressionEntry | SiteScopedSuppressionEntry,
+    finding: Finding,
+  ): boolean => {
     if (entry.rule !== finding.rule) return false;
     if (entry.theme !== undefined && entry.theme !== finding.theme) return false;
-    const named = entry.tokens ?? [entry.token as string];
-    return named.every((name) => finding.tokens.includes(name));
+    const named = entry.tokens ?? (entry.token !== undefined ? [entry.token] : undefined);
+    if (named !== undefined && !named.every((name) => finding.tokens.includes(name))) {
+      return false;
+    }
+    if ("line" in entry) {
+      const at = findingLines(finding);
+      if (!at.some((line) => line === entry.line || line === entry.line + 1)) return false;
+    }
+    return true;
   };
   const suppressions = options.suppressions ?? [];
   const suppressed: SuppressedFinding[] = [];
