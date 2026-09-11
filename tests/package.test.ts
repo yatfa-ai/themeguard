@@ -99,8 +99,9 @@ beforeAll(() => {
 afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 
 describe("the manifest, before anything is packed", () => {
-  it("is version 0.1.6 — 0.1.5 named the suppression that binds to nothing; 0.1.6 adds the fifth rule, unresolved-reference", () => {
-    expect(manifest.version).toBe("0.1.6");
+  it("is version 0.1.7 — 0.1.6 adds the fifth rule, unresolved-reference; 0.1.7 takes one invocation over several stylesheets", () => {
+    expect(manifest.version).toBe("0.1.7");
+
   });
 
   it("declares the bin at a path the build actually emits", () => {
@@ -268,13 +269,13 @@ describe("publication readiness", () => {
    * `dist/cli.js` above — so what is left for this test is the manifest
    * validation the dry run performs, which is what it asserts.
    */
-  it("passes `npm publish --dry-run` and reports the 0.1.6 tarball", () => {
+  it("passes `npm publish --dry-run` and reports the 0.1.7 tarball", () => {
     const output = execFileSync("npm", ["publish", "--dry-run", "--ignore-scripts"], {
       cwd: repo,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
     });
     const combined = output.toString();
-    expect(combined).toContain("themeguard@0.1.6");
+    expect(combined).toContain("themeguard@0.1.7");
   }, 300_000);
 });

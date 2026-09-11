@@ -103,6 +103,92 @@ function fixture(name: string, css: string): string {
 const CLEAN_PATH = fixture("clean.css", CLEAN_CSS);
 const TRANSLUCENT_PATH = fixture("translucent.css", TRANSLUCENT_CSS);
 
+/*
+ * ── Multi-file invocation fixtures ────────────────────────────────────────
+ * One finding, the cheapest kind to summon deterministically: a declared
+ * token no var() references (dead-token), every other question with nothing
+ * to say. A SECOND clean stylesheet with different content — two clean files
+ * must be two independent audits, not one result printed twice.
+ */
+const ONE_FINDING_CSS = `
+:root {
+  --used: #101010;
+  --unused: #202020;
+}
+
+.x { color: var(--used); }
+`;
+
+const CLEAN_CSS_2 = `
+:root {
+  --bg: #FAFAFA;
+  --fg: #0A0A0A;
+}
+
+main { background: var(--bg); color: var(--fg); }
+`;
+
+const ONE_FINDING_PATH = fixture("one-finding.css", ONE_FINDING_CSS);
+const CLEAN2_PATH = fixture("clean-2.css", CLEAN_CSS_2);
+
+/*
+ * Per-file suppression needs per-file DIRECTORIES: the config is discovered
+ * BESIDE each stylesheet, so a judgement that reaches one file and not its
+ * twin requires the two to live apart. The directive twin suppresses by
+ * living in the stylesheet; the malformed twins exist to pin fail-fast — the
+ * invocation stops at the file that cannot be audited, whichever of the
+ * three per-file contracts it breaks.
+ */
+const CONFIG_DIR = join(tmp, "with-config");
+const DIRECTIVE_DIR = join(tmp, "with-directive");
+const BAD_DIRECTIVE_DIR = join(tmp, "with-bad-directive");
+const BAD_CONFIG_DIR = join(tmp, "with-bad-config");
+for (const dir of [CONFIG_DIR, DIRECTIVE_DIR, BAD_DIRECTIVE_DIR, BAD_CONFIG_DIR]) {
+  mkdirSync(dir, { recursive: true });
+}
+
+const SUPPRESSED_BY_CONFIG_PATH = join(CONFIG_DIR, "a.css");
+writeFileSync(SUPPRESSED_BY_CONFIG_PATH, ONE_FINDING_CSS, "utf8");
+writeFileSync(
+  join(CONFIG_DIR, "themeguard.config.json"),
+  JSON.stringify({
+    suppress: [
+      { rule: "dead-token", token: "--unused", reason: "reserved for the generated print stylesheet" },
+    ],
+  }),
+  "utf8",
+);
+
+const SUPPRESSED_BY_DIRECTIVE_PATH = join(DIRECTIVE_DIR, "a.css");
+writeFileSync(
+  SUPPRESSED_BY_DIRECTIVE_PATH,
+  ONE_FINDING_CSS.replace(
+    "  --unused: #202020;",
+    "  /* themeguard-ignore dead-token -- reserved for the generated print stylesheet */\n  --unused: #202020;",
+  ),
+  "utf8",
+);
+
+const BAD_DIRECTIVE_PATH = join(BAD_DIRECTIVE_DIR, "a.css");
+writeFileSync(
+  BAD_DIRECTIVE_PATH,
+  ONE_FINDING_CSS.replace(
+    "  --unused: #202020;",
+    "  /* themeguard-ignore dead-token */\n  --unused: #202020;",
+  ),
+  "utf8",
+);
+
+const BAD_CONFIG_PATH = join(BAD_CONFIG_DIR, "a.css");
+writeFileSync(BAD_CONFIG_PATH, ONE_FINDING_CSS, "utf8");
+writeFileSync(
+  join(BAD_CONFIG_DIR, "themeguard.config.json"),
+  JSON.stringify({
+    suppress: [{ rule: "no-such-rule", token: "--unused", reason: "aimed at nothing real" }],
+  }),
+  "utf8",
+);
+
 afterAll(() => rmSync(tmp, { recursive: true, force: true }));
 
 describe("themeguard <file.css> over the vendored calibration fixture", () => {
@@ -328,10 +414,15 @@ describe("usage and file errors", () => {
     expect(result.out).toEqual([]);
   });
 
-  it("exits 2 when given more than one file — one command, zero options", () => {
+  it("accepts several files in one invocation — the positionals repeat, still zero options", () => {
+    // The exact invocation the single-file contract REJECTED — one path, the
+    // same path twice — is the multi-file contract's acceptance case: each
+    // positional is audited, each report prints under its own header, and the
+    // per-file outcomes aggregate into one exit for the invocation.
     const result = run(FIXTURE_PATH, FIXTURE_PATH);
-    expect(result.code).toBe(EXIT_ERROR);
-    expect(result.stderr).toContain("expected exactly one file, got 2");
+    expect(result.code).toBe(EXIT_FINDINGS);
+    expect(result.out.filter((l) => l === `themeguard — ${FIXTURE_PATH}`)).toHaveLength(2);
+    expect(result.stdout).toContain("22 findings");
   });
 
   it("exits 2 and names the path when the file cannot be read", () => {
@@ -346,6 +437,108 @@ describe("usage and file errors", () => {
   it("distinguishes an error from findings — the codes are 2 and 1, never both", () => {
     expect(run(join(tmp, "nope.css")).code).toBe(EXIT_ERROR);
     expect(run(FIXTURE_PATH).code).toBe(EXIT_FINDINGS);
+  });
+});
+
+/**
+ * Several stylesheets in one invocation — the multi-file contract. Each file
+ * is audited INDEPENDENTLY (its config and directives are its own; references
+ * do not cross files), each report prints under its own `themeguard — <path>`
+ * header as it completes, the invocation fails fast on the first file that
+ * cannot be audited with the error naming THAT file, and the per-file
+ * outcomes aggregate into one exit for the invocation: 2 > 1 > 0.
+ */
+describe("several stylesheets in one invocation", () => {
+  it("audits two clean files independently — two reports, exit 0", () => {
+    const result = run(CLEAN_PATH, CLEAN2_PATH);
+    expect(result.code).toBe(EXIT_OK);
+    expect(result.out.filter((l) => l === `themeguard — ${CLEAN_PATH}`)).toHaveLength(1);
+    expect(result.out.filter((l) => l === `themeguard — ${CLEAN2_PATH}`)).toHaveLength(1);
+    // Both files' own summaries, in order: independence means each report is
+    // over ITS file, and the invocation over both is still clean.
+    expect(result.out.indexOf(`themeguard — ${CLEAN_PATH}`)).toBeLessThan(
+      result.out.indexOf(`themeguard — ${CLEAN2_PATH}`),
+    );
+    expect(result.stderr).toBe("");
+  });
+
+  it("exits 1 when only the SECOND file reports findings — both reports printed", () => {
+    const result = run(CLEAN_PATH, ONE_FINDING_PATH);
+    expect(result.code).toBe(EXIT_FINDINGS);
+    // The clean file's verdict is not swallowed by the aggregate: both
+    // headers print, the clean one saying "No findings." in its own report.
+    expect(result.stdout).toContain(`themeguard — ${CLEAN_PATH}`);
+    expect(result.stdout).toContain(`themeguard — ${ONE_FINDING_PATH}`);
+    expect(result.out.indexOf("No findings.")).toBeGreaterThan(-1);
+    expect(result.out.indexOf("dead-token (1)")).toBeGreaterThan(-1);
+  });
+
+  it("fails fast on an unreadable second file — first report printed, the error names it, exit 2", () => {
+    const missing = join(tmp, "does-not-exist.css");
+    const result = run(CLEAN_PATH, missing);
+    expect(result.code).toBe(EXIT_ERROR);
+    // The file BEFORE the bad one keeps the report it already printed…
+    expect(result.out.filter((l) => l === `themeguard — ${CLEAN_PATH}`)).toHaveLength(1);
+    expect(result.out.indexOf("No findings.")).toBeGreaterThan(-1);
+    // …and the diagnostic names THE file that could not be read, not the
+    // invocation.
+    expect(result.stderr).toContain(`cannot read ${missing}`);
+    // Fail-fast, not fail-slow: nothing was audited after the bad path.
+    expect(result.out.filter((l) => l === `themeguard — ${missing}`)).toHaveLength(0);
+  });
+
+  it("fails fast on an unhonourable config beside the second file — exit 2 naming that config", () => {
+    const result = run(CLEAN_PATH, BAD_CONFIG_PATH);
+    expect(result.code).toBe(EXIT_ERROR);
+    expect(result.out.filter((l) => l === `themeguard — ${CLEAN_PATH}`)).toHaveLength(1);
+    expect(result.stderr).toContain(join(BAD_CONFIG_DIR, "themeguard.config.json"));
+    expect(result.stderr).toContain("no-such-rule");
+  });
+
+  it("fails fast on a malformed directive in the second file — exit 2 naming that comment's line", () => {
+    const result = run(CLEAN_PATH, BAD_DIRECTIVE_PATH);
+    expect(result.code).toBe(EXIT_ERROR);
+    expect(result.out.filter((l) => l === `themeguard — ${CLEAN_PATH}`)).toHaveLength(1);
+    expect(result.stderr).toContain(`${BAD_DIRECTIVE_PATH}:`);
+  });
+
+  it("honours the config beside EACH stylesheet — one suppressed, its unconfigured twin reports", () => {
+    // Same stylesheet content, two directories: the config beside file A
+    // suppresses its dead token; file B, with no config beside it, reports
+    // the same token. The aggregated exit is 1 — file B's finding — and each
+    // report tells its own story.
+    const result = run(SUPPRESSED_BY_CONFIG_PATH, ONE_FINDING_PATH);
+    expect(result.code).toBe(EXIT_FINDINGS);
+    expect(result.stdout).toContain(`themeguard — ${SUPPRESSED_BY_CONFIG_PATH}`);
+    expect(result.stdout).toContain(`themeguard — ${ONE_FINDING_PATH}`);
+    // A's verdict, from A's report only…
+    const aReport = result.out.slice(
+      result.out.indexOf(`themeguard — ${SUPPRESSED_BY_CONFIG_PATH}`),
+      result.out.indexOf(`themeguard — ${ONE_FINDING_PATH}`),
+    );
+    expect(aReport).toContain("dead-token (0)");
+    expect(aReport).toContain("suppressed (1)");
+    expect(aReport.join("\n")).toContain("reserved for the generated print stylesheet");
+    // …and B's, from B's report.
+    const bReport = result.out.slice(result.out.indexOf(`themeguard — ${ONE_FINDING_PATH}`));
+    expect(bReport).toContain("dead-token (1)");
+    expect(bReport.join("\n")).not.toContain("suppressed (1)");
+  });
+
+  it("fires a themeguard-ignore directive in its own file only — the twin without it reports", () => {
+    // The judgement lives IN the stylesheet, so the twin — identical but for
+    // the missing comment — has no judgement recorded and reports the token.
+    const result = run(SUPPRESSED_BY_DIRECTIVE_PATH, ONE_FINDING_PATH);
+    expect(result.code).toBe(EXIT_FINDINGS);
+    const aReport = result.out.slice(
+      result.out.indexOf(`themeguard — ${SUPPRESSED_BY_DIRECTIVE_PATH}`),
+      result.out.indexOf(`themeguard — ${ONE_FINDING_PATH}`),
+    );
+    const bReport = result.out.slice(result.out.indexOf(`themeguard — ${ONE_FINDING_PATH}`));
+    expect(aReport).toContain("dead-token (0)");
+    expect(aReport).toContain("suppressed (1)");
+    expect(aReport.join("\n")).toContain(`${SUPPRESSED_BY_DIRECTIVE_PATH}:4`);
+    expect(bReport).toContain("dead-token (1)");
   });
 });
 
@@ -388,6 +581,24 @@ describe("node dist/cli.js — the built artifact", () => {
   it("exits 0 on the clean stylesheet and 2 on a missing one", () => {
     expect(spawn(CLEAN_PATH).code).toBe(EXIT_OK);
     expect(spawn(join(tmp, "absent.css")).code).toBe(EXIT_ERROR);
+  });
+
+  it("aggregates several files in one invocation — one verdict through the built binary", () => {
+    // Two clean files, one invocation: the aggregate is over the per-file
+    // outcomes, so 0 and 0 aggregate to 0.
+    const cleanPair = spawn(CLEAN_PATH, CLEAN2_PATH);
+    expect(cleanPair.code).toBe(EXIT_OK);
+    expect(cleanPair.stdout.split(`themeguard — ${CLEAN_PATH}`)).toHaveLength(2);
+    expect(cleanPair.stdout.split(`themeguard — ${CLEAN2_PATH}`)).toHaveLength(2);
+    // 0 and 1 aggregate to 1 — a finding in ANY file holds the invocation.
+    expect(spawn(CLEAN_PATH, ONE_FINDING_PATH).code).toBe(EXIT_FINDINGS);
+    // And the first file's report is already on stdout when the second
+    // cannot be read — the fail-fast contract, through a real process.
+    const failed = spawn(CLEAN_PATH, join(tmp, "absent.css"));
+    expect(failed.code).toBe(EXIT_ERROR);
+    expect(failed.stdout).toContain(`themeguard — ${CLEAN_PATH}`);
+    expect(failed.stdout).toContain("No findings.");
+    expect(failed.stderr).toContain("cannot read");
   });
 });
 

@@ -1,11 +1,21 @@
 #!/usr/bin/env node
 /**
- * The command — `themeguard <file.css>`.
+ * The command — `themeguard <file.css> [file.css…]`.
  *
- * One command, zero options. It reads a stylesheet from disk, runs the same
- * `audit(resolveCss(css))` the library exposes, and prints the report. It adds
+ * One command, zero options; the positionals repeat. Each named stylesheet is
+ * read from disk, run through the same `audit(resolveCss(css))` the library
+ * exposes, and printed under its own `themeguard — <path>` header. It adds
  * no rule, no heuristic and no judgement of its own: everything here is I/O and
- * presentation over a report the library already produced.
+ * presentation over reports the library already produced.
+ *
+ * The files are audited INDEPENDENTLY — the single-file contract unchanged per
+ * file. References do not cross files: one stylesheet's tokens are invisible to
+ * the next, the config beside each stylesheet governs it alone, and a
+ * suppression is worth exactly the file it was recorded against. The
+ * invocation fails fast on the first file that cannot be audited, and the
+ * per-file outcomes aggregate into ONE exit code for the invocation — the
+ * precedence is stated in the exit contract below, because a caller in a
+ * pipeline gets one invocation and one verdict, not N runs to OR by hand.
  *
  * ── What it prints, and why in this shape ──────────────────────────────────
  * Findings are grouped by rule, each group headed by its COUNT, and every line
@@ -22,8 +32,9 @@
  *
  * ── The config ────────────────────────────────────────────────────────────
  * `themeguard.config.json`, OPTIONAL, is discovered NEXT TO THE STYLESHEET —
- * not the process CWD: a run is `themeguard <file.css>`, so the config that
- * governs a file is the one beside it. Absent file ⇒ no suppressions: no
+ * not the process CWD: a run names stylesheets — `themeguard <file.css>
+ * [file.css…]` — and the config that governs a file is the one beside it.
+ * Absent file ⇒ no suppressions: no
  * existing line of the report changes and the exit codes are unchanged — the
  * only addition is the counted `suppressed` section, printed even at zero.
  * Each entry lists a rule id, a token dimension (one `token`, or a `tokens`
@@ -106,6 +117,16 @@
  * stylesheet, so an expired judgement must never turn a green pipeline red.
  * The exit stays exactly the question it has always been — were there
  * unsuppressed findings.
+ *
+ * Over ONE invocation naming several stylesheets, the same three codes
+ * aggregate per invocation with the precedence 2 > 1 > 0: if ANY file errored,
+ * the invocation exits 2; else if ANY file reported unsuppressed findings, it
+ * exits 1; else 0. The 2 is fail-fast — the first file that cannot be audited
+ * (unreadable, unhonourable config, malformed directive) ends the invocation,
+ * its error naming THAT file, and the files before it keep the reports they
+ * already printed. One invocation, one verdict: the alternative this replaces —
+ * running the tool once per stylesheet and OR-ing the codes by hand in the
+ * caller — lets one mistyped path silently poison the aggregate.
  */
 
 import { readFileSync, realpathSync } from "node:fs";
@@ -121,7 +142,7 @@ import type { RuleId } from "./rules/finding.js";
 export const EXIT_OK = 0;
 /** The audit ran and reported at least one finding. */
 export const EXIT_FINDINGS = 1;
-/** The audit did not run: bad usage, or the file could not be read. */
+/** The audit did not run: bad usage, or a file could not be audited. */
 export const EXIT_ERROR = 2;
 
 /** Where the command writes. Injected so the report is testable as data. */
@@ -132,7 +153,7 @@ export interface CliIo {
   readonly err: (line: string) => void;
 }
 
-export const USAGE = "usage: themeguard <file.css>";
+export const USAGE = "usage: themeguard <file.css> [file.css…]";
 
 /** The order groups are printed in — the library's own reading order. */
 const RULE_ORDER: readonly RuleId[] = [
@@ -188,22 +209,57 @@ function tokenScope(entry: SuppressionEntry | SiteScopedSuppressionEntry): strin
 
 /**
  * Run the command over `args` (the arguments AFTER the program name) and return
- * the exit code. Pure but for the file read: everything printed goes through
- * `io`, so a test reads the report instead of scraping a subprocess.
+ * the exit code. Zero arguments is the usage error it has always been; one or
+ * more paths are audited IN ORDER, each through {@link auditStylesheet} — its
+ * reports print as they complete, the first file that cannot be audited ends
+ * the invocation fail-fast with 2, and otherwise the per-file outcomes
+ * aggregate into one code: 1 if ANY file reported unsuppressed findings, else
+ * 0 (precedence 2 > 1 > 0 — see the exit contract in the header). Pure but for
+ * the file reads: everything printed goes through `io`, so a test reads the
+ * report instead of scraping a subprocess.
  */
 export function runCli(args: readonly string[], io: CliIo): number {
-  if (args.length !== 1) {
+  if (args.length === 0) {
     io.err(USAGE);
-    io.err(
-      args.length === 0
-        ? "themeguard: no stylesheet given."
-        : `themeguard: expected exactly one file, got ${args.length}.`,
-    );
+    io.err("themeguard: no stylesheet given.");
     return EXIT_ERROR;
   }
 
-  const path = args[0] as string;
+  // The invocation-level verdict: whether ANY file completed with unsuppressed
+  // findings. Each file's own outcome is decided inside the loop below; this
+  // is what survives the loop and turns into the aggregated exit.
+  let anyFindings = false;
 
+  for (const path of args) {
+    const outcome = auditStylesheet(path, io);
+    if (outcome === EXIT_ERROR) {
+      // Fail-fast: the first file that cannot be audited ends the invocation
+      // with 2, whatever the files before it reported — those reports are
+      // already printed, and auditing past a file the caller misnamed would
+      // let the aggregate read as a verdict over files it never saw.
+      return EXIT_ERROR;
+    }
+    if (outcome === EXIT_FINDINGS) anyFindings = true;
+  }
+
+  // The aggregation, precedence 2 > 1 > 0: 2 has already been returned
+  // fail-fast above, so what remains is 1 if ANY file reported unsuppressed
+  // findings, else 0.
+  return anyFindings ? EXIT_FINDINGS : EXIT_OK;
+}
+
+/**
+ * Audit ONE stylesheet: the per-file body, unchanged by how many files the
+ * invocation names. Reads the file, loads the config discovered BESIDE it,
+ * scans its directives, audits, prints its report under its own
+ * `themeguard — <path>` header, and returns that file's outcome — 1 when the
+ * file carries unsuppressed findings, 0 when it is clean, 2 when it cannot be
+ * audited at all (with the diagnostic on `io.err`, naming this file's path or
+ * this file's config or directive). Pure but for the file read: everything
+ * printed goes through `io`, so a test reads the report instead of scraping a
+ * subprocess.
+ */
+function auditStylesheet(path: string, io: CliIo): number {
   let css: string;
   try {
     css = readFileSync(path, "utf8");
