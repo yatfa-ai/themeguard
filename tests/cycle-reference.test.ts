@@ -354,7 +354,7 @@ describe("runCli — the exit code moves with the sixth rule, both ways", () => 
       "  [cycle-reference] --a → --b → --a is a var() cycle: every property in the loop, and every var() consuming a member, is invalid at computed-value time. Declared at lines 2 and 3.",
     );
     expect(result.stdout).toContain(
-      "1 finding: 0 collision, 0 dead-token, 0 scale-collapse, 0 family-consistency, 0 unresolved-reference, 1 cycle-reference, 0 duplicate-declaration.",
+      "1 finding: 0 collision, 0 dead-token, 0 scale-collapse, 0 family-consistency, 0 unresolved-reference, 1 cycle-reference, 0 duplicate-declaration, 0 unresolved-import.",
     );
   });
 

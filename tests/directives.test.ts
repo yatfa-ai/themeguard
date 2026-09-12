@@ -412,7 +412,7 @@ describe("runCli — the site-scoped suppression, end to end", () => {
     expect(result.stdout).toContain("collision (1)");
     expect(result.stdout).toContain("suppressed (0)");
     expect(result.stdout).toContain(
-      "1 finding: 1 collision, 0 dead-token, 0 scale-collapse, 0 family-consistency, 0 unresolved-reference, 0 cycle-reference, 0 duplicate-declaration.",
+      "1 finding: 1 collision, 0 dead-token, 0 scale-collapse, 0 family-consistency, 0 unresolved-reference, 0 cycle-reference, 0 duplicate-declaration, 0 unresolved-import.",
     );
     expect(
       result.out.find((l) => l.startsWith("  [collision]")),
