@@ -488,6 +488,87 @@ describe("the import closure — a duplicate inside an imported file is cited BY
 
     rmSync(dir, { recursive: true, force: true });
   });
+
+  /**
+   * The suppression doors, read across the import edge — the question the
+   * `origin` fence in `audit.ts`'s `findingLines` exists to answer, pinned
+   * here because this rule reaches that fence by a path no other rule takes.
+   *
+   * `duplicate-declaration` carries no `sites` (dead-token's stance: the rule
+   * names its positions in its own message), so site-scoped directive
+   * matching falls through to the `evidence.declaredIn` branch — and that
+   * fallback predates 0.1.10's closure work. The fence it gained is the one
+   * these two tests pin: a citation naming a known imported origin is SKIPPED
+   * when collecting a finding's lines, because directives are scanned from
+   * the entry file's text ONLY and line numbers restart at 1 in every spliced
+   * sheet. Without it, an entry-file directive on line 2 would silence a
+   * finding whose site is line 2 OF ANOTHER FILE — a coincidence of numbers
+   * reading as a judgement.
+   *
+   * The entry-file-only scan is the platform's, not this rule's: a directive
+   * written INSIDE an imported file is not seen for any rule (verified
+   * against `dead-token` too), so the token-scoped CONFIG entry is the door
+   * that governs an imported site — and it binds, because it matches on the
+   * finding's structured fields rather than on a line.
+   */
+  it("an ENTRY-file directive does NOT silence a duplicate living in an IMPORTED file", () => {
+    const dir = mkdtempSync(join(tmpdir(), "themeguard-duplicate-suppress-import-"));
+    writeFileSync(
+      join(dir, "tokens.css"),
+      ":root {\n  --accent: #FF0000;\n  --accent: #00AA00;\n}\n",
+      "utf8",
+    );
+    const entryCss = [
+      '@import "./tokens.css";',
+      "/* themeguard-ignore duplicate-declaration -- entry-file judgement, line 2 */",
+      ".btn { color: var(--accent); }",
+    ].join("\n");
+    const entry = join(dir, "app.css");
+    writeFileSync(entry, `${entryCss}\n`, "utf8");
+
+    // The directive sits at entry line 2; the shadowed site is tokens.css:2.
+    // The bare numbers coincide — the origin fence is what keeps them apart.
+    const directives = scanIgnoreDirectives(entryCss, entry);
+    expect(directives).toHaveLength(1);
+    expect(directives[0]?.line).toBe(2);
+
+    const report = audit(resolveStylesheet(loadStylesheet(entry)), {
+      suppressions: directives,
+    });
+    expect(report.countsByRule["duplicate-declaration"]).toBe(1);
+    expect(report.suppressed).toHaveLength(0);
+    // And the judgement that bound to nothing says so rather than going quiet.
+    expect(report.unmatchedSuppressions).toHaveLength(1);
+
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("a token-scoped CONFIG entry DOES suppress an imported duplicate — the door that crosses files", () => {
+    const dir = mkdtempSync(join(tmpdir(), "themeguard-duplicate-config-import-"));
+    writeFileSync(
+      join(dir, "tokens.css"),
+      ":root {\n  --accent: #FF0000;\n  --accent: #00AA00;\n}\n",
+      "utf8",
+    );
+    const entry = join(dir, "app.css");
+    writeFileSync(entry, '@import "./tokens.css";\n.btn { color: var(--accent); }\n', "utf8");
+
+    const report = audit(resolveStylesheet(loadStylesheet(entry)), {
+      suppressions: [
+        {
+          rule: "duplicate-declaration",
+          token: "--accent",
+          reason: "vendored token file re-declares it deliberately",
+        },
+      ],
+    });
+    expect(report.countsByRule["duplicate-declaration"]).toBe(0);
+    expect(report.suppressed).toHaveLength(1);
+    expect(report.suppressed[0]?.finding.message).toContain("tokens.css:2");
+    expect(report.unmatchedSuppressions).toHaveLength(0);
+
+    rmSync(dir, { recursive: true, force: true });
+  });
 });
 
 describe("census preservation over the calibration fixture — the 0, derived", () => {
