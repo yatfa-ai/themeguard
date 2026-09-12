@@ -18,6 +18,20 @@
  *      `absences` and `origin` — so this is a re-arrangement of data the
  *      resolver vouches for, never a second parser.
  *
+ *      The POPULATION boundary, stated rather than left to look like an
+ *      oversight: a name declared only inside one theme's own block is
+ *      outside this inventory BY CONSTRUCTION, because the population is the
+ *      base theme's (`:root`) names and a name in no base table is not a base
+ *      token in any view — including the views that lack it. That is why a
+ *      report can say "root: declares all 2 base tokens" while a third token
+ *      is missing from that very view: the inventory's job is the base
+ *      tokens' overridden/inherited split, and the per-theme availability of
+ *      theme-only names is a DIFFERENT question, judged by
+ *      `theme-partial-token` (`rules/theme-partial-token.ts`) straight off
+ *      the resolver's `kind: "unresolved"` fact. Widening this inventory to
+ *      union every theme's names would change every theme's headline count
+ *      and answer a question no reader asked; the gap this paragraph names
+ *      is claimed by rule 9 instead.
  *   2. THE FINDING (the evidence-bearing half, exit-code-active like the other
  *      rules). {@link familyConsistencyRule} reports an inherited token when
  *      the theme's OWN declarations prove per-theme tuning of its family: at

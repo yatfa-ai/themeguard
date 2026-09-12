@@ -200,7 +200,7 @@ describe("themeguard <file.css> over the vendored calibration fixture", () => {
     expect(result.stdout).toContain("scale-collapse (2)");
     expect(result.stdout).toContain("family-consistency (7)");
     expect(result.stdout).toContain(
-      "22 findings: 11 collision, 2 dead-token, 2 scale-collapse, 7 family-consistency, 0 unresolved-reference, 0 cycle-reference, 0 duplicate-declaration, 0 unresolved-import.",
+      "22 findings: 11 collision, 2 dead-token, 2 scale-collapse, 7 family-consistency, 0 unresolved-reference, 0 cycle-reference, 0 duplicate-declaration, 0 unresolved-import, 0 theme-partial-token.",
     );
   });
 

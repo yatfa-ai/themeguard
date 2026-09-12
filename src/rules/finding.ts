@@ -8,7 +8,7 @@
  * one.
  */
 
-/** Which of the eight questions a finding answers. */
+/** Which of the nine questions a finding answers. */
 export type RuleId =
   /** Two token names that must differ hold byte-identical colours. */
   | "collision"
@@ -53,7 +53,16 @@ export type RuleId =
    * theme's document) and the specifier occupies the token dimension, so the
    * ordinary suppression doors aim at it.
    */
-  | "unresolved-import";
+  | "unresolved-import"
+  /**
+   * A token declared in exactly one theme's block is absent from every other
+   * theme's view, and a declaration chain in such a view that reaches for it
+   * ends unresolved — the property falls back to unset/inherit. The
+   * per-theme grain of reference resolution: rule 5 asks whether a name is
+   * declared ANYWHERE (its population is the typos); this rule reports the
+   * name that exists somewhere but not in the view that needs it.
+   */
+  | "theme-partial-token";
 
 /**
  * WHERE a finding's token was declared — the declaration the resolver actually
@@ -215,6 +224,7 @@ export function sortFindings(findings: readonly Finding[]): Finding[] {
     "cycle-reference": 5,
     "duplicate-declaration": 6,
     "unresolved-import": 7,
+    "theme-partial-token": 8,
   };
   return [...findings].sort(
     (a, b) =>

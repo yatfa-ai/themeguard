@@ -170,10 +170,10 @@ describe("scanIgnoreDirectives — the grammar, as data in and errors out", () =
     expect(error).toBeInstanceOf(DirectiveError);
     expect(error.message).toContain("vendor.css:2");
     expect(error.message).toContain('unknown rule "colision"');
-    // The list is config's own sentence — the same seven ids a config entry's
+    // The list is config's own sentence — the same nine ids a config entry's
     // error names — reached through config's own parser, never a local copy.
     expect(error.message).toContain(
-      "collision, dead-token, scale-collapse, family-consistency, unresolved-reference, cycle-reference, duplicate-declaration",
+      "collision, dead-token, scale-collapse, family-consistency, unresolved-reference, cycle-reference, duplicate-declaration, unresolved-import, theme-partial-token",
     );
     expect(error.path).toBe("vendor.css");
     expect(error.line).toBe(2);
@@ -412,7 +412,7 @@ describe("runCli — the site-scoped suppression, end to end", () => {
     expect(result.stdout).toContain("collision (1)");
     expect(result.stdout).toContain("suppressed (0)");
     expect(result.stdout).toContain(
-      "1 finding: 1 collision, 0 dead-token, 0 scale-collapse, 0 family-consistency, 0 unresolved-reference, 0 cycle-reference, 0 duplicate-declaration, 0 unresolved-import.",
+      "1 finding: 1 collision, 0 dead-token, 0 scale-collapse, 0 family-consistency, 0 unresolved-reference, 0 cycle-reference, 0 duplicate-declaration, 0 unresolved-import, 0 theme-partial-token.",
     );
     expect(
       result.out.find((l) => l.startsWith("  [collision]")),

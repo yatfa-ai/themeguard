@@ -364,7 +364,7 @@ describe("runCli — the exit code moves with the seventh rule, both ways", () =
       "  [duplicate-declaration] --accent is declared twice in one scope: #FF0000 at :root:2, shadowed by #00AA00 at :root:3 — the later declaration silently wins.",
     );
     expect(result.stdout).toContain(
-      "1 finding: 0 collision, 0 dead-token, 0 scale-collapse, 0 family-consistency, 0 unresolved-reference, 0 cycle-reference, 1 duplicate-declaration, 0 unresolved-import.",
+      "1 finding: 0 collision, 0 dead-token, 0 scale-collapse, 0 family-consistency, 0 unresolved-reference, 0 cycle-reference, 1 duplicate-declaration, 0 unresolved-import, 0 theme-partial-token.",
     );
   });
 
