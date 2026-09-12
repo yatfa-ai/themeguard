@@ -1,5 +1,5 @@
 /**
- * The audit entry point — the eight rules over one resolved stylesheet.
+ * The audit entry point — the nine rules over one resolved stylesheet.
  *
  * This is the stage the resolver's docstring promises: `resolve.ts` produces
  * DATA and passes no judgement, and `audit()` is where the judging happens.
@@ -15,7 +15,7 @@
  * for (const finding of report.findings) console.log(finding.message);
  * ```
  *
- * The eight questions, and where each is argued:
+ * The nine questions, and where each is argued:
  *
  * | rule id | question | module |
  * |---|---|---|
@@ -27,6 +27,7 @@
  * | `cycle-reference` | a `var()` chain returns to a name already on it | `rules/cycle-reference.ts` |
  * | `duplicate-declaration` | one name is declared twice in one scope with differing values | `rules/duplicate-declaration.ts` |
  * | `unresolved-import` | a relative `@import` edge the loader could not follow | `rules/unresolved-import.ts` |
+ * | `theme-partial-token` | a token one theme declares never reaches a view whose chains break on it | `rules/theme-partial-token.ts` |
  *
  * Alongside the findings, `coverage` carries the fact inventory rule 4 is
  * measured over — per theme, every base-theme token marked overridden or
@@ -73,6 +74,7 @@ import { cycleReferenceRule } from "./rules/cycle-reference.js";
 import { duplicateDeclarationRule } from "./rules/duplicate-declaration.js";
 import { unresolvedReferenceRule } from "./rules/unresolved-reference.js";
 import { unresolvedImportRule } from "./rules/unresolved-import.js";
+import { themePartialTokenRule } from "./rules/theme-partial-token.js";
 import { scaleCollapseRule, type SkippedPair } from "./rules/scale-collapse.js";
 import { sortFindings, type Finding, type RuleId } from "./rules/finding.js";
 import { TokenNames } from "./rules/tokens.js";
@@ -269,7 +271,7 @@ export interface SuppressedFinding {
 }
 
 /**
- * Run all eight rules over a resolved stylesheet.
+ * Run all nine rules over a resolved stylesheet.
  *
  * @param resolved the resolver's output — the facts to judge.
  * @param options optional caller declarations; omit for the plain report.
@@ -290,6 +292,7 @@ export function audit(
   const cycles = cycleReferenceRule(resolved);
   const duplicates = duplicateDeclarationRule(resolved);
   const unresolvedImports = unresolvedImportRule(resolved);
+  const themePartials = themePartialTokenRule(resolved, names);
 
   // Partition the sorted report: kept findings, and the ones the caller has
   // marked deliberate. The partition reads the FINDING's own fields, so it
@@ -421,6 +424,7 @@ export function audit(
     ...cycles,
     ...duplicates,
     ...unresolvedImports,
+    ...themePartials,
   ])) {
     const index = suppressions.findIndex((s) => matches(s, finding));
     if (index === -1) kept.push(finding);
@@ -442,6 +446,7 @@ export function audit(
       "cycle-reference": kept.filter((f) => f.rule === "cycle-reference").length,
       "duplicate-declaration": kept.filter((f) => f.rule === "duplicate-declaration").length,
       "unresolved-import": kept.filter((f) => f.rule === "unresolved-import").length,
+      "theme-partial-token": kept.filter((f) => f.rule === "theme-partial-token").length,
     },
     suppressed,
     // The complement, in declaration order: the caller's slots that no

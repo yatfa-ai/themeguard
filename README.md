@@ -4,10 +4,10 @@
 > project's colour tokens are *organised* — not whether text passes contrast.
 
 > **Status: 0.1.1 — one command, and a library.** `themeguard <file.css>` audits a stylesheet from a
-> terminal, and the same eight rules are importable as functions. The package ships compiled output
+> terminal, and the same nine rules are importable as functions. The package ships compiled output
 > (`dist/`); the calibration fixture and the tests stay in this repository and out of the tarball.
 
-## The eight questions
+## The nine questions
 
 1. **Value collisions** — two variables that must differ hold byte-identical colours.
    A real one: `--app-border` equalled `--app-surface-raised`, so a panel's 1px border was literally
@@ -56,6 +56,19 @@
    paths and URLs are still not findings (package resolution is a build step, not a source read),
    and an import cycle is still not one either — a browser dedupes an already-applied stylesheet
    the same way, and the closure audits.
+9. **Theme-partial tokens** — a custom property declared only inside ONE theme's block is absent from
+   every other theme's view, and a declaration chain in such a view that reaches for it ends unresolved:
+   the property falls back to unset or inherited. The tool's earlier silence had a precise shape —
+   resolution is per-theme, but rule 5 asks a stylesheet-wide question, so a name declared anywhere was
+   a lookup hit everywhere. The finding is one per missing name (never per consumer or per theme),
+   carries `theme: null`, and names all four halves: the token, the themes that declare it (with their
+   declaration sites), the views it never reaches, and the chains that break. **Not detected:** a
+   component rule's direct `var()` (`.code-block { background: var(--app-code-bg) }`, no declaration
+   chain) mints no unresolved token, so it is out of scope by design — a consumer written *inside* the
+   declaring theme's own selector (`[data-theme="dark"] .card { … }`) is correct CSS, and telling the two
+   apart needs selector-prefix reasoning the parser deliberately does not do. Reporting correct CSS as a
+   defect is worse than this silence, so the chain face — which the resolver itself vouches for — ships,
+   and the consumption face is recorded as a residual rather than guessed at.
 
 Defects like these accumulate rather than appear. Over eight months of one growing project's CSS the
 palette went 23 → 73 tokens and collisions went 0 → 7. (That figure predates the rule; running
@@ -166,6 +179,7 @@ cycle-reference (0)
 duplicate-declaration (0)
 
 unresolved-import (0)
+theme-partial-token (0)
 
 skipped (0)
   nothing skipped — every pair rule 3 derived was measurable.
@@ -183,12 +197,12 @@ coverage (2 themes, 73 base tokens)
     [inherited] --app-focus-ring-width (non-color)
     … 20 more — every base token each theme inherits, named
 
-22 findings: 11 collision, 2 dead-token, 2 scale-collapse, 7 family-consistency, 0 unresolved-reference, 0 cycle-reference, 0 duplicate-declaration, 0 unresolved-import.
+22 findings: 11 collision, 2 dead-token, 2 scale-collapse, 7 family-consistency, 0 unresolved-reference, 0 cycle-reference, 0 duplicate-declaration, 0 unresolved-import, 0 theme-partial-token.
 ```
 
 Four things in that output are deliberate and worth reading.
 
-**All eight rule headings print even at zero.** A rule that reports nothing and a rule that did not run
+**All nine rule headings print even at zero.** A rule that reports nothing and a rule that did not run
 look identical if the heading is omitted, and "nothing here" reads as a pass.
 
 **`skipped` is a section, not a silence.** A pair rule 3 could not measure — a translucent member has no
@@ -389,7 +403,7 @@ the line it is about — which makes it site-precise by construction:
 --app-cta: #22c55e; /* themeguard-ignore collision --app-cta --app-success -- the cta is the success colour, judged here */
 ```
 
-The grammar is one comment: the keyword, then the rule id (one of the eight), then optional `--`-prefixed
+The grammar is one comment: the keyword, then the rule id (one of the nine), then optional `--`-prefixed
 token names — the same meaning as a config entry's `tokens` set, the finding must carry every name listed
 — then a bare `--` separator and a required reason, which the report quotes back. A directive that names
 no token is legitimate: there the *site* is the judgement, and every finding of that rule living at the
@@ -508,7 +522,7 @@ const report = audit(resolveCss(readFileSync("application.css", "utf8")));
 for (const finding of report.findings) {
   console.log(`[${finding.rule}] ${finding.message}`);
 }
-console.log(report.countsByRule); // { collision: 11, "dead-token": 2, "scale-collapse": 2, "family-consistency": 7, "unresolved-reference": 0, "cycle-reference": 0, "duplicate-declaration": 0 }
+console.log(report.countsByRule); // { collision: 11, "dead-token": 2, "scale-collapse": 2, "family-consistency": 7, "unresolved-reference": 0, "cycle-reference": 0, "duplicate-declaration": 0, "theme-partial-token": 0 }
 ```
 
 `resolveCss` audits the TEXT you hand it — no base directory is known, so `@import` statements are
@@ -522,7 +536,7 @@ const report = audit(resolveStylesheet(loadStylesheet("application.css")));
 ```
 
 Types ship with the package. Every finding carries the `evidence` behind it, so a verdict can be checked
-rather than taken — and five of the eight rules also carry `sites`, the declaration each measured token
+rather than taken — and six of the nine rules also carry `sites`, the declaration each measured token
 resolved from (`{ name, line }`), which is the same position their message ends with. It cites the
 **cascade winner**: `--app-border` is declared twice in the fixture, at `:root`'s line 41 and winter's
 line 438, and the root finding cites 41 while the winter one cites 438. `dead-token`,
@@ -549,7 +563,7 @@ The complement is on the report too: `report.unmatchedSuppressions` carries the 
 matched nothing — in declaration order, entries whole — under the same counted-not-silent discipline
 the CLI prints as its `unmatched (N)` section.
 
-Omit the second argument and the report is exactly the eight-rule audit it has always been.
+Omit the second argument and the report is exactly the nine-rule audit it has always been.
 
 ## Development
 
@@ -573,7 +587,7 @@ facts and passes no judgement, the upper one judges those facts and nothing else
 | `src/parse.ts` | Which blocks declare custom properties, in which of the four shapes — `:root`, `[data-theme=…]`, `@theme inline`, and a `prefers-color-scheme` `:root` block as its own theme — at which line, and every `var()` **use**, from every declaration rather than only the custom-property ones. |
 | `src/resolve.ts` | What each property resolves to **per theme**, following `var()` chains. Theme absence, translucency, unresolved references and cycles are each represented explicitly — none of them is an error and none is guessed at. |
 | `src/color.ts` | Colour parsing (hex 3/4/6/8, `rgb()`/`rgba()`, `hsl()`/`hsla()`, alpha throughout), WCAG relative luminance, CIE L\*, contrast ratio, source-over compositing. |
-| `src/audit.ts` | `audit(resolved)` — the eight rules in one pass, returning findings tagged `collision`, `dead-token`, `scale-collapse`, `family-consistency`, `unresolved-reference`, `cycle-reference`, `duplicate-declaration` or `unresolved-import`, plus the per-theme coverage inventory. Passing `suppressions` moves caller-declared findings out of `findings` and the counts into a `suppressed` leg. |
+| `src/audit.ts` | `audit(resolved)` — the nine rules in one pass, returning findings tagged `collision`, `dead-token`, `scale-collapse`, `family-consistency`, `unresolved-reference`, `cycle-reference`, `duplicate-declaration`, `unresolved-import` or `theme-partial-token`, plus the per-theme coverage inventory. Passing `suppressions` moves caller-declared findings out of `findings` and the counts into a `suppressed` leg. |
 | `src/config.ts` | `themeguard.config.json` — optional, discovered at or above the stylesheet (nearest ancestor wins; a config beside the stylesheet is the first hop). Parses and validates the `suppress` entries (strictly: an unhonourable config is an error naming the entry, never a silent skip) into the structured declarations `audit()` filters a finished report by. |
 | `src/rules/` | One module per question. Each docstring carries its judgement heuristics and, more usefully, what it deliberately does **not** report. `rules/coverage.ts` also carries the coverage inventory itself — the facts rule 4 is measured over, printed by the CLI as an informational section and never an exit code. |
 | `src/cli.ts` | The command. I/O and presentation over `audit()` — no rule, no heuristic and no judgement of its own. |
@@ -599,6 +613,7 @@ the calibration fixture:
 | `unresolved-reference` | 214 `var()` uses naming 72 distinct names | 0 | Nothing to filter on this fixture — all 72 distinct used names are declared somewhere, and the `@theme inline` declarations count as declaring, so the alias namespace is a lookup hit, not a judged population. The rule's four populations (a typo'd use, a dangling fallback, a broken declaration chain, a dangling alias chain) simply do not occur here; the tests pin them on hostile sheets, and pin this 0 as a preservation check. One known false positive is named rather than hidden: an `@property` registration declares no scope (its block carries no `--` declarations), so a name registered there and declared nowhere is reported — with an `initial-value` it resolves at runtime and that finding is a false positive; the standing remedy is a scope declaration or a suppression entry. |
 | `cycle-reference` | — | 0 | Nothing to filter on this fixture — no `var()` chain in it returns to a name already on the chain, so there are no candidates at all. The tests pin the rule's populations on hostile sheets (a root loop, a self-loop, a theme-authored loop, the override-heals and inherited-dedupe negatives) and pin this 0 as a preservation check. |
 | `duplicate-declaration` | 125 in-scope declarations of the 189 parsed, none repeated in one scope | 0 | Nothing to filter on this fixture — no name is declared twice within one scope, so there are no candidates at all. The tests pin the rule's populations on hostile sheets (a referenced duplicate, a theme-scope duplicate, the selector-list dedupe, the cross-scope-override and same-value-repeat negatives) and pin this 0 as a preservation check. |
+| `theme-partial-token` | — | 0 | Nothing to filter on this fixture — no `var()` chain in it fails to resolve in any theme's view, so the rule's population (unresolved-kind tokens whose missing reference IS declared somewhere) is empty at the source. The tests pin the rule's populations on hostile sheets — the flagship one-theme declaration, theme→theme, the `@theme inline` alias chain, the `prefers-color-scheme` conditioned root — alongside the control partitioned to rule 5, the three negative boundaries in both directions, the recorded direct-consumption residual, and this 0 as a preservation check. |
 
 Three properties are worth stating because they are what the tests defend:
 

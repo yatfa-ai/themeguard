@@ -92,6 +92,7 @@ describe("the unresolved-reference rule — the four silent populations", () => 
       "cycle-reference": 0,
       "duplicate-declaration": 0,
       "unresolved-import": 0,
+      "theme-partial-token": 0,
     });
     expect(report.findings.map((f) => [f.rule, f.tokens[0]])).toEqual([
       ["dead-token", "--chain-a"],
@@ -280,7 +281,7 @@ describe("runCli — the exit code moves with the fifth rule, both ways", () => 
       "  [unresolved-reference] --ghost is used at .use:1 and no scope in this stylesheet declares it.",
     );
     expect(result.stdout).toContain(
-      "1 finding: 0 collision, 0 dead-token, 0 scale-collapse, 0 family-consistency, 1 unresolved-reference, 0 cycle-reference, 0 duplicate-declaration, 0 unresolved-import.",
+      "1 finding: 0 collision, 0 dead-token, 0 scale-collapse, 0 family-consistency, 1 unresolved-reference, 0 cycle-reference, 0 duplicate-declaration, 0 unresolved-import, 0 theme-partial-token.",
     );
   });
 

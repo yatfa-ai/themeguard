@@ -41,6 +41,18 @@
  * that layer is by construction declared in the `@theme inline` scope, and a
  * name declared nowhere is by construction not in it.
  *
+ * The CARVE-OUT this fence deliberately leaves to a sibling: "declared in ANY
+ * scope" answers the STYLESHEET-WIDE question this rule exists for — a typo is
+ * a defect in every view at once — and it is deliberately not the per-theme
+ * question. A name declared inside exactly ONE theme's block is a lookup hit
+ * here and is never reported, while a declaration chain in every OTHER theme's
+ * view ends unresolved all the same. That per-theme grain is a different
+ * question, and it is `theme-partial-token`'s (`rules/theme-partial-token.ts`),
+ * which reads the resolver's `kind: "unresolved"` fact directly and partitions
+ * against this rule's population so the two never double-report. This header's
+ * scope decision stands verbatim for rule 5's population; the gap it leaves is
+ * claimed by rule 9, not papered over here.
+ *
  * ── What an unresolved reference is NOT ────────────────────────────────────
  * Not theme-scoped, same stance as `dead-token`: a name is missing from the
  * STYLESHEET or it is not, so the finding carries `theme: null` and there is
@@ -52,7 +64,11 @@
  * a build step generates — the read cannot know, and the finding says where
  * the use is so a human can check. A use site read from an imported file cites
  * the file (`tokens.css:5`) rather than a bare `selector:line`, whose line
- * number would point into whichever file the reader had open.
+ * number would point into whichever file the reader had open. That
+ * stylesheet-wide stance stays true of THIS rule's findings: what a
+ * theme-scoped question looks like when the name DOES exist somewhere is rule
+ * 8's to answer, at the per-theme grain the resolver's theme-keyed `lookup`
+ * already models.
  *
  * One KNOWN FALSE POSITIVE, named rather than left for a user to discover: an
  * `@property` block registers a custom property at the CSS level, but the

@@ -965,6 +965,7 @@ describe("the audit entry point", () => {
       "duplicate-declaration",
       "family-consistency",
       "scale-collapse",
+      "theme-partial-token",
       "unresolved-import",
       "unresolved-reference",
     ]);
@@ -993,6 +994,7 @@ describe("the audit entry point", () => {
         "cycle-reference": 5,
         "duplicate-declaration": 6,
         "unresolved-import": 7,
+        "theme-partial-token": 8,
       } as const;
       return order[a] - order[b];
     }));

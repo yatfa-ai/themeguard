@@ -60,6 +60,7 @@ const RULE_IDS: readonly RuleId[] = [
   "cycle-reference",
   "duplicate-declaration",
   "unresolved-import",
+  "theme-partial-token",
 ];
 
 /**

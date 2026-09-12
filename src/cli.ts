@@ -36,7 +36,7 @@
  * ── What it prints, and why in this shape ──────────────────────────────────
  * Findings are grouped by rule, each group headed by its COUNT, and every line
  * is the README's own `[rule] message` shape so a line pasted into an issue
- * still says which question it answers. All four rule headings are printed
+ * still says which question it answers. All the rule headings are printed
  * even at zero, because a rule that reports nothing and a rule that did not run
  * look identical if the heading is omitted — and "no findings" reads as a pass.
  *
@@ -210,6 +210,7 @@ const RULE_ORDER: readonly RuleId[] = [
   "cycle-reference",
   "duplicate-declaration",
   "unresolved-import",
+  "theme-partial-token",
 ];
 
 /**

@@ -146,7 +146,8 @@ describe("parseConfig — what the package can honour", () => {
     expect(error).toBeInstanceOf(ConfigError);
     expect(error.message).toContain("entry 1 of \"suppress\"");
     expect(error.message).toContain('"scale-colapse"');
-    expect(error.message).toContain("collision, dead-token, scale-collapse, family-consistency, unresolved-reference, cycle-reference, duplicate-declaration");
+    expect(error.message).toContain("collision, dead-token, scale-collapse, family-consistency, unresolved-reference, cycle-reference, duplicate-declaration, unresolved-import, theme-partial-token");
+
   });
 
   it("rejects a missing token, naming the entry", () => {
@@ -533,6 +534,7 @@ describe("audit(resolved, { suppressions }) — the additive second parameter", 
       "cycle-reference": 0,
       "duplicate-declaration": 0,
       "unresolved-import": 0,
+      "theme-partial-token": 0,
     });
     expect(report.suppressed).toEqual([]);
   });
@@ -586,6 +588,7 @@ describe("audit(resolved, { suppressions }) — the scope dimensions", () => {
       "cycle-reference": 0,
       "duplicate-declaration": 0,
       "unresolved-import": 0,
+      "theme-partial-token": 0,
     });
     expect(audit(resolved).findings.map((f) => [f.theme, f.tokens])).toEqual([
       ["root", ["--accent", "--success"]],
@@ -669,7 +672,7 @@ describe("themeguard <file.css> with themeguard.config.json beside the styleshee
     const result = run(FIXTURE_COPY);
     expect(result.stdout).toContain("collision (11)");
     expect(result.stdout).toContain("scale-collapse (2)");
-    expect(result.stdout).toContain("22 findings: 11 collision, 2 dead-token, 2 scale-collapse, 7 family-consistency, 0 unresolved-reference, 0 cycle-reference, 0 duplicate-declaration, 0 unresolved-import.");
+    expect(result.stdout).toContain("22 findings: 11 collision, 2 dead-token, 2 scale-collapse, 7 family-consistency, 0 unresolved-reference, 0 cycle-reference, 0 duplicate-declaration, 0 unresolved-import, 0 theme-partial-token.");
     // Counted-not-silent, even at zero — the visible proof nothing was set aside.
     expect(result.stdout).toContain("suppressed (0)");
     expect(result.stdout).toContain(
@@ -711,13 +714,13 @@ describe("themeguard <file.css> with themeguard.config.json beside the styleshee
     }
     // The counts and the total reflect the UNSUPPRESSED population only.
     expect(result.stdout).toContain(
-      "20 findings: 11 collision, 2 dead-token, 0 scale-collapse, 7 family-consistency, 0 unresolved-reference, 0 cycle-reference, 0 duplicate-declaration, 0 unresolved-import.",
+      "20 findings: 11 collision, 2 dead-token, 0 scale-collapse, 7 family-consistency, 0 unresolved-reference, 0 cycle-reference, 0 duplicate-declaration, 0 unresolved-import, 0 theme-partial-token.",
     );
     // Findings remain → exit 1; suppression is not a blanket clean bill.
     expect(result.code).toBe(EXIT_FINDINGS);
     // And nothing was dropped silently: 20 reported + 2 suppressed = the pinned 22.
     expect(
-      result.out.filter((l) => /^ {2}\[(collision|dead-token|scale-collapse|family-consistency|unresolved-reference|cycle-reference|duplicate-declaration)\]/.test(l)),
+      result.out.filter((l) => /^ {2}\[(collision|dead-token|scale-collapse|family-consistency|unresolved-reference|cycle-reference|duplicate-declaration|theme-partial-token)\]/.test(l)),
     ).toHaveLength(20);
   });
 
@@ -850,7 +853,7 @@ describe("themeguard <file.css> with themeguard.config.json beside the styleshee
     // Root's finding moved; winter's accidental one did not.
     expect(result.stdout).toContain("collision (1)");
     expect(result.stdout).toContain("suppressed (1)");
-    expect(result.stdout).toContain("1 finding: 1 collision, 0 dead-token, 0 scale-collapse, 0 family-consistency, 0 unresolved-reference, 0 cycle-reference, 0 duplicate-declaration, 0 unresolved-import.");
+    expect(result.stdout).toContain("1 finding: 1 collision, 0 dead-token, 0 scale-collapse, 0 family-consistency, 0 unresolved-reference, 0 cycle-reference, 0 duplicate-declaration, 0 unresolved-import, 0 theme-partial-token.");
     expect(result.out.some((l) => l.startsWith("  [collision] --danger and --success"))).toBe(true);
     expect(result.code).toBe(EXIT_FINDINGS);
   });

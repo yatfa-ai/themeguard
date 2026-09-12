@@ -240,7 +240,7 @@ describe("the rule participates in the report machinery", () => {
       '  [unresolved-import] @import "./gone.css" — no file exists at the path it names. The import never loads, so every declaration inside it is invisible to this audit. Declared at line 1.',
     );
     expect(result.stdout).toContain(
-      "1 finding: 0 collision, 0 dead-token, 0 scale-collapse, 0 family-consistency, 0 unresolved-reference, 0 cycle-reference, 0 duplicate-declaration, 1 unresolved-import.",
+      "1 finding: 0 collision, 0 dead-token, 0 scale-collapse, 0 family-consistency, 0 unresolved-reference, 0 cycle-reference, 0 duplicate-declaration, 1 unresolved-import, 0 theme-partial-token.",
     );
   });
 
