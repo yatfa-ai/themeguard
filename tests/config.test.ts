@@ -1,13 +1,14 @@
 import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { EXIT_ERROR, EXIT_FINDINGS, EXIT_OK, runCli, type CliIo } from "../src/cli.js";
 import {
   CONFIG_FILENAME,
   ConfigError,
+  configPathFor,
   loadConfig,
   parseConfig,
 } from "../src/config.js";
@@ -24,11 +25,15 @@ import { FIXTURE_PATH, fixtureCss } from "./fixture.js";
  *     error-out assertion — including the rule that an unhonourable entry is
  *     an ERROR naming the entry, never a silent skip.
  *   - `loadConfig` owns the discovery rule: the config is read from the
- *     directory of the STYLESHEET, not from the process CWD. That choice is
- *     what makes the feature testable through the existing tmp-fixture pattern
+ *     directory of the STYLESHEET, or the nearest ancestor directory holding
+ *     one — the walk stops at the first `themeguard.config.json` on the way
+ *     to the filesystem root (nearest wins), never from the process CWD. That
+ *     choice is what makes the feature testable through the existing
+ *     tmp-fixture pattern
  *     (the harness writes fixtures into a mkdtemp dir while the process stays
  *     at the repo root) and deterministic for the `themeguard <file.css>`
- *     usage — the config that governs a file is the one beside it.
+ *     usage — the config that governs a file is decided by where the file
+ *     lives, and a config beside it is the walk's first hop.
  *   - `runCli` and the built `dist/cli.js` own the report and the exit codes:
  *     suppressed findings move to their own counted section, the counts and
  *     the total line shrink to the unsuppressed, and the exit computes over
@@ -381,7 +386,7 @@ describe("parseConfig — what the package can honour", () => {
   });
 });
 
-describe("loadConfig — discovery is stylesheet-adjacent, not CWD-adjacent", () => {
+describe("loadConfig — discovery is nearest-ancestor (the stylesheet's directory first, then each parent, bounded at the fs root), not CWD-adjacent", () => {
   it("returns null when the stylesheet's directory has no config", () => {
     // The tmp dir's other fixtures deliberately have no config beside them.
     expect(loadConfig(ONE_FINDING_PATH)).toBeNull();
@@ -396,6 +401,66 @@ describe("loadConfig — discovery is stylesheet-adjacent, not CWD-adjacent", ()
     // If lookup were CWD-based this would find nothing (the repo root has no
     // themeguard.config.json); stylesheet-adjacent lookup finds the empty one.
     expect(loadConfig(cssPath)).toEqual([]);
+  });
+
+  it("a stylesheet in a SUBDIRECTORY finds the config in the parent directory — one ledger governs its subtree", () => {
+    const parent = join(tmp, "ancestor");
+    const sub = join(parent, "components");
+    mkdirSync(sub, { recursive: true });
+    writeConfig(
+      parent,
+      JSON.stringify({
+        suppress: [{ rule: "dead-token", token: "--unused", reason: "reserved in every descendant" }],
+      }),
+    );
+    const cssPath = join(sub, "sheet.css");
+    writeFileSync(cssPath, ONE_FINDING_CSS, "utf8");
+    // The U1 shape: tokens at `styles/`, components one directory down — the
+    // walk from components/ stops at the first ancestor holding a config.
+    expect(loadConfig(cssPath)).toEqual([
+      { rule: "dead-token", token: "--unused", reason: "reserved in every descendant" },
+    ]);
+  });
+
+  it("the NEAREST config wins when two levels of the walk both hold one", () => {
+    const parent = join(tmp, "nearest");
+    const sub = join(parent, "sub");
+    mkdirSync(sub, { recursive: true });
+    writeConfig(
+      parent,
+      JSON.stringify({ suppress: [{ rule: "dead-token", token: "--far", reason: "the ancestor's ledger" }] }),
+    );
+    writeConfig(
+      sub,
+      JSON.stringify({ suppress: [{ rule: "dead-token", token: "--near", reason: "the nearer ledger" }] }),
+    );
+    // The nearer ledger shadows the ancestor's for stylesheets in sub/...
+    expect(loadConfig(join(sub, "sheet.css"))).toEqual([
+      { rule: "dead-token", token: "--near", reason: "the nearer ledger" },
+    ]);
+    // ...while the ancestor's own directory still reads the ancestor's.
+    expect(loadConfig(join(parent, "sheet.css"))).toEqual([
+      { rule: "dead-token", token: "--far", reason: "the ancestor's ledger" },
+    ]);
+  });
+
+  it("configPathFor returns the FOUND path — the home `file` scopes resolve against", () => {
+    const parent = join(tmp, "home");
+    const sub = join(parent, "components");
+    mkdirSync(sub, { recursive: true });
+    const configPath = writeConfig(parent, JSON.stringify({ suppress: [] }));
+    expect(configPathFor(join(sub, "card.css"))).toBe(configPath);
+    expect(configPathFor(join(parent, "tokens.css"))).toBe(configPath);
+    // The resolution home is the config's own directory, not the audited
+    // stylesheet's — the seam resolves `dirname(configPath)`.
+    expect(dirname(configPathFor(join(sub, "card.css"))!)).toBe(parent);
+  });
+
+  it("no config anywhere up the tree — the walk is bounded at the filesystem root and returns null", () => {
+    const deep = join(tmp, "bound", "a", "b", "c");
+    mkdirSync(deep, { recursive: true });
+    expect(loadConfig(join(deep, "sheet.css"))).toBeNull();
+    expect(configPathFor(join(deep, "sheet.css"))).toBeNull();
   });
 
   it("errors when the config exists but cannot be read — never a silent skip", () => {

@@ -14,7 +14,9 @@
  * One POSITIONAL's tokens are invisible to the next — files named together on
  * a command line state no relationship, and none is invented; what crosses is
  * only what a file's own text declares, along the `@import` edges its audit
- * follows. The config beside each stylesheet governs it alone. A suppression
+ * follows. The config governing each stylesheet — the nearest
+ * `themeguard.config.json` in its directory or any directory above it —
+ * governs it alone. A suppression
  * is worth exactly the stylesheet it was recorded against — and since 0.1.11
  * that is true by DECLARATION, not by accident of where the config sits: an
  * entry may name the file it was judged against (`file`, relative to the
@@ -45,9 +47,16 @@
  * counting it; a CLI that swallowed it would undo that.
  *
  * ── The config ────────────────────────────────────────────────────────────
- * `themeguard.config.json`, OPTIONAL, is discovered NEXT TO THE STYLESHEET —
- * not the process CWD: a run names stylesheets — `themeguard <file.css>
- * [file.css…]` — and the config that governs a file is the one beside it.
+ * `themeguard.config.json`, OPTIONAL, is discovered by walking UP from the
+ * stylesheet's directory — the nearest `themeguard.config.json` at or above
+ * it, never the process CWD: a run names stylesheets — `themeguard <file.css>
+ * [file.css…]` — and the config that governs a file is the first one found on
+ * the way from its directory to the filesystem root (nearest wins, the
+ * eslint/tsconfig/.editorconfig prior). The walk is what makes one ledger
+ * govern a subtree: a config at `styles/` reaches `styles/components/` too,
+ * so the standard component-library layout is ONE config, not a copy per
+ * directory — and a config beside the stylesheet is still the first hop, so
+ * every layout the previous discovery understood is byte-identical.
  * Absent file ⇒ no suppressions: no
  * existing line of the report changes and the exit codes are unchanged — the
  * only addition is the counted `suppressed` section, printed even at zero.
@@ -159,10 +168,15 @@
  */
 
 import { readFileSync, realpathSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { dirname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { audit, type SiteScopedSuppressionEntry } from "./audit.js";
-import { ConfigError, loadConfig, type SuppressionEntry } from "./config.js";
+import {
+  ConfigError,
+  configPathFor,
+  readConfig,
+  type SuppressionEntry,
+} from "./config.js";
 import { DirectiveError, scanIgnoreDirectives } from "./directives.js";
 import { loadStylesheet } from "./load.js";
 import { resolveStylesheet } from "./resolve.js";
@@ -241,6 +255,21 @@ function fileClause(entry: SuppressionEntry): string {
 }
 
 /**
+ * Whether an unmatched entry's `file` scope resolves OUTSIDE the config's
+ * governed subtree — the seam's `fileBeyondConfigHome` annotation. Asked, not
+ * assumed: the audit carries the flag opaquely, and only config entries carry
+ * it at all, so the report narrows by its presence rather than by the entry's
+ * declared shape. `true` moves the entry out of the sibling carve-out's
+ * comfort (the config does NOT govern the file it names) and into the
+ * boundary line that states its fate instead.
+ */
+function beyondConfigHome(
+  entry: SuppressionEntry | SiteScopedSuppressionEntry,
+): boolean {
+  return "fileBeyondConfigHome" in entry && entry.fileBeyondConfigHome === true;
+}
+
+/**
  * The scalar `token` spelling of a config entry's token dimension, as
  * ` [token: --name]` — `""` for every other entry. DELIBERATELY NOT folded
  * into `scopeSuffix`: the `suppressed` line's format is pinned byte-identical
@@ -299,7 +328,8 @@ export function runCli(args: readonly string[], io: CliIo): number {
 
 /**
  * Audit ONE stylesheet: the per-file body, unchanged by how many files the
- * invocation names. Reads the file, loads the config discovered BESIDE it,
+ * invocation names. Reads the file, loads the config discovered AT OR ABOVE
+ * it (the nearest `themeguard.config.json`, per {@link configPathFor}'s walk),
  * scans its directives, audits, prints its report under its own
  * `themeguard — <path>` header, and returns that file's outcome — 1 when the
  * file carries unsuppressed findings, 0 when it is clean, 2 when it cannot be
@@ -318,17 +348,28 @@ function auditStylesheet(path: string, io: CliIo): number {
     return EXIT_ERROR;
   }
 
-  // The config, if the user wrote one, sits NEXT TO the stylesheet — not in
-  // the process CWD. A run is `themeguard <file.css>`, so the config that
-  // governs a file is the one beside it; a CWD lookup would make the same
-  // command mean different things from different directories. Absent file ⇒
-  // no suppressions — every existing line of the report is unchanged and the
-  // exit codes hold; the only addition is the counted `suppressed` section —
-  // while a present but unhonourable one ⇒ exit 2, bad usage's own contract,
-  // never a silent skip.
+  // The config governing this stylesheet is the NEAREST `themeguard.config.json`
+  // at or above it — not the process CWD, and not only the stylesheet's own
+  // directory: discovery walks up from the stylesheet's directory and stops at
+  // the first directory holding one (nearest wins — the eslint/tsconfig prior),
+  // bounded at the filesystem root. A run is `themeguard <file.css>`, so what
+  // governs a file is decided by where the file LIVES, never by wherever the
+  // command happens to be invoked from; a config beside the stylesheet is the
+  // walk's first hop, so every layout the previous discovery understood is
+  // byte-identical. Absent config anywhere up the tree ⇒ no suppressions —
+  // every existing line of the report is unchanged and the exit codes hold;
+  // the only addition is the counted `suppressed` section — while a present
+  // but unhonourable one ⇒ exit 2, bad usage's own contract, never a silent
+  // skip. ONE walk serves both halves — the entries, and the home their
+  // `file` scopes resolve against below.
   let suppressions;
+  let configDir: string | null = null;
   try {
-    suppressions = loadConfig(path);
+    const configPath = configPathFor(path);
+    if (configPath !== null) {
+      configDir = dirname(configPath);
+      suppressions = readConfig(configPath);
+    }
   } catch (error) {
     io.err(
       error instanceof ConfigError
@@ -370,8 +411,14 @@ function auditStylesheet(path: string, io: CliIo): number {
   //
   // File-scoped entries are resolved HERE, the only place that knows both
   // halves: the entry carries `file` relative to the CONFIG's own directory,
-  // and this function knows that directory (the stylesheet's — the config
-  // sits beside it). Each scoped entry is shallow-copied with the resolved
+  // and this function knows that directory — the home `configPathFor`
+  // discovered, which is the stylesheet's own directory only when the config
+  // happens to sit beside it. That is the schema's documented semantics made
+  // true in general rather than by coincidence of layout: with a config at
+  // `styles/` governing `styles/components/` too, `"file":
+  // "components/card.css"` names card.css relative to `styles/`, and the
+  // scope fires on the component file the judgement was recorded against.
+  // Each scoped entry is shallow-copied with the resolved
   // absolute path as an additive annotation, the same treatment the 0.1.4
   // site scope gave a directive; the written spelling rides along untouched,
   // so the report's ` [file: …]` clause prints what the user wrote. Entries
@@ -382,11 +429,26 @@ function auditStylesheet(path: string, io: CliIo): number {
   // governs every finding the closure produced, imported or not (whatever the
   // audited unit covers, the entry governs), while an unscoped entry governs
   // the same span by having no file axis at all.
-  const scoped = (suppressions ?? []).map((entry) =>
-    entry.file === undefined
-      ? entry
-      : { ...entry, fileResolved: resolve(dirname(path), entry.file) },
-  );
+  //
+  // The copy is also where a scope's reach is JUDGED against the config's
+  // own: a config governs its own directory and below — exactly the subtree
+  // its discovery walks down from the config's home — so an aim resolving
+  // OUTSIDE that subtree can never match any stylesheet this config governs,
+  // in this run or any other. Such an entry is annotated (`fileBeyondConfigHome`)
+  // for the report, whose `unmatched` section states that fate instead of
+  // offering retirement advice aimed at a sibling that cannot exist.
+  // In-subtree aims carry no flag at all — byte-identical to 0.1.11.
+  const scoped = (suppressions ?? []).map((entry) => {
+    if (entry.file === undefined || configDir === null) return entry;
+    const fileResolved = resolve(configDir, entry.file);
+    return {
+      ...entry,
+      fileResolved,
+      ...(fileResolved === configDir || fileResolved.startsWith(configDir + sep)
+        ? {}
+        : { fileBeyondConfigHome: true as const }),
+    };
+  });
   const report = audit(resolveStylesheet(loadStylesheet(path)), {
     suppressions: [...scoped, ...directives],
     stylesheet: resolve(path),
@@ -470,7 +532,15 @@ export function formatReport(
   // unmatchedness HERE is neither expiry nor mis-aim — it aims at a sibling
   // this config governs, and that file's report states its fate. The carve-
   // out prints only when at least one unmatched entry carries the clause, so
-  // every section it does not apply to stays byte-identical.
+  // every section it does not apply to stays byte-identical. A BOUNDARY the
+  // section also states, since config discovery reaches down a subtree: the
+  // config governs its own directory and below, so an entry whose scope
+  // resolves OUTSIDE that subtree can never be honoured by ANY run — and for
+  // it the sibling carve-out's comfort would be false. When such an entry is
+  // unmatched here, the second line below prints instead (beside the
+  // carve-out, if in-subtree aims share the section): this report is that
+  // entry's fate-statement, not a retirement advisory about a file that
+  // cannot exist.
   lines.push(`unmatched (${report.unmatchedSuppressions.length})`);
   if (report.unmatchedSuppressions.length === 0) {
     lines.push(
@@ -480,9 +550,18 @@ export function formatReport(
     lines.push(
       "  declared suppressions no finding matched. Either the defect was fixed and the judgement can be retired, or the entry never aimed at a finding that exists — the report cannot tell which.",
     );
-    if (report.unmatchedSuppressions.some((entry) => entry.file !== undefined)) {
+    if (
+      report.unmatchedSuppressions.some(
+        (entry) => entry.file !== undefined && !beyondConfigHome(entry),
+      )
+    ) {
       lines.push(
         "  an entry carrying a [file: …] clause names the stylesheet it was recorded against — for it, this report can tell: the judgement aims at that file, which this config governs too, and it neither expired here nor mis-aimed here. That file's report is the one that states its fate.",
+      );
+    }
+    if (report.unmatchedSuppressions.some((entry) => beyondConfigHome(entry))) {
+      lines.push(
+        "  an entry whose [file: …] clause resolves OUTSIDE this config's own directory can never be honoured — a config governs its own directory and below, and no run of this config audits a stylesheet beyond its reach, so this report is that entry's fate-statement: re-aim the entry inside the config's directory, or retire it.",
       );
     }
     for (const entry of report.unmatchedSuppressions) {

@@ -99,8 +99,8 @@ beforeAll(() => {
 afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 
 describe("the manifest, before anything is packed", () => {
-  it("is version 0.1.12 — 0.1.6 added the fifth rule, unresolved-reference; 0.1.7 takes one invocation over several stylesheets; 0.1.9 adds the sixth rule, cycle-reference: a var() loop is a defect, judged from the resolver's kind:\"cycle\" chains; 0.1.11 lets a config judgement name the stylesheet it was recorded against; 0.1.10 makes the audit unit the file's import closure; 0.1.12 adds the seventh rule, duplicate-declaration: a name declared twice in one scope with differing values", () => {
-    expect(manifest.version).toBe("0.1.12");
+  it("is version 0.1.13 — 0.1.6 added the fifth rule, unresolved-reference; 0.1.7 takes one invocation over several stylesheets; 0.1.9 adds the sixth rule, cycle-reference: a var() loop is a defect, judged from the resolver's kind:\"cycle\" chains; 0.1.11 lets a config judgement name the stylesheet it was recorded against; 0.1.10 makes the audit unit the file's import closure; 0.1.12 adds the seventh rule, duplicate-declaration: a name declared twice in one scope with differing values; 0.1.13 makes config discovery walk to the nearest ancestor", () => {
+    expect(manifest.version).toBe("0.1.13");
   });
 
   it("declares the bin at a path the build actually emits", () => {
@@ -268,13 +268,13 @@ describe("publication readiness", () => {
    * `dist/cli.js` above — so what is left for this test is the manifest
    * validation the dry run performs, which is what it asserts.
    */
-  it("passes `npm publish --dry-run` and reports the 0.1.12 tarball", () => {
+  it("passes `npm publish --dry-run` and reports the 0.1.13 tarball", () => {
     const output = execFileSync("npm", ["publish", "--dry-run", "--ignore-scripts"], {
       cwd: repo,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
     });
     const combined = output.toString();
-    expect(combined).toContain("themeguard@0.1.12");
+    expect(combined).toContain("themeguard@0.1.13");
   }, 300_000);
 });

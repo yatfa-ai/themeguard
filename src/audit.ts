@@ -222,6 +222,17 @@ export type SiteScopedSuppressionEntry = SuppressionEntry & SuppressionSite;
 export interface SuppressionFileScope {
   /** The entry's `file`, resolved against the config's directory. */
   readonly fileResolved: string;
+  /**
+   * REPORTING ONLY — matching never reads this. `true` when the resolved
+   * scope lies OUTSIDE the config's governed subtree (its own directory and
+   * below): the config's reach begins where the config sits, so no
+   * stylesheet any run of this config audits can make the entry match. The
+   * report's `unmatched` section uses the annotation to say that instead of
+   * offering retirement advice about a sibling that cannot exist. Absent —
+   * the key is not carried at all — for every in-subtree scope, which keeps
+   * the annotation off every entry whose aim the config can honour.
+   */
+  readonly fileBeyondConfigHome?: true;
 }
 
 /**
