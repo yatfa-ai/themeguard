@@ -965,6 +965,7 @@ describe("the audit entry point", () => {
       "duplicate-declaration",
       "family-consistency",
       "scale-collapse",
+      "unresolved-import",
       "unresolved-reference",
     ]);
     expect(empty.countsByRule.collision).toBe(0);
@@ -991,6 +992,7 @@ describe("the audit entry point", () => {
         "unresolved-reference": 4,
         "cycle-reference": 5,
         "duplicate-declaration": 6,
+        "unresolved-import": 7,
       } as const;
       return order[a] - order[b];
     }));

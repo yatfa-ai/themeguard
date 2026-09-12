@@ -59,6 +59,7 @@ const RULE_IDS: readonly RuleId[] = [
   "unresolved-reference",
   "cycle-reference",
   "duplicate-declaration",
+  "unresolved-import",
 ];
 
 /**

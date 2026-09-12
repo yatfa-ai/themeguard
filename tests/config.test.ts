@@ -14,7 +14,7 @@ import {
 } from "../src/config.js";
 import { audit } from "../src/audit.js";
 import { resolveCss } from "../src/resolve.js";
-import { FIXTURE_PATH, fixtureCss } from "./fixture.js";
+import { FIXTURE_PATH, fixtureCss, fixtureStubCss } from "./fixture.js";
 
 /**
  * `themeguard.config.json` — the suppression slice.
@@ -93,8 +93,9 @@ function cssFixture(name: string, css: string): string {
   return path;
 }
 
-/** The vendored fixture, copied out beside the repo — so a config can sit next to a copy of it without touching `tests/fixtures/` (whose census every other suite pins). */
+/** The vendored fixture, copied out beside the repo — so a config can sit next to a copy of it without touching `tests/fixtures/` (whose census every other suite pins). The copy is FAITHFUL: the stub that resolves the sheet's own `@import "./actiontext.css";` edge travels with it, or the copy's census gains an `unresolved-import` finding and stops being the 22-finding calibration report. */
 const FIXTURE_COPY = cssFixture("fixture-copy.css", fixtureCss());
+writeFileSync(join(tmp, "actiontext.css"), fixtureStubCss(), "utf8");
 const ONE_FINDING_PATH = cssFixture("one-finding.css", ONE_FINDING_CSS);
 
 afterAll(() => rmSync(tmp, { recursive: true, force: true }));
@@ -531,6 +532,7 @@ describe("audit(resolved, { suppressions }) — the additive second parameter", 
       "unresolved-reference": 0,
       "cycle-reference": 0,
       "duplicate-declaration": 0,
+      "unresolved-import": 0,
     });
     expect(report.suppressed).toEqual([]);
   });
@@ -583,6 +585,7 @@ describe("audit(resolved, { suppressions }) — the scope dimensions", () => {
       "unresolved-reference": 0,
       "cycle-reference": 0,
       "duplicate-declaration": 0,
+      "unresolved-import": 0,
     });
     expect(audit(resolved).findings.map((f) => [f.theme, f.tokens])).toEqual([
       ["root", ["--accent", "--success"]],
@@ -666,7 +669,7 @@ describe("themeguard <file.css> with themeguard.config.json beside the styleshee
     const result = run(FIXTURE_COPY);
     expect(result.stdout).toContain("collision (11)");
     expect(result.stdout).toContain("scale-collapse (2)");
-    expect(result.stdout).toContain("22 findings: 11 collision, 2 dead-token, 2 scale-collapse, 7 family-consistency, 0 unresolved-reference, 0 cycle-reference, 0 duplicate-declaration.");
+    expect(result.stdout).toContain("22 findings: 11 collision, 2 dead-token, 2 scale-collapse, 7 family-consistency, 0 unresolved-reference, 0 cycle-reference, 0 duplicate-declaration, 0 unresolved-import.");
     // Counted-not-silent, even at zero — the visible proof nothing was set aside.
     expect(result.stdout).toContain("suppressed (0)");
     expect(result.stdout).toContain(
@@ -680,6 +683,10 @@ describe("themeguard <file.css> with themeguard.config.json beside the styleshee
     mkdirSync(dir);
     const cssPath = join(dir, "fixture.css");
     writeFileSync(cssPath, fixtureCss(), "utf8");
+    // The copy is faithful: the stub resolves the sheet's own `@import
+    // "./actiontext.css";` edge, keeping the census at 22 (20 after the two
+    // deliberate hovers below are suppressed).
+    writeFileSync(join(dir, "actiontext.css"), fixtureStubCss(), "utf8");
     writeConfig(
       dir,
       JSON.stringify({
@@ -704,7 +711,7 @@ describe("themeguard <file.css> with themeguard.config.json beside the styleshee
     }
     // The counts and the total reflect the UNSUPPRESSED population only.
     expect(result.stdout).toContain(
-      "20 findings: 11 collision, 2 dead-token, 0 scale-collapse, 7 family-consistency, 0 unresolved-reference, 0 cycle-reference, 0 duplicate-declaration.",
+      "20 findings: 11 collision, 2 dead-token, 0 scale-collapse, 7 family-consistency, 0 unresolved-reference, 0 cycle-reference, 0 duplicate-declaration, 0 unresolved-import.",
     );
     // Findings remain → exit 1; suppression is not a blanket clean bill.
     expect(result.code).toBe(EXIT_FINDINGS);
@@ -843,7 +850,7 @@ describe("themeguard <file.css> with themeguard.config.json beside the styleshee
     // Root's finding moved; winter's accidental one did not.
     expect(result.stdout).toContain("collision (1)");
     expect(result.stdout).toContain("suppressed (1)");
-    expect(result.stdout).toContain("1 finding: 1 collision, 0 dead-token, 0 scale-collapse, 0 family-consistency, 0 unresolved-reference, 0 cycle-reference, 0 duplicate-declaration.");
+    expect(result.stdout).toContain("1 finding: 1 collision, 0 dead-token, 0 scale-collapse, 0 family-consistency, 0 unresolved-reference, 0 cycle-reference, 0 duplicate-declaration, 0 unresolved-import.");
     expect(result.out.some((l) => l.startsWith("  [collision] --danger and --success"))).toBe(true);
     expect(result.code).toBe(EXIT_FINDINGS);
   });

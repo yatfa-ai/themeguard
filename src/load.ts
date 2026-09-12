@@ -35,14 +35,32 @@
  *     `node_modules` walking and an exports-map reading that a source-read
  *     audit does not pretend to have. Skipped — the specifier may well resolve
  *     at build time, and guessing at it could follow a file nothing applies.
- *   - A missing or unreadable target is skipped SILENTLY: an
- *     import-resolution failure is not a finding. The audit judges colour
- *     organisation, not the integrity of the file graph, and a rule for
- *     missing files would report every bundler-handled path as a defect.
+ *     The silence here is byte-identical to v1 and stays: no bundler, build
+ *     step or browser resolves a bare specifier from the source tree, so
+ *     recording a failure would report every bundler-handled path as a defect.
+ *   - A missing or unreadable RELATIVE target is skipped — but no longer
+ *     silently. The failure was swallowed in a bare `catch { continue; }`, so
+ *     a stylesheet whose own composition could not load audited green: the
+ *     audit unit IS the import closure (since the splice below), and a failed
+ *     edge breaks the unit's own composition. Each frame now records its
+ *     failed relative edges on the sheet it returns — `UnresolvedImport`,
+ *     with the specifier as written, the statement's line, the containing
+ *     file's entry-relative origin, and the file-system classification
+ *     (`missing` / `unreadable`) — and the eighth rule judges that list. This
+ *     is loader bookkeeping, not a new cross-file theory: the tool still
+ *     invents nothing, it reads the edge the source declared and reports that
+ *     the file it names never loads. Every bundler and every browser notices
+ *     this failure; the silence was the outlier. What stays fenced: the audit
+ *     judges colour organisation, and the RULE judges the edge the source
+ *     wrote — it does not lint the file graph (no existence check of files
+ *     nothing imports), and bare/absolute/URL silence is unchanged.
  *   - A repeated edge is skipped: the visited set of resolved paths terminates
  *     cycles (`a` imports `b` imports `a`) and de-duplicates shared imports
  *     (two sheets importing one tokens file splice it once), matching how a
- *     browser de-duplicates a stylesheet already applied.
+ *     browser de-duplicates a stylesheet already applied. A cycle edge never
+ *     reaches the file system, so it is never recorded as a failure either —
+ *     a browser dedupes the applied sheet the same way, and the closure
+ *     audits.
  *
  * A media suffix does not stop a follow (`@import url("./x.css") screen;` is
  * followed like any other) — consistent with the parser's unconditional
@@ -79,13 +97,20 @@
 
 import { readFileSync } from "node:fs";
 import { dirname, relative, resolve } from "node:path";
-import { parseStylesheet, type Scope, type Stylesheet, type Reference } from "./parse.js";
+import {
+  parseStylesheet,
+  type Scope,
+  type Stylesheet,
+  type Reference,
+  type UnresolvedImport,
+} from "./parse.js";
 
 /**
  * Read `entryPath`, follow the `@import` edges its text declares, and return
  * the closure as one {@link Stylesheet} — entry scopes and references in
  * their own order, each followed file's spliced in at its statement, every
- * spliced item carrying its `origin`.
+ * spliced item carrying its `origin`, and every failed RELATIVE edge carried
+ * on `unresolvedImports`.
  */
 export function loadStylesheet(entryPath: string): Stylesheet {
   const entryAbsolute = resolve(entryPath);
@@ -105,13 +130,22 @@ export function loadStylesheet(entryPath: string): Stylesheet {
     // the LAST declaration in array order.
     const scopes: Scope[] = [];
     const references: Reference[] = [];
+    const unresolvedImports: UnresolvedImport[] = [];
     const fileDir = dirname(filePath);
+    // This frame's own entry-relative origin, in the Scope/Reference spelling:
+    // absent for the entry file, the normalized relative path for anything
+    // spliced in. Failed edges are recorded against the file whose text
+    // carries the statement — the same one-stamp-per-item discipline as the
+    // origin below, so an edge broken two hops in is named with its own
+    // from-file, never with an outer edge's target.
+    const from = filePath === entryAbsolute ? undefined : relative(entryDir, filePath);
 
     for (const imp of sheet.imports) {
       // v1 fence, restated: relative specifiers only. `./` and `../` are the
       // two prefixes that say "a file of this project, at a path relative to
       // mine"; anything else is a package (or an absolute path, or a URL) and
-      // is skipped, not guessed at.
+      // is skipped, not guessed at — and never reaches the file system, so a
+      // failed follow can only ever be a relative edge's.
       if (!imp.specifier.startsWith("./") && !imp.specifier.startsWith("../")) continue;
       const target = resolve(fileDir, imp.specifier);
       if (visited.has(target)) continue; // cycle, or shared import: splice once
@@ -119,9 +153,22 @@ export function loadStylesheet(entryPath: string): Stylesheet {
       let child: Stylesheet;
       try {
         child = load(target);
-      } catch {
-        // Missing or unreadable import target — NOT a finding. Skip silently:
-        // the audit judges colour organisation, not file-graph integrity.
+      } catch (err) {
+        // Missing or unreadable RELATIVE import target — recorded, never
+        // silent: the closure is the audit unit, and this failed edge breaks
+        // its own composition. `missing` is the file system's ENOENT; anything
+        // else that threw reading it (a directory, a permission) is
+        // `unreadable`. The skip itself is unchanged — this frame's splice
+        // simply proceeds without the child — and the eighth rule turns the
+        // record into the finding.
+        const code =
+          (err as NodeJS.ErrnoException | undefined)?.code === "ENOENT" ? "missing" : "unreadable";
+        unresolvedImports.push({
+          specifier: imp.specifier,
+          line: imp.line,
+          ...(from !== undefined ? { from } : {}),
+          code,
+        });
         continue;
       }
       // Normalized relative to the ENTRY file, so every origin in one audit
@@ -143,6 +190,11 @@ export function loadStylesheet(entryPath: string): Stylesheet {
       references.push(
         ...child.references.map((r) => (r.origin === undefined ? { ...r, origin } : r)),
       );
+      // The child's own failed edges travel with the child: they are failures
+      // of THIS closure too, and merging here keeps the final list in
+      // statement order — a child's breakage lands where its edge was
+      // written, this frame's own failures where theirs were.
+      unresolvedImports.push(...(child.unresolvedImports ?? []));
     }
 
     scopes.push(...sheet.scopes);
@@ -150,8 +202,10 @@ export function loadStylesheet(entryPath: string): Stylesheet {
 
     // The entry's OWN import list travels with the sheet: it is what the file
     // declares, even where a statement was skipped — the record of the edges
-    // the audit saw and chose not to follow.
-    return { scopes, references, imports: sheet.imports };
+    // the audit saw and chose not to follow. Beside it, the failed relative
+    // follows of the whole closure: the record of the edges the audit tried
+    // and could not.
+    return { scopes, references, imports: sheet.imports, unresolvedImports };
   };
 
   return load(entryAbsolute);

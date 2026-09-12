@@ -197,6 +197,38 @@ export interface StylesheetImport {
   readonly line: number;
 }
 
+/**
+ * A RELATIVE `@import` edge the loader FAILED to follow, as recorded by
+ * {@link loadStylesheet} — the follow's outcome, never silently discarded.
+ *
+ * Only relative specifiers (`./x.css`, `../shared/x.css`) can arrive here:
+ * bare package specifiers, absolute paths and URLs are skipped by the loader's
+ * standing fence and never reach the file system, so they are never recorded.
+ * One entry per failed EDGE, in the order the statements were attempted — an
+ * edge broken two hops in is recorded by the frame whose text carries it, with
+ * {@link from} naming that file.
+ */
+export interface UnresolvedImport {
+  /** The specifier exactly as written — quotes or a `url(…)` wrapper stripped, no resolution attempted. */
+  readonly specifier: string;
+  /** 1-based line of the `@import` statement, in the file named by {@link from}. */
+  readonly line: number;
+  /**
+   * The file whose text carries the statement, relative to the audit's entry
+   * file — the same spelling Scope/Reference `origin` writes. Absent when that
+   * file is the entry itself.
+   */
+  readonly from?: string;
+  /**
+   * Why the follow failed: `"missing"` — nothing exists at the path the
+   * specifier names (the file system's ENOENT) — or `"unreadable"` — the path
+   * exists but could not be read (a directory, a permission). The distinction
+   * is the reader's first diagnostic: a missing file is a typo or an uncommitted
+   * file; an unreadable one is the right path with the wrong thing in it.
+   */
+  readonly code: "missing" | "unreadable";
+}
+
 export interface Stylesheet {
   readonly scopes: readonly Scope[];
   /** Every `var()` use in the stylesheet, in source order. */
@@ -207,9 +239,21 @@ export interface Stylesheet {
    * CSS's own rules (every browser ignores it) and is not collected, so this
    * list is exactly what a loader is entitled to follow. Most is not all:
    * a collected import may still name a bare package specifier or a file that
-   * does not exist, both of which {@link loadStylesheet} skips.
+   * does not exist, both of which {@link loadStylesheet} skips — and since the
+   * eighth rule a failed RELATIVE follow is recorded on
+   * {@link unresolvedImports} rather than discarded, so the skip is a routing
+   * decision, never a silence.
    */
   readonly imports: readonly StylesheetImport[];
+  /**
+   * The RELATIVE edges of this closure that FAILED to follow, when the sheet
+   * was loaded by {@link loadStylesheet} — the loader's bookkeeping of every
+   * broken composition edge, so a stylesheet whose own closure cannot load
+   * reports the breakage instead of auditing green. Absent on the text-only
+   * path (`parseStylesheet`/`resolveCss` never set it — there is no file
+   * system to consult), and empty when every relative edge followed.
+   */
+  readonly unresolvedImports?: readonly UnresolvedImport[];
 }
 
 const DATA_THEME = /\[\s*data-theme\s*=\s*["']?([^"'\]]+)["']?\s*\]/;

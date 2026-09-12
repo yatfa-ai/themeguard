@@ -4,10 +4,10 @@
 > project's colour tokens are *organised* — not whether text passes contrast.
 
 > **Status: 0.1.1 — one command, and a library.** `themeguard <file.css>` audits a stylesheet from a
-> terminal, and the same seven rules are importable as functions. The package ships compiled output
+> terminal, and the same eight rules are importable as functions. The package ships compiled output
 > (`dist/`); the calibration fixture and the tests stay in this repository and out of the tarball.
 
-## The seven questions
+## The eight questions
 
 1. **Value collisions** — two variables that must differ hold byte-identical colours.
    A real one: `--app-border` equalled `--app-surface-raised`, so a panel's 1px border was literally
@@ -44,6 +44,18 @@
    scope halves a selector-list prelude (`:root, [data-theme="dark"] { … }`) yields. A cross-scope
    override — `:root` beside `[data-theme="dark"]` — is the theme system working and never fires,
    and a same-value repeat resolves to the identical cascade outcome, so it never fires either.
+8. **Unresolved imports** — a **relative `@import` whose target is missing or unreadable**. The
+   audit unit is the file's import closure, so a failed edge breaks the audited document's own
+   composition — and until this rule the failure was swallowed silently, so `@import "./toens.css";`
+   (a one-character path typo) printed `No findings.` and exited 0 while every declaration inside
+   the file it names stayed invisible to the audit. Every other tool in the chain notices the
+   breakage: postcss-import, vite and webpack error on a missing relative file at build time, and a
+   browser fails the request. The finding is one per failed edge, names the specifier exactly as
+   written, the resolution outcome (`missing` / `unreadable`) and the statement's own position —
+   cited by file when the statement lives in an imported sheet. Bare package specifiers, absolute
+   paths and URLs are still not findings (package resolution is a build step, not a source read),
+   and an import cycle is still not one either — a browser dedupes an already-applied stylesheet
+   the same way, and the closure audits.
 
 Defects like these accumulate rather than appear. Over eight months of one growing project's CSS the
 palette went 23 → 73 tokens and collisions went 0 → 7. (That figure predates the rule; running
@@ -153,6 +165,8 @@ cycle-reference (0)
 
 duplicate-declaration (0)
 
+unresolved-import (0)
+
 skipped (0)
   nothing skipped — every pair rule 3 derived was measurable.
 
@@ -169,12 +183,12 @@ coverage (2 themes, 73 base tokens)
     [inherited] --app-focus-ring-width (non-color)
     … 20 more — every base token each theme inherits, named
 
-22 findings: 11 collision, 2 dead-token, 2 scale-collapse, 7 family-consistency, 0 unresolved-reference, 0 cycle-reference, 0 duplicate-declaration.
+22 findings: 11 collision, 2 dead-token, 2 scale-collapse, 7 family-consistency, 0 unresolved-reference, 0 cycle-reference, 0 duplicate-declaration, 0 unresolved-import.
 ```
 
 Four things in that output are deliberate and worth reading.
 
-**All seven rule headings print even at zero.** A rule that reports nothing and a rule that did not run
+**All eight rule headings print even at zero.** A rule that reports nothing and a rule that did not run
 look identical if the heading is omitted, and "nothing here" reads as a pass.
 
 **`skipped` is a section, not a silence.** A pair rule 3 could not measure — a translucent member has no
@@ -220,9 +234,18 @@ What is followed, and what is deliberately not:
   document order, never per-file line numbers, which restart at 1 in every file and would silently hand the
   cascade to whichever block happened to sit deeper in its own file.
 - **Skipped, silently, and never a finding:** bare package specifiers (`@import "tailwindcss"` — package
-  resolution is a build step, not a source read), absolute paths and URLs, and missing or unreadable targets.
-  An import-resolution failure is not a defect in colour organisation, and the audit does not pretend to
-  lint the file graph.
+  resolution is a build step, not a source read), absolute paths and URLs. Their silence is deliberate
+  and unchanged: the specifier may well resolve at build time, and reporting every bundler-handled
+  path as a defect would drown the report in noise.
+- **Reported:** a **relative** specifier whose target is missing or unreadable. That failure used to be
+  swallowed silently too — so a sheet whose own composition could not load audited green, a
+  one-character path typo shipped `No findings.` at exit 0 — while every other tool in the chain
+  reports it. Since 0.1.14 the loader records each failed relative edge (with the specifier as
+  written, the statement's line, the containing file, and whether the target is `missing` or
+  `unreadable`), and rule 8, `unresolved-import`, turns the record into findings that move the exit
+  code. An edge broken two hops in is named with its own from-file. This is the boundary of the
+  audit's file-graph interest: edges the source declares are judged; files nothing imports are never
+  checked.
 - **Cycle-proof:** `a.css` importing `b.css` importing `a.css` terminates — a visited set splices each file
   once, however many edges point at it.
 - **Cited by file:** a finding whose site lives in an imported file names the file —
@@ -366,7 +389,7 @@ the line it is about — which makes it site-precise by construction:
 --app-cta: #22c55e; /* themeguard-ignore collision --app-cta --app-success -- the cta is the success colour, judged here */
 ```
 
-The grammar is one comment: the keyword, then the rule id (one of the seven), then optional `--`-prefixed
+The grammar is one comment: the keyword, then the rule id (one of the eight), then optional `--`-prefixed
 token names — the same meaning as a config entry's `tokens` set, the finding must carry every name listed
 — then a bare `--` separator and a required reason, which the report quotes back. A directive that names
 no token is legitimate: there the *site* is the judgement, and every finding of that rule living at the
@@ -499,7 +522,7 @@ const report = audit(resolveStylesheet(loadStylesheet("application.css")));
 ```
 
 Types ship with the package. Every finding carries the `evidence` behind it, so a verdict can be checked
-rather than taken — and four of the seven rules also carry `sites`, the declaration each measured token
+rather than taken — and five of the eight rules also carry `sites`, the declaration each measured token
 resolved from (`{ name, line }`), which is the same position their message ends with. It cites the
 **cascade winner**: `--app-border` is declared twice in the fixture, at `:root`'s line 41 and winter's
 line 438, and the root finding cites 41 while the winter one cites 438. `dead-token`,
@@ -526,7 +549,7 @@ The complement is on the report too: `report.unmatchedSuppressions` carries the 
 matched nothing — in declaration order, entries whole — under the same counted-not-silent discipline
 the CLI prints as its `unmatched (N)` section.
 
-Omit the second argument and the report is exactly the seven-rule audit it has always been.
+Omit the second argument and the report is exactly the eight-rule audit it has always been.
 
 ## Development
 
@@ -550,7 +573,7 @@ facts and passes no judgement, the upper one judges those facts and nothing else
 | `src/parse.ts` | Which blocks declare custom properties, in which of the four shapes — `:root`, `[data-theme=…]`, `@theme inline`, and a `prefers-color-scheme` `:root` block as its own theme — at which line, and every `var()` **use**, from every declaration rather than only the custom-property ones. |
 | `src/resolve.ts` | What each property resolves to **per theme**, following `var()` chains. Theme absence, translucency, unresolved references and cycles are each represented explicitly — none of them is an error and none is guessed at. |
 | `src/color.ts` | Colour parsing (hex 3/4/6/8, `rgb()`/`rgba()`, `hsl()`/`hsla()`, alpha throughout), WCAG relative luminance, CIE L\*, contrast ratio, source-over compositing. |
-| `src/audit.ts` | `audit(resolved)` — the seven rules in one pass, returning findings tagged `collision`, `dead-token`, `scale-collapse`, `family-consistency`, `unresolved-reference`, `cycle-reference` or `duplicate-declaration`, plus the per-theme coverage inventory. Passing `suppressions` moves caller-declared findings out of `findings` and the counts into a `suppressed` leg. |
+| `src/audit.ts` | `audit(resolved)` — the eight rules in one pass, returning findings tagged `collision`, `dead-token`, `scale-collapse`, `family-consistency`, `unresolved-reference`, `cycle-reference`, `duplicate-declaration` or `unresolved-import`, plus the per-theme coverage inventory. Passing `suppressions` moves caller-declared findings out of `findings` and the counts into a `suppressed` leg. |
 | `src/config.ts` | `themeguard.config.json` — optional, discovered at or above the stylesheet (nearest ancestor wins; a config beside the stylesheet is the first hop). Parses and validates the `suppress` entries (strictly: an unhonourable config is an error naming the entry, never a silent skip) into the structured declarations `audit()` filters a finished report by. |
 | `src/rules/` | One module per question. Each docstring carries its judgement heuristics and, more usefully, what it deliberately does **not** report. `rules/coverage.ts` also carries the coverage inventory itself — the facts rule 4 is measured over, printed by the CLI as an informational section and never an exit code. |
 | `src/cli.ts` | The command. I/O and presentation over `audit()` — no rule, no heuristic and no judgement of its own. |

@@ -23,8 +23,9 @@ import { FIXTURE_PATH, fixtureCss } from "./fixture.js";
  * tests pin the fix at every layer: the parser COLLECTS the statements, the
  * loader FOLLOWS the relative ones, the rules' lookups hit imported
  * declarations with no predicate change, and the calibration fixture's own
- * report — three bare package imports and one missing relative target, all
- * correctly skipped — keeps its numbers AND its bytes.
+ * report — three bare package imports correctly skipped and one relative
+ * target that now resolves (the comment-only `actiontext.css` stub, see
+ * fixtures/README.md) — keeps its numbers AND its bytes.
  */
 
 /** One tmpdir for the file-based tests; the CLI block works in a subdir of it, */
@@ -167,15 +168,18 @@ describe("loadStylesheet follows the relative edges and skips the rest", () => {
     expect(messagesOf(useB)).toEqual([]);
   });
 
-  it("skips a missing import target silently — an import-resolution failure is not a finding", () => {
+  it("records a missing relative import target — the rule-8 finding, beside the honest unresolved-reference", () => {
     const path = writeSheet(
       "missing.css",
       '@import "./no-such-file.css";\n\n.btn { color: var(--accent); }',
     );
-    // --accent now genuinely resolves to nothing: the one HONEST
-    // unresolved-reference stays, and no finding names the missing file.
+    // --accent still genuinely resolves to nothing: that unresolved-reference
+    // is as true as ever. What changed with rule 8 is the ROOT CAUSE now
+    // reporting too — the failed edge is named, with the specifier as
+    // written, instead of being swallowed while the sheet audited green.
     expect(messagesOf(path)).toEqual([
       "--accent is used at .btn:3 and no scope in this stylesheet declares it.",
+      '@import "./no-such-file.css" — no file exists at the path it names. The import never loads, so every declaration inside it is invisible to this audit. Declared at line 1.',
     ]);
   });
 
@@ -378,10 +382,12 @@ describe("a root-only sheet is byte-identical through the loader to today's one-
     expect(viaLoader).toEqual(viaText);
   });
 
-  it("the vendored fixture audits byte-identically through the loader — its imports all skip", () => {
-    // The census-closure fact, pinned: three bare package specifiers and one
-    // missing relative target are all correctly skipped, so the 22-finding
-    // calibration report keeps its numbers AND its bytes through the new seam.
+  it("the vendored fixture audits byte-identically through the loader — bare imports skip, the relative edge resolves", () => {
+    // The census-closure fact, pinned: three bare package specifiers are
+    // correctly skipped, and the one missing relative target now RESOLVES —
+    // the comment-only `actiontext.css` stub satisfies the edge the vendored
+    // sheet really ships (see fixtures/README.md) — so the 22-finding
+    // calibration report keeps its numbers AND its bytes through the seam.
     const viaText = audit(resolveCss(fixtureCss()));
     const viaLoader = audit(resolveStylesheet(loadStylesheet(FIXTURE_PATH)));
     expect(viaLoader.findings).toEqual(viaText.findings);

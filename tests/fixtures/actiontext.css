@@ -1,0 +1,10 @@
+/* Actiontext — a stub. */
+/* The vendored calibration stylesheet (`application.tailwind.css`) declares
+   `@import "./actiontext.css";` — an edge a real-world-copied sheet really
+   ships, and which for a while audited as the tool's own rule-8 case: a broken
+   relative edge that used to be swallowed silently and now reports. The stub
+   resolves the edge the way the sheet's original project had it, and is
+   deliberately COMMENT-ONLY (0 scopes, 0 references, 0 imports): splicing it
+   contributes nothing, so the fixture's 22-finding census keeps its numbers
+   AND its bytes. Give it real declarations and the census pins below you will
+   fail, on purpose. */

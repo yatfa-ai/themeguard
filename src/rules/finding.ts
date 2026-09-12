@@ -8,7 +8,7 @@
  * one.
  */
 
-/** Which of the seven questions a finding answers. */
+/** Which of the eight questions a finding answers. */
 export type RuleId =
   /** Two token names that must differ hold byte-identical colours. */
   | "collision"
@@ -44,7 +44,16 @@ export type RuleId =
    * name, one cascade winner) and `collision` is its mirror, not its
    * population.
    */
-  | "duplicate-declaration";
+  | "duplicate-declaration"
+  /**
+   * A RELATIVE `@import` edge the loader could not follow — the file the
+   * specifier names is missing or unreadable. The audit unit is the import
+   * closure, so a failed edge breaks the unit's own composition; the finding
+   * is `theme: null` (dead-token's stance — the edge is broken in every
+   * theme's document) and the specifier occupies the token dimension, so the
+   * ordinary suppression doors aim at it.
+   */
+  | "unresolved-import";
 
 /**
  * WHERE a finding's token was declared — the declaration the resolver actually
@@ -205,6 +214,7 @@ export function sortFindings(findings: readonly Finding[]): Finding[] {
     "unresolved-reference": 4,
     "cycle-reference": 5,
     "duplicate-declaration": 6,
+    "unresolved-import": 7,
   };
   return [...findings].sort(
     (a, b) =>

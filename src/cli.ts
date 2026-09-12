@@ -209,6 +209,7 @@ const RULE_ORDER: readonly RuleId[] = [
   "unresolved-reference",
   "cycle-reference",
   "duplicate-declaration",
+  "unresolved-import",
 ];
 
 /**

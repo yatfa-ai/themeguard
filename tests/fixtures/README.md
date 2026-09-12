@@ -28,6 +28,17 @@ sample, chosen because its defects and its measured ΔL\* comments are
 independently verifiable; the package must work on any CSS that declares custom
 properties.
 
+## `actiontext.css`
+
+A **stub**, written for this repository. The vendored sheet's line 5 declares
+`@import "./actiontext.css";` — the file that edge names existed in the source
+project but was not vendored, which made the calibration fixture itself a
+broken-relative-edge stylesheet: the exact shape rule 8 (`unresolved-import`)
+exists to report. The stub resolves the edge and is deliberately comment-only —
+zero scopes, zero references, zero imports — so splicing it contributes
+nothing and the 22-finding census keeps its numbers and its bytes.
+`tests/import-closure.test.ts` pins that byte-identity.
+
 ### Why this file is worth calibrating against
 
 * It documents its own colour measurements in comments (`"steps the fill

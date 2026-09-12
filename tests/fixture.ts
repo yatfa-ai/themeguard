@@ -10,6 +10,19 @@ export function fixtureCss(): string {
   return readFileSync(FIXTURE_PATH, "utf8");
 }
 
+/** Path of the comment-only stub that resolves the vendored sheet's
+ *  `@import "./actiontext.css";` edge (see fixtures/README.md). */
+export const FIXTURE_STUB_PATH = fileURLToPath(
+  new URL("./fixtures/actiontext.css", import.meta.url),
+);
+
+/** The stub's text, for tests that copy the fixture OUT of tests/fixtures/:
+ *  a faithful copy carries the stub beside it, or the copy's own relative
+ *  edge breaks and its census gains an `unresolved-import` finding. */
+export function fixtureStubCss(): string {
+  return readFileSync(FIXTURE_STUB_PATH, "utf8");
+}
+
 /**
  * Hand-counted census baseline for the vendored fixture, reconciled against a
  * machine count of the same file at the same commit.
