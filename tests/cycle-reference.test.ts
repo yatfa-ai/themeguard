@@ -354,7 +354,7 @@ describe("runCli — the exit code moves with the sixth rule, both ways", () => 
       "  [cycle-reference] --a → --b → --a is a var() cycle: every property in the loop, and every var() consuming a member, is invalid at computed-value time. Declared at lines 2 and 3.",
     );
     expect(result.stdout).toContain(
-      "1 finding: 0 collision, 0 dead-token, 0 scale-collapse, 0 family-consistency, 0 unresolved-reference, 1 cycle-reference.",
+      "1 finding: 0 collision, 0 dead-token, 0 scale-collapse, 0 family-consistency, 0 unresolved-reference, 1 cycle-reference, 0 duplicate-declaration.",
     );
   });
 
@@ -399,7 +399,7 @@ describe("runCli — the exit code moves with the sixth rule, both ways", () => 
 });
 
 describe("the config door — the sixth id is a valid suppression rule id", () => {
-  it("parseConfig accepts a cycle-reference entry, and the unknown-rule error names the full six", () => {
+  it("parseConfig accepts a cycle-reference entry, and the unknown-rule error names the full list", () => {
     const entries = parseConfig(
       JSON.stringify({
         suppress: [{ rule: "cycle-reference", token: "--a", reason: "judged deliberate" }],

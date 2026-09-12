@@ -99,8 +99,8 @@ beforeAll(() => {
 afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 
 describe("the manifest, before anything is packed", () => {
-  it("is version 0.1.10 — 0.1.6 added the fifth rule, unresolved-reference; 0.1.7 takes one invocation over several stylesheets; 0.1.9 adds the sixth rule, cycle-reference: a var() loop is a defect, judged from the resolver's kind:\"cycle\" chains; 0.1.11 lets a config judgement name the stylesheet it was recorded against; 0.1.10 makes the audit unit the file's import closure", () => {
-    expect(manifest.version).toBe("0.1.10");
+  it("is version 0.1.12 — 0.1.6 added the fifth rule, unresolved-reference; 0.1.7 takes one invocation over several stylesheets; 0.1.9 adds the sixth rule, cycle-reference: a var() loop is a defect, judged from the resolver's kind:\"cycle\" chains; 0.1.11 lets a config judgement name the stylesheet it was recorded against; 0.1.10 makes the audit unit the file's import closure; 0.1.12 adds the seventh rule, duplicate-declaration: a name declared twice in one scope with differing values", () => {
+    expect(manifest.version).toBe("0.1.12");
   });
 
   it("declares the bin at a path the build actually emits", () => {
@@ -164,7 +164,7 @@ describe("a project that has installed the package", () => {
     expect(result.stdout).toContain("scale-collapse (2)");
     expect(result.stdout).toContain("family-consistency (7)");
     expect(result.stdout).toContain(
-      "22 findings: 11 collision, 2 dead-token, 2 scale-collapse, 7 family-consistency, 0 unresolved-reference, 0 cycle-reference.",
+      "22 findings: 11 collision, 2 dead-token, 2 scale-collapse, 7 family-consistency, 0 unresolved-reference, 0 cycle-reference, 0 duplicate-declaration.",
     );
     expect(result.code).toBe(1);
   });
@@ -189,7 +189,7 @@ describe("a project that has installed the package", () => {
       ].join("\n"),
     );
     expect(sh(process.execPath, [script], consumer).trim()).toBe(
-      '{"collision":11,"dead-token":2,"scale-collapse":2,"family-consistency":7,"unresolved-reference":0,"cycle-reference":0}',
+      '{"collision":11,"dead-token":2,"scale-collapse":2,"family-consistency":7,"unresolved-reference":0,"cycle-reference":0,"duplicate-declaration":0}',
     );
   });
 
@@ -246,7 +246,7 @@ describe("the README, which is the tarball's only prose", () => {
   it("documents the command, the exit codes and the worked census", () => {
     expect(readme).toContain("npx themeguard path/to/application.css");
     expect(readme).toContain(
-      "22 findings: 11 collision, 2 dead-token, 2 scale-collapse, 7 family-consistency, 0 unresolved-reference, 0 cycle-reference.",
+      "22 findings: 11 collision, 2 dead-token, 2 scale-collapse, 7 family-consistency, 0 unresolved-reference, 0 cycle-reference, 0 duplicate-declaration.",
     );
     expect(readme).toMatch(/\| `0` \| The audit ran and reported nothing\. \|/);
     expect(readme).toMatch(/\| `1` \| The audit ran and reported findings\. \|/);
@@ -268,13 +268,13 @@ describe("publication readiness", () => {
    * `dist/cli.js` above — so what is left for this test is the manifest
    * validation the dry run performs, which is what it asserts.
    */
-  it("passes `npm publish --dry-run` and reports the 0.1.10 tarball", () => {
+  it("passes `npm publish --dry-run` and reports the 0.1.12 tarball", () => {
     const output = execFileSync("npm", ["publish", "--dry-run", "--ignore-scripts"], {
       cwd: repo,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
     });
     const combined = output.toString();
-    expect(combined).toContain("themeguard@0.1.10");
+    expect(combined).toContain("themeguard@0.1.12");
   }, 300_000);
 });

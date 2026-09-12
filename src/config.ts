@@ -53,6 +53,7 @@ const RULE_IDS: readonly RuleId[] = [
   "family-consistency",
   "unresolved-reference",
   "cycle-reference",
+  "duplicate-declaration",
 ];
 
 /**

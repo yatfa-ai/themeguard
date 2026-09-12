@@ -200,13 +200,13 @@ describe("themeguard <file.css> over the vendored calibration fixture", () => {
     expect(result.stdout).toContain("scale-collapse (2)");
     expect(result.stdout).toContain("family-consistency (7)");
     expect(result.stdout).toContain(
-      "22 findings: 11 collision, 2 dead-token, 2 scale-collapse, 7 family-consistency, 0 unresolved-reference, 0 cycle-reference.",
+      "22 findings: 11 collision, 2 dead-token, 2 scale-collapse, 7 family-consistency, 0 unresolved-reference, 0 cycle-reference, 0 duplicate-declaration.",
     );
   });
 
   it("prints one `[rule] message` line per finding, and 22 of them in total", () => {
     const lines = result.out.filter((l) =>
-      /^ {2}\[(collision|dead-token|scale-collapse|family-consistency|unresolved-reference|cycle-reference)\]/.test(l),
+      /^ {2}\[(collision|dead-token|scale-collapse|family-consistency|unresolved-reference|cycle-reference|duplicate-declaration)\]/.test(l),
     );
     expect(lines).toHaveLength(22);
     expect(lines.filter((l) => l.startsWith("  [collision]"))).toHaveLength(11);

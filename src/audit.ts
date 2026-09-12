@@ -1,5 +1,5 @@
 /**
- * The audit entry point — the six rules over one resolved stylesheet.
+ * The audit entry point — the seven rules over one resolved stylesheet.
  *
  * This is the stage the resolver's docstring promises: `resolve.ts` produces
  * DATA and passes no judgement, and `audit()` is where the judging happens.
@@ -15,7 +15,7 @@
  * for (const finding of report.findings) console.log(finding.message);
  * ```
  *
- * The six questions, and where each is argued:
+ * The seven questions, and where each is argued:
  *
  * | rule id | question | module |
  * |---|---|---|
@@ -25,6 +25,7 @@
  * | `family-consistency` | a theme inherits a token whose family its own declarations tune | `rules/coverage.ts` |
  * | `unresolved-reference` | a `var()` names a property no scope declares | `rules/unresolved-reference.ts` |
  * | `cycle-reference` | a `var()` chain returns to a name already on it | `rules/cycle-reference.ts` |
+ * | `duplicate-declaration` | one name is declared twice in one scope with differing values | `rules/duplicate-declaration.ts` |
  *
  * Alongside the findings, `coverage` carries the fact inventory rule 4 is
  * measured over — per theme, every base-theme token marked overridden or
@@ -68,6 +69,7 @@ import {
 } from "./rules/coverage.js";
 import { deadTokenRule } from "./rules/dead-token.js";
 import { cycleReferenceRule } from "./rules/cycle-reference.js";
+import { duplicateDeclarationRule } from "./rules/duplicate-declaration.js";
 import { unresolvedReferenceRule } from "./rules/unresolved-reference.js";
 import { scaleCollapseRule, type SkippedPair } from "./rules/scale-collapse.js";
 import { sortFindings, type Finding, type RuleId } from "./rules/finding.js";
@@ -254,7 +256,7 @@ export interface SuppressedFinding {
 }
 
 /**
- * Run all six rules over a resolved stylesheet.
+ * Run all seven rules over a resolved stylesheet.
  *
  * @param resolved the resolver's output — the facts to judge.
  * @param options optional caller declarations; omit for the plain report.
@@ -273,6 +275,7 @@ export function audit(
   const family = familyConsistencyRule(resolved, names);
   const unresolved = unresolvedReferenceRule(resolved, names);
   const cycles = cycleReferenceRule(resolved);
+  const duplicates = duplicateDeclarationRule(resolved);
 
   // Partition the sorted report: kept findings, and the ones the caller has
   // marked deliberate. The partition reads the FINDING's own fields, so it
@@ -402,6 +405,7 @@ export function audit(
     ...family,
     ...unresolved,
     ...cycles,
+    ...duplicates,
   ])) {
     const index = suppressions.findIndex((s) => matches(s, finding));
     if (index === -1) kept.push(finding);
@@ -421,6 +425,7 @@ export function audit(
       "family-consistency": kept.filter((f) => f.rule === "family-consistency").length,
       "unresolved-reference": kept.filter((f) => f.rule === "unresolved-reference").length,
       "cycle-reference": kept.filter((f) => f.rule === "cycle-reference").length,
+      "duplicate-declaration": kept.filter((f) => f.rule === "duplicate-declaration").length,
     },
     suppressed,
     // The complement, in declaration order: the caller's slots that no

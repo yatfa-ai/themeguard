@@ -8,7 +8,7 @@
  * one.
  */
 
-/** Which of the six questions a finding answers. */
+/** Which of the seven questions a finding answers. */
 export type RuleId =
   /** Two token names that must differ hold byte-identical colours. */
   | "collision"
@@ -35,7 +35,16 @@ export type RuleId =
    * base declarations (or the alias namespace) author, theme-scoped for one a
    * theme's own declarations close.
    */
-  | "cycle-reference";
+  | "cycle-reference"
+  /**
+   * A custom property is declared more than once in ONE scope with differing
+   * values. The cascade keeps the last declaration and silently discards the
+   * rest, so the file the author reads says one thing and the browser paints
+   * another — `dead-token` cannot see the shape (both halves are the same
+   * name, one cascade winner) and `collision` is its mirror, not its
+   * population.
+   */
+  | "duplicate-declaration";
 
 /**
  * WHERE a finding's token was declared — the declaration the resolver actually
@@ -195,6 +204,7 @@ export function sortFindings(findings: readonly Finding[]): Finding[] {
     "family-consistency": 3,
     "unresolved-reference": 4,
     "cycle-reference": 5,
+    "duplicate-declaration": 6,
   };
   return [...findings].sort(
     (a, b) =>
