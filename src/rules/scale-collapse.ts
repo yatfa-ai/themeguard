@@ -62,7 +62,7 @@
 
 import { deltaLstar, lstar, type Color } from "../color.js";
 import type { ResolvedStylesheet } from "../resolve.js";
-import { positionClause, type Finding, type FindingSite } from "./finding.js";
+import { positionClause, siteFromToken, type Finding, type FindingSite } from "./finding.js";
 import { TokenNames, type StatePair } from "./tokens.js";
 
 /** Below this, a step between two fills is not reliably visible. */
@@ -118,10 +118,7 @@ export function scaleCollapseRule(
       // message names them: base first, then state. Both are the theme's own
       // cascade winners — in winter the pair is measured from winter's
       // declarations, not from the `:root` ones the same names also have.
-      const sites: FindingSite[] = [
-        { name: base, line: from.line },
-        { name: state, line: to.line },
-      ];
+      const sites: FindingSite[] = [siteFromToken(base, from), siteFromToken(state, to)];
       findings.push({
         rule: "scale-collapse",
         theme,

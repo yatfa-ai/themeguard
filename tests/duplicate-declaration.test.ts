@@ -6,8 +6,9 @@ import { audit } from "../src/audit.js";
 import { parseConfig } from "../src/config.js";
 import { EXIT_FINDINGS, EXIT_OK, runCli, type CliIo } from "../src/cli.js";
 import { scanIgnoreDirectives } from "../src/directives.js";
+import { loadStylesheet } from "../src/load.js";
 import { duplicateDeclarationRule } from "../src/rules/duplicate-declaration.js";
-import { resolveCss } from "../src/resolve.js";
+import { resolveCss, resolveStylesheet } from "../src/resolve.js";
 import { fixtureCss } from "./fixture.js";
 
 /**
@@ -433,6 +434,59 @@ describe("the config door — the seventh id is a valid suppression rule id", ()
     expect((error as Error).message).toContain(
       "collision, dead-token, scale-collapse, family-consistency, unresolved-reference, cycle-reference, duplicate-declaration",
     );
+  });
+});
+
+describe("the import closure — a duplicate inside an imported file is cited BY FILE", () => {
+  /**
+   * Since 0.1.10 the audit's unit is the entry file's `@import` closure, and
+   * line numbers restart at 1 in every sheet spliced in. A duplicate living
+   * inside an imported file is still a duplicate — the two declarations share
+   * ONE scope, in one source block — but `:root:2` would point the reader at
+   * line 2 of whichever file they had open. The site is therefore cited by
+   * the file the line belongs to.
+   */
+  it("names the imported file rather than a bare selector:line", () => {
+    const dir = mkdtempSync(join(tmpdir(), "themeguard-duplicate-import-"));
+    writeFileSync(
+      join(dir, "tokens.css"),
+      ":root {\n  --accent: #FF0000;\n  --accent: #00AA00;\n}\n",
+      "utf8",
+    );
+    const entry = join(dir, "app.css");
+    writeFileSync(entry, '@import "./tokens.css";\n.btn { color: var(--accent); }\n', "utf8");
+
+    const findings = duplicateDeclarationRule(resolveStylesheet(loadStylesheet(entry)));
+    expect(findings).toHaveLength(1);
+    const [finding] = findings;
+    expect(finding?.message).toContain("#FF0000 at tokens.css:2");
+    expect(finding?.message).toContain("#00AA00 at tokens.css:3");
+    expect(finding?.message).not.toContain(":root:2");
+    expect(finding?.evidence?.["declaredIn"]).toEqual(["tokens.css:2", "tokens.css:3"]);
+
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  /**
+   * The negative that keeps the rule's scope discipline honest across the
+   * import edge: an imported `:root` and the entry file's own `:root` are two
+   * scopes, so a name each declares differently is a cascade override — the
+   * composition working — and never a duplicate, even though the two
+   * declarations now sit in one audited document.
+   */
+  it("does not fire across the import edge — two files' :root blocks are two scopes", () => {
+    const dir = mkdtempSync(join(tmpdir(), "themeguard-duplicate-cross-file-"));
+    writeFileSync(join(dir, "tokens.css"), ":root { --accent: #FF0000; }\n", "utf8");
+    const entry = join(dir, "app.css");
+    writeFileSync(
+      entry,
+      '@import "./tokens.css";\n:root { --accent: #00AA00; }\n.btn { color: var(--accent); }\n',
+      "utf8",
+    );
+
+    expect(duplicateDeclarationRule(resolveStylesheet(loadStylesheet(entry)))).toEqual([]);
+
+    rmSync(dir, { recursive: true, force: true });
   });
 });
 

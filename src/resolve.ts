@@ -78,6 +78,19 @@ export interface ResolvedToken {
   readonly missingReference: string | null;
   /** 1-based line of the declaration this token resolves from. */
   readonly line: number;
+  /**
+   * The imported file the winning declaration was spliced from — same
+   * spelling as {@link Scope.origin}: the target's path relative to the
+   * audit's ENTRY file. Set only when that declaration arrived over an
+   * `@import` edge, and absent on an entry-file declaration, which is what
+   * keeps every root-only report byte-identical. Rules cite it next to
+   * {@link line} (`tokens.css:2`) because line numbers are per-file and a
+   * bare one would point the reader into whichever file they had open.
+   *
+   * Named `importOrigin` because `origin` is taken: {@link origin} is the
+   * declared/inherited/theme-inline discriminator, a different axis.
+   */
+  readonly importOrigin?: string;
 }
 
 export interface ThemeAbsence {
@@ -122,11 +135,13 @@ const VAR_ONLY = /^var\(\s*(--[\w-]+)\s*(?:,([\s\S]*))?\)$/;
 
 interface ScopeTable {
   readonly theme: string;
-  readonly declarations: Map<string, { value: string; line: number }>;
+  readonly declarations: Map<string, { value: string; line: number; from?: string }>;
 }
 
-function tableFor(scopes: readonly Scope[]): Map<string, { value: string; line: number }> {
-  const map = new Map<string, { value: string; line: number }>();
+function tableFor(
+  scopes: readonly Scope[],
+): Map<string, { value: string; line: number; from?: string }> {
+  const map = new Map<string, { value: string; line: number; from?: string }>();
   for (const scope of scopes) {
     for (const d of scope.declarations) {
       // Last declaration wins, as the cascade does within one origin. The fold
@@ -134,8 +149,11 @@ function tableFor(scopes: readonly Scope[]): Map<string, { value: string; line: 
       // ever handed: a `prefers-color-scheme` `:root` block does not cascade
       // over the base — both blocks are live, selected by the OS setting — so
       // resolveStylesheet builds each conditioned scope into its own theme and
-      // never lets it reach here.
-      map.set(d.name, { value: d.value, line: d.line });
+      // never lets it reach here. Scopes arrive in DOCUMENT order — the
+      // loader's splice guarantees it across files — so "last" is the
+      // browser's winner, whichever file it was written in, and the winner's
+      // `from` travels with it for the rules' citations.
+      map.set(d.name, { value: d.value, line: d.line, from: scope.origin });
     }
   }
   return map;
@@ -173,7 +191,24 @@ export function resolveStylesheet(sheet: Stylesheet): ResolvedStylesheet {
   // in one `dark` table — last declaration in source order winning, exactly
   // as two `[data-theme="dark"]` blocks already did. The stable sort keeps
   // `themes` "root first, then every theme in source order" across both kinds.
-  const overrides = [...themeScopes, ...schemeScopes].sort((a, b) => a.line - b.line);
+  //
+  // "Source order" means DOCUMENT order of the merged sheet, never the bare
+  // `line` number. Since the audit's unit became the import closure, scopes
+  // arrive from many files and every file's lines restart at 1, so a line
+  // sort would silently REORDER the splice: an imported theme block sitting
+  // at line 10 would override the importing file's own line-2 restatement of
+  // the same theme — the exact inverse of how a browser resolves it, and a
+  // defect factory in both directions (a collapse reported where none exists,
+  // a real one passed over because the imported file's healthier pair was
+  // read instead). `sheet.scopes` IS document order — the loader splices
+  // imported scopes at their statements, ahead of the importing file's own —
+  // so the sort keys on that array position: for a single file it gives the
+  // same order the line sort gave, byte for byte, and across a closure it
+  // gives the browser's.
+  const documentIndex = new Map(sheet.scopes.map((s, i) => [s, i] as const));
+  const overrides = [...themeScopes, ...schemeScopes].sort(
+    (a, b) => (documentIndex.get(a) ?? 0) - (documentIndex.get(b) ?? 0),
+  );
   for (const scope of overrides) {
     const name =
       scope.kind === "root" ? (scope.colorScheme as string) : (scope.theme as string);
@@ -183,7 +218,11 @@ export function resolveStylesheet(sheet: Stylesheet): ResolvedStylesheet {
     }
     const table = themeTables.get(name) as ScopeTable;
     for (const d of scope.declarations) {
-      table.declarations.set(d.name, { value: d.value, line: d.line });
+      table.declarations.set(d.name, {
+        value: d.value,
+        line: d.line,
+        from: scope.origin,
+      });
     }
   }
   // Lookup for a theme: its own declarations, then :root, then the
@@ -195,7 +234,7 @@ export function resolveStylesheet(sheet: Stylesheet): ResolvedStylesheet {
   const lookup = (
     name: string,
     theme: string,
-  ): { value: string; line: number; origin: TokenOrigin } | null => {
+  ): { value: string; line: number; from?: string; origin: TokenOrigin } | null => {
     const own = themeTables.get(theme)?.declarations.get(name);
     if (own) return { ...own, origin: "declared" };
     if (theme !== ROOT_THEME) {
@@ -287,6 +326,7 @@ export function resolveStylesheet(sheet: Stylesheet): ResolvedStylesheet {
         chain,
         missingReference,
         line: found.line,
+        ...(found.from !== undefined ? { importOrigin: found.from } : {}),
       });
       if (found.origin === "inherited") {
         absences.push({ name, theme, inheritedValue: found.value });

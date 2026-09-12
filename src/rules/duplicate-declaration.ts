@@ -65,6 +65,12 @@
  * `evidence.shadowedValue` / `evidence.winnerValue` — a verdict checkable
  * rather than taken.
  *
+ * A site read from an imported file cites that file (`tokens.css:2`) instead
+ * of a bare `selector:line`, in `siteString`'s voice: line numbers restart at
+ * 1 in every sheet the closure splices in, so an unqualified number would
+ * point into whichever file the reader had open. Entry-file sites render the
+ * `selector:line` string they always have.
+ *
  * `evidence.declaredIn` is also what audit's site-scoped directive matching
  * reads for a rule that carries no `sites`, so a
  * `themeguard-ignore duplicate-declaration` directive binds to the finding's
@@ -82,21 +88,31 @@
 
 import type { ResolvedStylesheet } from "../resolve.js";
 import type { Finding } from "./finding.js";
+import { siteString } from "./finding.js";
 
 /** One declaration site, as the pre-fold scope records it. */
 interface Site {
   readonly selector: string;
   readonly line: number;
   readonly value: string;
+  /**
+   * The imported file this declaration was spliced from, when the scope
+   * arrived over an `@import` edge. Line numbers restart at 1 in every
+   * imported sheet, so a site that carries one is cited BY FILE
+   * (`tokens.css:2`) rather than by a bare `selector:line` pointing into
+   * whichever file the reader had open.
+   */
+  readonly origin?: string;
 }
 
 export function duplicateDeclarationRule(
   resolved: ResolvedStylesheet,
 ): Finding[] {
   // Dedupe selector-list emissions: the key is the name plus the two source
-  // positions the message names. Lines are source positions, so two scope
-  // halves producing the same key are one block, and two blocks cannot
-  // produce it.
+  // positions the message names, each qualified by the file it was read from.
+  // Lines are per-FILE source positions, so two scope halves producing the
+  // same key are one block, and two blocks — in one file or across an
+  // `@import` edge — cannot produce it.
   const emitted = new Set<string>();
   const findings: Finding[] = [];
 
@@ -107,7 +123,12 @@ export function duplicateDeclarationRule(
     const byName = new Map<string, Site[]>();
     for (const d of scope.declarations) {
       const sites = byName.get(d.name) ?? [];
-      sites.push({ selector: scope.selector, line: d.line, value: d.value });
+      sites.push({
+        selector: scope.selector,
+        line: d.line,
+        value: d.value,
+        ...(scope.origin !== undefined ? { origin: scope.origin } : {}),
+      });
       byName.set(d.name, sites);
     }
 
@@ -133,7 +154,9 @@ export function duplicateDeclarationRule(
         }
       }
 
-      const key = `${name}\u0000${shadow.line}\u0000${winner.line}`;
+      const key =
+        `${name}\u0000${shadow.origin ?? ""}\u0000${shadow.line}` +
+        `\u0000${winner.origin ?? ""}\u0000${winner.line}`;
       if (emitted.has(key)) continue;
       emitted.add(key);
 
@@ -144,10 +167,10 @@ export function duplicateDeclarationRule(
         tokens: [name],
         message:
           `${name} is declared ${times} in one scope: ${shadow.value} at ` +
-          `${shadow.selector}:${shadow.line}, shadowed by ${winner.value} at ` +
-          `${winner.selector}:${winner.line} — the later declaration silently wins.`,
+          `${siteString(shadow)}, shadowed by ${winner.value} at ` +
+          `${siteString(winner)} — the later declaration silently wins.`,
         evidence: {
-          declaredIn: sites.map((s) => `${s.selector}:${s.line}`),
+          declaredIn: sites.map(siteString),
           /** The declared values, positionally paired with `declaredIn`. */
           values: sites.map((s) => s.value),
           declarationCount: sites.length,

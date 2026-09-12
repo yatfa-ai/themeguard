@@ -81,6 +81,13 @@ Deliberately not taken: a media prelude whose condition is more than the one fea
 *part* of a compound condition is not a palette of its own; modelling that honestly needs
 condition-aware tables, which this package does not pretend to have.
 
+One file set per audit, one declared composition per file. Reference resolution does not cross files a
+human merely *listed together*: `themeguard a.css b.css` audits two independent sheets, because nothing in
+the source says how they relate, and a rule that guessed at a relationship would report defects in a
+document nobody wrote. What does cross is what the source *declares*: an `@import` edge is composition with
+CSS-defined semantics, and along it the audit reads one document — see
+[Stylesheets composed with `@import`](#stylesheets-composed-with-import).
+
 ## Install
 
 ```bash
@@ -101,9 +108,12 @@ Several stylesheets take one invocation — the positionals repeat:
 npx themeguard web/app.css admin/panel.css
 ```
 
-Each file is audited **independently**, and each prints its own report under its own
-`themeguard — <path>` header: the config beside a stylesheet governs that stylesheet alone, and
-references do not cross files — one file's tokens are invisible to the next. The invocation fails
+Each file is audited **independently** — each through its own import closure — and each prints its own
+report under its own `themeguard — <path>` header: the config beside a stylesheet governs that stylesheet
+alone, and one POSITIONAL's tokens are invisible to the next. Files named together on a command line state
+no relationship, and none is invented; the only thing that crosses is what a file's own text declares,
+along the `@import` edges
+[Stylesheets composed with `@import`](#stylesheets-composed-with-import) covers. The invocation fails
 fast on the first file that cannot be audited (unreadable, an unhonourable config beside it, a
 malformed directive in it): the reports already printed stand, and the error names the file that
 stopped the run. Otherwise the per-file outcomes aggregate into **one exit code for the
@@ -188,6 +198,52 @@ declared entries — config or directive — that no finding matched, named with
 judgement that has outlived its defect announces that instead of going silent. It prints even at zero,
 and like `skipped` and `coverage` it never moves the exit code. See
 [When a judgement matches nothing](#when-a-judgement-matches-nothing--unmatched-n).
+
+### Stylesheets composed with `@import`
+
+A stylesheet composed from others — `@import "./tokens.css";` at the top of an application sheet — is ONE
+document as far as CSS is concerned, and since 0.1.10 the audit reads it as one. `themeguard` follows the
+`@import` edges the entry file's text declares and audits the whole **import closure**: a token declared in
+an imported file is declared for the composing sheet's rules, and a token the composing sheet reaches with a
+`var()` counts as referenced in the imported file. Without this, each file's audit lied about the other —
+the composer reported every imported token as an unresolved reference, and the imported file reported its
+own tokens as dead the composer was using.
+
+What is followed, and what is deliberately not:
+
+- **Followed:** relative specifiers — `./tokens.css`, `../shared/props.css` — written either way CSS writes
+  them, `@import "./x.css";` or `@import url("./x.css");`, with or without a media suffix. Each target is
+  resolved against the directory of the file whose text carries the statement, transitively, and spliced at
+  the statement's position: imported rules first, the author's own after, so an importing file's
+  re-declaration of an imported name wins exactly as the cascade says — and the resolver reads that merged
+  document order, never per-file line numbers, which restart at 1 in every file and would silently hand the
+  cascade to whichever block happened to sit deeper in its own file.
+- **Skipped, silently, and never a finding:** bare package specifiers (`@import "tailwindcss"` — package
+  resolution is a build step, not a source read), absolute paths and URLs, and missing or unreadable targets.
+  An import-resolution failure is not a defect in colour organisation, and the audit does not pretend to
+  lint the file graph.
+- **Cycle-proof:** `a.css` importing `b.css` importing `a.css` terminates — a visited set splices each file
+  once, however many edges point at it.
+- **Cited by file:** a finding whose site lives in an imported file names the file —
+  `declared at tokens.css:3` — instead of a bare `selector:line` whose line number would point into whichever
+  file the reader had open. The same rule governs every rule's `Declared at …` clause: one finding's
+  positions can now sit in two files, so a clause containing any imported position cites each site
+  independently (`Declared at tokens.css:3 and line 7.`) rather than pooling bare line numbers that may not
+  even share a file. Sites in the entry file render exactly as they always have.
+- **Governed by the root's config:** `themeguard.config.json` sits beside the stylesheet you point the
+  command at, and an unscoped entry matches by rule, token and theme — it has no file axis at all — so one
+  judgement written beside the root governs findings living anywhere in the closure. A file-scoped entry
+  (0.1.11's `file` field) governs the same span by naming it: the stylesheet it names is the ENTRY
+  stylesheet, the closure's root, so whatever the invocation audited, the entry covers. `themeguard-ignore` directives are the opposite:
+  a judgement written at one site in one file, and they are read from the entry file's text only — so a
+  directive matches only entry-file sites, by line, and never a finding spliced in from an imported file
+  whose line merely coincides.
+
+`@import` is the one cross-file relationship that is *declared in source*, which is why it is the one that is
+followed: CSS defines the semantics, and the tool invents nothing. The genuinely unknown relationships — a
+list of files passed on a command line, a bundler's virtual sheet, a sibling file with no import edge — stay
+out of scope: `themeguard` audits one closure per invocation, and rule 5's honesty about what it cannot see
+starts at that boundary.
 
 ### Suppressing deliberate findings — `themeguard.config.json`
 
@@ -410,6 +466,16 @@ for (const finding of report.findings) {
   console.log(`[${finding.rule}] ${finding.message}`);
 }
 console.log(report.countsByRule); // { collision: 11, "dead-token": 2, "scale-collapse": 2, "family-consistency": 7, "unresolved-reference": 0, "cycle-reference": 0, "duplicate-declaration": 0 }
+```
+
+`resolveCss` audits the TEXT you hand it — no base directory is known, so `@import` statements are
+collected but not followed, and the report describes that one file. A caller with a file on disk — the
+CLI's own case — loads the import closure instead, and the same audit sees the whole composed document:
+
+```ts
+import { loadStylesheet, resolveStylesheet, audit } from "themeguard";
+
+const report = audit(resolveStylesheet(loadStylesheet("application.css")));
 ```
 
 Types ship with the package. Every finding carries the `evidence` behind it, so a verdict can be checked

@@ -99,7 +99,7 @@ beforeAll(() => {
 afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 
 describe("the manifest, before anything is packed", () => {
-  it("is version 0.1.12 — 0.1.6 added the fifth rule, unresolved-reference; 0.1.7 takes one invocation over several stylesheets; 0.1.9 adds the sixth rule, cycle-reference: a var() loop is a defect, judged from the resolver's kind:\"cycle\" chains; 0.1.11 lets a config judgement name the stylesheet it was recorded against; 0.1.12 adds the seventh rule, duplicate-declaration: a name declared twice in one scope with differing values", () => {
+  it("is version 0.1.12 — 0.1.6 added the fifth rule, unresolved-reference; 0.1.7 takes one invocation over several stylesheets; 0.1.9 adds the sixth rule, cycle-reference: a var() loop is a defect, judged from the resolver's kind:\"cycle\" chains; 0.1.11 lets a config judgement name the stylesheet it was recorded against; 0.1.10 makes the audit unit the file's import closure; 0.1.12 adds the seventh rule, duplicate-declaration: a name declared twice in one scope with differing values", () => {
     expect(manifest.version).toBe("0.1.12");
   });
 

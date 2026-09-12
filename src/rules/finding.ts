@@ -50,19 +50,52 @@ export type RuleId =
  * WHERE a finding's token was declared — the declaration the resolver actually
  * judged, not merely a place the name appears.
  *
- * `line` only, and deliberately NO selector. A theme's table is merged across
- * every scope that contributes to it, so by the time a rule reads a token there
- * is no single selector to attribute the winning declaration to; inventing one
- * would be a guess printed as a fact. `dead-token` can say `:root:402` because
- * it walks the parsed scopes itself, one declaration at a time, and never
- * consults a merged table. Adding scope attribution to the resolved tokens is a
- * resolver change, and it is not this one.
+ * `line` plus an OPTIONAL `origin`, and deliberately NO selector. A theme's
+ * table is merged across every scope that contributes to it, so by the time a
+ * rule reads a token there is no single selector to attribute the winning
+ * declaration to; inventing one would be a guess printed as a fact.
+ * `dead-token` can say `:root:402` because it walks the parsed scopes itself,
+ * one declaration at a time, and never consults a merged table. Adding scope
+ * attribution to the resolved tokens is a resolver change, and it is not this
+ * one.
+ *
+ * `origin` names the imported file the winning declaration was spliced from,
+ * in the same spelling {@link import("../parse").Scope.origin} writes it — the
+ * path relative to the audit's entry file. It exists because line numbers are
+ * per-FILE and restart at 1 in every imported sheet: once a closure is
+ * audited, two sites in one finding can sit in two files, and `line 2` beside
+ * `line 3` becomes a riddle about which file each means. A site carrying
+ * `origin` renders as `tokens.css:2`; a site without one is an entry-file
+ * declaration and renders as the bare line it always was, so no existing
+ * report changes by a byte.
  */
 export interface FindingSite {
   /** The token this position belongs to. */
   readonly name: string;
   /** 1-based line of the declaration the finding was measured from. */
   readonly line: number;
+  /**
+   * The imported file this declaration was spliced from (path relative to the
+   * audit's entry file), set only when it arrived over an `@import` edge.
+   * Absent on entry-file declarations.
+   */
+  readonly origin?: string;
+}
+
+/**
+ * Build a {@link FindingSite} from the resolved token a rule measured: the
+ * cascade winner's line, plus the file it was spliced from when the winner
+ * arrived over an `@import` edge. A token resolved from the entry file gives a
+ * site with no origin, which renders byte-identically to before — the split is
+ * {@link positionClause}'s to render, not the rule's to make.
+ */
+export function siteFromToken(
+  name: string,
+  token: { readonly line: number; readonly importOrigin?: string },
+): FindingSite {
+  return token.importOrigin === undefined
+    ? { name, line: token.line }
+    : { name, line: token.line, origin: token.importOrigin };
 }
 
 export interface Finding {
@@ -116,13 +149,50 @@ export interface Finding {
  * Duplicates are kept, deliberately: two tokens resolving from ONE declaration
  * is a fact about the stylesheet, and de-duplicating would silently break the
  * positional pairing the sentence depends on.
+ *
+ * ── Files ──────────────────────────────────────────────────────────────────
+ * Since the audit's unit became the import closure, two sites in one finding
+ * can sit in two files, and line numbers are per-file — `lines 2 and 3` could
+ * name one file or two, and the reader cannot tell. So a site that carries an
+ * `origin` is cited BY FILE, in `siteString`'s voice (`tokens.css:2`), and the
+ * moment one site in a clause carries an origin every site in it is cited
+ * independently — `line 2 and tokens.css:3` — because the collective `lines 2
+ * and 3` wording is exactly the riddle, and a bare number beside a file-cited
+ * one would quietly claim they share a file. Sites with no origin anywhere are
+ * entry-file findings, and keep the exact wording this clause has always
+ * rendered (`line 41`, `lines 41 and 33`), which is what keeps every existing
+ * report byte-identical.
  */
 export function positionClause(sites: readonly FindingSite[]): string {
-  const lines = sites.map((s) => String(s.line));
-  if (lines.length === 0) return "";
-  if (lines.length === 1) return `Declared at line ${lines[0]}.`;
-  const last = lines[lines.length - 1] as string;
-  return `Declared at lines ${lines.slice(0, -1).join(", ")} and ${last}.`;
+  if (sites.length === 0) return "";
+  if (sites.every((s) => s.origin === undefined)) {
+    if (sites.length === 1) return `Declared at line ${sites[0].line}.`;
+    const last = sites[sites.length - 1] as FindingSite;
+    return `Declared at lines ${sites
+      .slice(0, -1)
+      .map((s) => String(s.line))
+      .join(", ")} and ${last.line}.`;
+  }
+  const cited = sites.map((s) => (s.origin === undefined ? `line ${s.line}` : `${s.origin}:${s.line}`));
+  if (cited.length === 1) return `Declared at ${cited[0]}.`;
+  return `Declared at ${cited.slice(0, -1).join(", ")} and ${cited[cited.length - 1]}.`;
+}
+
+/**
+ * The `selector:line` site string dead-token and unresolved-reference render
+ * into their messages — OR, for a site that arrived over an `@import` edge,
+ * `origin:line`.
+ *
+ * The origin spelling is not decoration. Both rules read the PARSED
+ * stylesheet directly, so their sites can name a declaration or a use inside
+ * an imported file — and `:root:2` would then point the reader at line 2 of
+ * whichever file they happened to have open. Citing the file the line belongs
+ * to (`tokens.css:2`) is the difference between a citation and a riddle. A
+ * root-file site carries no origin and keeps the exact string it has always
+ * rendered, so no existing report changes by a byte.
+ */
+export function siteString(site: { selector: string; line: number; origin?: string }): string {
+  return site.origin === undefined ? `${site.selector}:${site.line}` : `${site.origin}:${site.line}`;
 }
 
 /** Sort into a stable reading order: rule, then theme, then tokens. */

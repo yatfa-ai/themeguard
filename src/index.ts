@@ -23,6 +23,17 @@
  * }
  * ```
  *
+ * `resolveCss` audits TEXT — no base directory is known, so `@import`
+ * statements are collected but not followed. A caller with a FILE — the usual
+ * case, and the CLI's — loads the file's import closure instead, and the same
+ * audit sees the one document CSS says the sheet is:
+ *
+ * ```ts
+ * import { loadStylesheet, resolveStylesheet, audit } from "themeguard";
+ *
+ * const report = audit(resolveStylesheet(loadStylesheet("application.css")));
+ * ```
+ *
  * The same seven rules are also a command: `themeguard <file.css>` (see
  * `cli.ts`), which is I/O and presentation over exactly this `audit()` call and
  * adds no judgement of its own.
@@ -41,6 +52,7 @@ export type { SuppressionEntry } from "./config.js";
 export {
   sortFindings,
   positionClause,
+  siteFromToken,
   type Finding,
   type FindingSite,
   type RuleId,
@@ -94,7 +106,10 @@ export {
   type Scope,
   type ScopeKind,
   type Stylesheet,
+  type StylesheetImport,
 } from "./parse.js";
+
+export { loadStylesheet } from "./load.js";
 
 export {
   resolveCss,
