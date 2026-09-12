@@ -67,7 +67,7 @@
  * number would point into whichever file the reader had open. That
  * stylesheet-wide stance stays true of THIS rule's findings: what a
  * theme-scoped question looks like when the name DOES exist somewhere is rule
- * 8's to answer, at the per-theme grain the resolver's theme-keyed `lookup`
+ * 9's to answer, at the per-theme grain the resolver's theme-keyed `lookup`
  * already models.
  *
  * One KNOWN FALSE POSITIVE, named rather than left for a user to discover: an
