@@ -109,12 +109,13 @@ npx themeguard web/app.css admin/panel.css
 ```
 
 Each file is audited **independently** — each through its own import closure — and each prints its own
-report under its own `themeguard — <path>` header: the config beside a stylesheet governs that stylesheet
-alone, and one POSITIONAL's tokens are invisible to the next. Files named together on a command line state
+report under its own `themeguard — <path>` header: the config governing a stylesheet — the nearest
+`themeguard.config.json` beside it or above it — governs that stylesheet alone, and one POSITIONAL's
+tokens are invisible to the next. Files named together on a command line state
 no relationship, and none is invented; the only thing that crosses is what a file's own text declares,
 along the `@import` edges
 [Stylesheets composed with `@import`](#stylesheets-composed-with-import) covers. The invocation fails
-fast on the first file that cannot be audited (unreadable, an unhonourable config beside it, a
+fast on the first file that cannot be audited (unreadable, an unhonourable config beside it or above it, a
 malformed directive in it): the reports already printed stand, and the error names the file that
 stopped the run. Otherwise the per-file outcomes aggregate into **one exit code for the
 invocation**, precedence `2 > 1 > 0` — any file errored, `2`; else any file reported unsuppressed
@@ -189,9 +190,9 @@ sense; the findings are the judgement, the inventory is what they are judged aga
 
 **`suppressed` is what you, not the tool, decided.** The section headline prints even at zero, under the
 same discipline as `skipped` and `coverage` — an empty `suppressed` section is the visible proof that
-nothing was set aside. When a `themeguard.config.json` sits beside the stylesheet (see the next section),
-its findings move here with their reasons quoted: out of the counts and the exit code by declaration,
-never by silence.
+nothing was set aside. When a `themeguard.config.json` governs the stylesheet — beside it, or the nearest
+one in a directory above (see the next section) — its findings move here with their reasons quoted: out of
+the counts and the exit code by declaration, never by silence.
 
 **`unmatched` is what your judgements have to say about this run.** The complement of `suppressed`:
 declared entries — config or directive — that no finding matched, named with their reasons so a
@@ -231,9 +232,10 @@ What is followed, and what is deliberately not:
   independently (`Declared at tokens.css:3 and line 7.`) rather than pooling bare line numbers that may not
   even share a file. Sites in the entry file render exactly as they always have.
 - **Governed by the root's config:** `themeguard.config.json` sits beside the stylesheet you point the
-  command at, and an unscoped entry matches by rule, token and theme — it has no file axis at all — so one
-  judgement written beside the root governs findings living anywhere in the closure. A file-scoped entry
-  (0.1.11's `file` field) governs the same span by naming it: the stylesheet it names is the ENTRY
+  command at — or at the nearest directory above it holding one — and an unscoped entry matches by rule,
+  token and theme — it has no file axis at all — so one judgement written beside the root governs findings
+  living anywhere in the closure. A file-scoped entry (0.1.11's `file` field) governs the same span by
+  naming it: the stylesheet it names is the ENTRY
   stylesheet, the closure's root, so whatever the invocation audited, the entry covers. `themeguard-ignore` directives are the opposite:
   a judgement written at one site in one file, and they are read from the entry file's text only — so a
   directive matches only entry-file sites, by line, and never a finding spliced in from an imported file
@@ -250,7 +252,8 @@ starts at that boundary.
 The audit is calibrated to report what it measures, not what it approves of — so a real stylesheet that
 documents its own deliberate choices (a hover intentionally a hair off its resting colour, a warning fill
 that legitimately equals its border) reports them every run. To agree with the audit *with exceptions*,
-put a `themeguard.config.json` **next to the stylesheet**:
+put a `themeguard.config.json` **next to the stylesheet** — or in the nearest directory above it that
+holds one:
 
 ```json
 {
@@ -275,7 +278,8 @@ Scoped entries — a deliberate collision pair in one theme, and nothing else:
 }
 ```
 
-A file-scoped entry — a judgement recorded against one stylesheet of a directory that shares one config:
+A file-scoped entry — a judgement recorded against one stylesheet of a directory that shares one config
+(the config may sit in the stylesheet's own directory, or any directory above it — see Discovery below):
 
 ```json
 {
@@ -310,8 +314,15 @@ is what makes a shared-config directory honest: when `styles/` keeps one `themeg
 `tokens.css` and `buttons.css`, an entry with `"file": "tokens.css"` suppresses the brand collision it
 was written about and says nothing about buttons.css's findings — the header's own sentence, "a
 suppression is worth exactly the file it was recorded against", true by declaration rather than by
-accident of where the config sits. `file` must be RELATIVE — an absolute path would make the same config
-mean different things from different checkouts, so it exits `2` naming the entry, as would an empty or
+accident of where the config sits. The config's directory is where the spelling is anchored, wherever
+discovery found it: with the ledger at `styles/` governing `styles/components/` too, `"file":
+"components/card.css"` names card.css relative to `styles/`, and fires on the component file the
+judgement was recorded against. That home is also the field's boundary: a config governs its own
+directory and below, so a scope naming a file OUTSIDE that subtree can never be honoured — no stylesheet
+any run of this config audits sits beyond its reach — and the `unmatched` section says so rather than
+offering retirement advice about a file that cannot exist. `file` must be RELATIVE — an absolute path
+would make the same config mean different things from different checkouts, so it exits `2` naming the
+entry, as would an empty or
 non-string one. Omitted keys are the unscoped reading: `token` alone, no `theme`, no `file` — exactly
 what one-line configs have always meant. A scoped entry says so in the report, where its finding is
 printed:
@@ -328,13 +339,18 @@ much — would leave you believing a finding was marked deliberate when it was r
 malformed `file` — empty, non-string, or ABSOLUTE — is the same refusal, for the same reason: the field
 must mean the same stylesheet from every checkout this config travels through.
 
-**Discovery is stylesheet-adjacent, deliberately.** The config is read from the directory of the
-stylesheet you point the command at — not from the process working directory — so the same command means
-the same thing no matter where it is invoked from, and a project can keep one config beside its built CSS
-(or one per stylesheet directory) instead of relying on wherever the shell happens to be standing. No
-config file beside the stylesheet means no suppression at all: no existing line of the report changes,
-the exit codes are unchanged, and the only difference from a run without the feature is the counted
-`suppressed` section appended at zero — with its `unmatched` complement beside it, also at zero.
+**Discovery is nearest-ancestor, deliberately.** The config is found by walking UP from the directory of
+the stylesheet you point the command at — that directory first, then each parent, bounded at the
+filesystem root — and the FIRST `themeguard.config.json` on that walk governs. Nearest wins, the
+`eslint`/`tsconfig`/`.editorconfig` prior, and never the process working directory — so the same command
+means the same thing no matter where it is invoked from. The walk is what lets one ledger govern a
+SUBTREE: a config at `styles/` reaches `styles/components/` too, so the standard component-library layout
+(theme tokens at the root, components one directory down) is one config, not a copy per directory — and a
+config beside the stylesheet is still the walk's first hop, so every layout that put it there keeps
+byte-identical behaviour, shadowing anything an ancestor might carry. No config anywhere up the tree
+means no suppression at all: no existing line of the report changes, the exit codes are unchanged, and
+the only difference from a run without the feature is the counted `suppressed` section appended at zero —
+with its `unmatched` complement beside it, also at zero.
 
 ### Marking it at the site — `/* themeguard-ignore … */`
 
@@ -408,7 +424,10 @@ third reading since `file` scopes exist: an entry carrying a ` [file: …]` clau
 because it was recorded against ANOTHER stylesheet, which this config governs too. When the section
 holds such an entry, a line beside the prose says exactly that, and names the file the clause names —
 the judgement is neither retireable on this report's word nor unaccounted for: the file it aims at is
-the one whose report states its fate.
+the one whose report states its fate. One boundary the config itself cannot cross, and the section
+states it too: a config governs its own directory and below, so a scope naming a file OUTSIDE that
+subtree can never be honoured by any run — for such an entry the report says exactly that, and that
+report is the fate-statement: re-aim the entry inside the config's directory, or retire it.
 
 **The section prints even at zero.** An empty section is the proof that every recorded judgement is
 still doing work, and a section that vanished at zero would reproduce exactly the silence this exists to
@@ -441,7 +460,8 @@ Over one invocation naming several stylesheets, these codes **aggregate per invo
 precedence `2 > 1 > 0`: if any file errored, the invocation exits `2` — fail-fast, with the reports the
 files before it already printed left standing and the error naming the file that stopped the run; else
 if any file reported unsuppressed findings, it exits `1`; else `0`. Each file is still audited on its own
-terms — the config beside it governs it, and its report is its own — the aggregation is the invocation's
+terms — the config governing it, beside it or above it, is its ledger and its report is its own — the
+aggregation is the invocation's
 one verdict over all of them.
 
 Suppression moves a finding between those codes **by declaration**: what a `themeguard.config.json`
@@ -531,7 +551,7 @@ facts and passes no judgement, the upper one judges those facts and nothing else
 | `src/resolve.ts` | What each property resolves to **per theme**, following `var()` chains. Theme absence, translucency, unresolved references and cycles are each represented explicitly — none of them is an error and none is guessed at. |
 | `src/color.ts` | Colour parsing (hex 3/4/6/8, `rgb()`/`rgba()`, `hsl()`/`hsla()`, alpha throughout), WCAG relative luminance, CIE L\*, contrast ratio, source-over compositing. |
 | `src/audit.ts` | `audit(resolved)` — the seven rules in one pass, returning findings tagged `collision`, `dead-token`, `scale-collapse`, `family-consistency`, `unresolved-reference`, `cycle-reference` or `duplicate-declaration`, plus the per-theme coverage inventory. Passing `suppressions` moves caller-declared findings out of `findings` and the counts into a `suppressed` leg. |
-| `src/config.ts` | `themeguard.config.json` — optional, discovered beside the stylesheet. Parses and validates the `suppress` entries (strictly: an unhonourable config is an error naming the entry, never a silent skip) into the structured declarations `audit()` filters a finished report by. |
+| `src/config.ts` | `themeguard.config.json` — optional, discovered at or above the stylesheet (nearest ancestor wins; a config beside the stylesheet is the first hop). Parses and validates the `suppress` entries (strictly: an unhonourable config is an error naming the entry, never a silent skip) into the structured declarations `audit()` filters a finished report by. |
 | `src/rules/` | One module per question. Each docstring carries its judgement heuristics and, more usefully, what it deliberately does **not** report. `rules/coverage.ts` also carries the coverage inventory itself — the facts rule 4 is measured over, printed by the CLI as an informational section and never an exit code. |
 | `src/cli.ts` | The command. I/O and presentation over `audit()` — no rule, no heuristic and no judgement of its own. |
 

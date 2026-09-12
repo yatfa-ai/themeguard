@@ -3,11 +3,16 @@
  *
  * A user who agrees with the audit but disagrees with ONE finding needs a way
  * to record that agreement-with-an-exception, or adoption is
- * fix-everything-or-abandon. The config is OPTIONAL and discovered NEXT TO THE
- * STYLESHEET (not the process CWD): a run is `themeguard <file.css>`, so the
- * config that governs a file is the one beside it — deterministic for the
- * "point it at a file" usage, and independent of wherever the command happens
- * to be invoked from. An absent file changes nothing at all.
+ * fix-everything-or-abandon. The config is OPTIONAL and discovered by walking
+ * UP from the stylesheet's directory — the FIRST directory on the way to the
+ * filesystem root that holds one governs (nearest wins, the
+ * eslint/tsconfig/.editorconfig prior), never the process CWD: a run is
+ * `themeguard <file.css>`, so what governs a file is decided by where the file
+ * LIVES, independent of wherever the command happens to be invoked from. The
+ * walk is what lets one ledger govern a subtree — a config at `styles/`
+ * reaches `styles/components/` too, so the standard component-library layout
+ * (theme tokens at the root, components one directory down) is ONE config, not
+ * a copy per directory. No config anywhere up the tree changes nothing at all.
  *
  * The entries are STRUCTURED — a rule id and a token dimension (a scalar
  * `token`, or a `tokens` set the finding must carry in full), optionally
@@ -38,11 +43,11 @@
  * error.
  */
 
-import { readFileSync } from "node:fs";
-import { dirname, isAbsolute, join } from "node:path";
+import { readFileSync, statSync } from "node:fs";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import type { RuleId } from "./rules/finding.js";
 
-/** The file name, discovered beside the stylesheet. */
+/** The file name, discovered at or above the stylesheet — nearest ancestor wins. */
 export const CONFIG_FILENAME = "themeguard.config.json";
 
 /** Every rule id a suppression entry may name. */
@@ -103,8 +108,12 @@ export interface SuppressionEntry {
    * different things from different checkouts, so it is a validation error,
    * not a shape. Optional: `undefined` (the key absent) keeps the
    * whole-config reading — the CLI resolves the field against the config's
-   * own directory before matching, so the same relative spelling means the
-   * same file wherever the checkout lives.
+   * own directory — the home discovery found, which may sit above the
+   * stylesheet — before matching, so the same relative spelling means the
+   * same file wherever the checkout lives. That home is also this field's
+   * boundary: a config governs its own directory and below, so a scope
+   * naming a file outside that subtree can never be honoured, and the
+   * report says so.
    */
   readonly file?: string;
   /** Why this finding is deliberate — printed verbatim in the report. */
@@ -128,14 +137,55 @@ function isObject(value: unknown): value is Record<string, unknown> {
 }
 
 /**
- * Read `themeguard.config.json` from the directory of `cssPath` and return its
- * suppression entries, or `null` when there is no config file. Any other
- * failure to read — a config that exists but cannot be read — throws, as does
- * any malformed content: both are things the user wrote and must hear about.
+ * The config governing `cssPath`: walk UP from the stylesheet's directory —
+ * that directory first, then each parent, bounded at the filesystem root —
+ * and return the first `themeguard.config.json` found, or `null` when no
+ * directory up the tree holds one. NEAREST wins: a config beside the
+ * stylesheet shadows any ancestor's, which is also why every layout the
+ * previous discovery understood — the config in the stylesheet's own
+ * directory — behaves byte-identically (it is the walk's first hop). This is
+ * the ecosystem's strongest default, the eslint/tsconfig/.editorconfig prior.
+ *
+ * The error contract is the read's own, lifted to the walk: a candidate the
+ * walk cannot even STAT — a directory along the way that refuses the lookup,
+ * anything other than a clean absence — is an ERROR naming the candidate,
+ * never a silent skip. The bound, by contrast, is honest and quiet: the
+ * filesystem root is where "nearest ancestor" ends, and reaching it having
+ * found nothing is the answer `null`, not a failure.
  */
-export function loadConfig(cssPath: string): readonly SuppressionEntry[] | null {
-  const path = join(dirname(cssPath), CONFIG_FILENAME);
+export function configPathFor(cssPath: string): string | null {
+  let dir = dirname(resolve(cssPath));
+  for (;;) {
+    const candidate = join(dir, CONFIG_FILENAME);
+    try {
+      statSync(candidate);
+    } catch (error) {
+      if ((error as { code?: string }).code !== "ENOENT") {
+        throw new ConfigError(
+          candidate,
+          `could not be read — ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+      const parent = dirname(dir);
+      if (parent === dir) return null; // the filesystem root — no config anywhere up the tree
+      dir = parent;
+      continue;
+    }
+    return candidate;
+  }
+}
 
+/**
+ * Read and parse the config at a path {@link configPathFor} already found —
+ * the half {@link loadConfig} composes with the walk. Separated because the
+ * CLI needs the discovery home and the entries from ONE walk, not two: it
+ * resolves `file` scopes against the found config's directory, so it asks for
+ * the path and the entries as one answer. A file deleted between discovery
+ * and read is `null`, the same answer discovery would have given; any other
+ * read failure, and any malformed content, throw exactly as in
+ * {@link loadConfig} — things the user wrote and must hear about.
+ */
+export function readConfig(path: string): readonly SuppressionEntry[] | null {
   let raw: string;
   try {
     raw = readFileSync(path, "utf8");
@@ -149,6 +199,19 @@ export function loadConfig(cssPath: string): readonly SuppressionEntry[] | null 
   }
 
   return parseConfig(raw, path);
+}
+
+/**
+ * Discover `themeguard.config.json` the way {@link configPathFor} walks — the
+ * stylesheet's directory first, then each parent, bounded at the filesystem
+ * root — and return the nearest one's suppression entries, or `null` when no
+ * directory up the tree holds a config. Any other failure to read — a config
+ * that exists but cannot be read — throws, as does any malformed content:
+ * both are things the user wrote and must hear about.
+ */
+export function loadConfig(cssPath: string): readonly SuppressionEntry[] | null {
+  const path = configPathFor(cssPath);
+  return path === null ? null : readConfig(path);
 }
 
 /**

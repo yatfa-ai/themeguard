@@ -27,8 +27,11 @@ import { resolveCss } from "../src/resolve.js";
  *     stylesheet; an entry without one matches everything, which is today's
  *     semantics byte for byte.
  *   - the CLI owns the resolution: `file` is relative to the config's own
- *     directory and is resolved there before matching, and the report's
- *     clause prints the spelling AS WRITTEN.
+ *     directory — the home discovery found, which may sit above the
+ *     stylesheet — and is resolved there before matching, and the report's
+ *     clause prints the spelling AS WRITTEN. A scope resolving OUTSIDE the
+ *     config's directory-and-below can never be honoured, and the report says
+ *     so.
  *   - the fixtures under `tests/fixtures/styles/` own the flagship shape:
  *     one shared config, one suppressed file, one sibling that reports with
  *     the entry named as aimed-elsewhere.
@@ -340,6 +343,171 @@ describe("an unscoped config in a shared directory keeps 0.1.7's whole-config re
       expect(report.join("\n")).not.toContain("[file:");
       expect(report).toContain("unmatched (0)");
     }
+  });
+});
+
+/*
+ * ── The U1 family flagship: ONE ledger over a subtree ─────────────────────
+ * `styles/` holds the config and tokens.css; `styles/components/` holds the
+ * components — the standard component-library layout, and exactly the shape
+ * one ledger could not govern before the nearest-ancestor walk: each
+ * component file discovered NO config at all, and a file scope naming
+ * `components/card.css` matched nothing anywhere while tokens.css's report
+ * claimed the config governed that file too. Now the walk from components/
+ * finds the ledger above, the scope resolves against the CONFIG's home, and
+ * every half of the old falsehood has a true reading to point at.
+ */
+const SUBTREE_DIR = join(tmp, "subtree");
+const SUBTREE_COMPONENTS = join(SUBTREE_DIR, "components");
+mkdirSync(SUBTREE_COMPONENTS, { recursive: true });
+writeFileSync(
+  join(SUBTREE_DIR, "themeguard.config.json"),
+  JSON.stringify({
+    suppress: [
+      {
+        rule: "collision",
+        tokens: ["--accent", "--primary"],
+        file: "components/card.css",
+        reason: "card's brand equality, one ledger for the whole family",
+      },
+    ],
+  }),
+  "utf8",
+);
+const SUBTREE_TOKENS = join(SUBTREE_DIR, "tokens.css");
+writeFileSync(SUBTREE_TOKENS, BRAND_CSS, "utf8");
+const SUBTREE_CARD = join(SUBTREE_COMPONENTS, "card.css");
+writeFileSync(SUBTREE_CARD, BRAND_CSS, "utf8");
+const SUBTREE_BADGE = join(SUBTREE_COMPONENTS, "badge.css");
+writeFileSync(
+  SUBTREE_BADGE,
+  `:root {
+  --ink: #101010;
+  --paper: #FAFAFA;
+}
+
+body { color: var(--ink); background: var(--paper); }
+`,
+  "utf8",
+);
+
+describe("one ledger over a subtree — the nearest-ancestor walk (the U1 flagship)", () => {
+  it("the boundary-crossing file scope FIRES on card.css — the config above it is found, and the scope resolves against the config's home", () => {
+    const result = run(SUBTREE_TOKENS, SUBTREE_CARD, SUBTREE_BADGE);
+    // tokens.css's own collision is NOT covered — the entry aims at card.css
+    // — so the invocation still exits 1 on exactly the file that stays red.
+    expect(result.code).toBe(EXIT_FINDINGS);
+    expect(result.stderr).toBe("");
+
+    const cardReport = reportFor(result.out, `themeguard — ${SUBTREE_CARD}`, `themeguard — ${SUBTREE_BADGE}`);
+    expect(cardReport).toContain("collision (0)");
+    expect(cardReport).toContain("suppressed (1)");
+    expect(cardReport).toContain(
+      `  [suppressed] [collision] --accent and --primary both resolve to #16A34A in theme "root". They are separate roles, and no other theme declares them apart, so nothing here shows the equality is intended. Declared at lines 3 and 4. — "card's brand equality, one ledger for the whole family" [tokens: --accent, --primary] [file: components/card.css]`,
+    );
+    expect(cardReport).toContain("unmatched (0)");
+    expect(cardReport).toContain("No findings.");
+
+    // Components green: badge.css shares the ledger and carries no defect of
+    // its own. The ledger's entry still prints as unmatched HERE — an entry
+    // that matched nothing on THIS file is named on this file's report, under
+    // the same carve-out that keeps it from reading as retireable.
+    const badgeReport = reportFor(result.out, `themeguard — ${SUBTREE_BADGE}`, "");
+    expect(badgeReport).toContain("collision (0)");
+    expect(badgeReport).toContain("suppressed (0)");
+    expect(badgeReport).toContain("unmatched (1)");
+    expect(badgeReport.join("\n")).toContain("which this config governs too");
+    expect(badgeReport).toContain(
+      `  [unmatched] [collision] — "card's brand equality, one ledger for the whole family" [tokens: --accent, --primary] [file: components/card.css]`,
+    );
+    expect(badgeReport).toContain("No findings.");
+  });
+
+  it("tokens.css renders the entry unmatched-AND-TRUE — the carve-out prose is finally accurate, the config DOES govern the file the scope names", () => {
+    const result = run(SUBTREE_TOKENS);
+    expect(result.code).toBe(EXIT_FINDINGS);
+    expect(result.stdout).toContain("collision (1)");
+    expect(result.stdout).toContain("suppressed (0)");
+    expect(result.stdout).toContain("unmatched (1)");
+    expect(result.stdout).toContain(
+      "  an entry carrying a [file: …] clause names the stylesheet it was recorded against — for it, this report can tell: the judgement aims at that file, which this config governs too, and it neither expired here nor mis-aimed here. That file's report is the one that states its fate.",
+    );
+    expect(result.stdout).toContain(
+      `  [unmatched] [collision] — "card's brand equality, one ledger for the whole family" [tokens: --accent, --primary] [file: components/card.css]`,
+    );
+  });
+});
+
+/*
+ * ── An unscoped entry reaches the subtree too ─────────────────────────────
+ * The other half of U1: before the walk, an unscoped entry governed ONLY the
+ * file beside the config, and every component file was audited with no
+ * suppression at all. Now the whole subtree reads the same ledger.
+ */
+const REACH_DIR = join(tmp, "reach");
+const REACH_COMPONENTS = join(REACH_DIR, "components");
+mkdirSync(REACH_COMPONENTS, { recursive: true });
+writeFileSync(
+  join(REACH_DIR, "themeguard.config.json"),
+  JSON.stringify({
+    suppress: [{ rule: "dead-token", token: "--unused", reason: "reserved in every descendant" }],
+  }),
+  "utf8",
+);
+const REACH_BUTTON = join(REACH_COMPONENTS, "button.css");
+writeFileSync(REACH_BUTTON, DEAD_CSS, "utf8");
+
+describe("an unscoped ledger above the stylesheet governs the component file too", () => {
+  it("a components stylesheet finds the config ABOVE it and its unscoped entry suppresses", () => {
+    const result = run(REACH_BUTTON);
+    expect(result.code).toBe(EXIT_OK);
+    expect(result.stdout).toContain("dead-token (0)");
+    expect(result.stdout).toContain("suppressed (1)");
+    expect(result.stdout).toContain(`— "reserved in every descendant"`);
+    expect(result.stdout).toContain("unmatched (0)");
+  });
+});
+
+/*
+ * ── A scope pointing OUTSIDE the config's subtree ──────────────────────────
+ * A config governs its own directory and below — exactly what its discovery
+ * walks. An entry aiming outside that subtree can never be honoured, and the
+ * report says so instead of offering sibling comfort that would be false.
+ */
+const OUTSIDE_DIR = join(tmp, "outside");
+mkdirSync(OUTSIDE_DIR, { recursive: true });
+writeFileSync(
+  join(OUTSIDE_DIR, "themeguard.config.json"),
+  JSON.stringify({
+    suppress: [
+      {
+        rule: "collision",
+        tokens: ["--accent", "--primary"],
+        file: "../elsewhere/tokens.css",
+        reason: "aimed beyond the subtree",
+      },
+    ],
+  }),
+  "utf8",
+);
+const OUTSIDE_SHEET = join(OUTSIDE_DIR, "sheet.css");
+writeFileSync(OUTSIDE_SHEET, BRAND_CSS, "utf8");
+
+describe("a file scope pointing OUTSIDE the config's directory can never be honoured — and the report says so", () => {
+  it("the entry is unmatched with the boundary prose, never the sibling carve-out", () => {
+    const result = run(OUTSIDE_SHEET);
+    expect(result.code).toBe(EXIT_FINDINGS);
+    expect(result.stdout).toContain("collision (1)");
+    expect(result.stdout).toContain("unmatched (1)");
+    expect(result.stdout).toContain(
+      `  [unmatched] [collision] — "aimed beyond the subtree" [tokens: --accent, --primary] [file: ../elsewhere/tokens.css]`,
+    );
+    expect(result.stdout).toContain(
+      "  an entry whose [file: …] clause resolves OUTSIDE this config's own directory can never be honoured — a config governs its own directory and below, and no run of this config audits a stylesheet beyond its reach, so this report is that entry's fate-statement: re-aim the entry inside the config's directory, or retire it.",
+    );
+    // The sibling carve-out would be FALSE here — the config does not govern
+    // the file the scope names — so its comfort is withheld entirely.
+    expect(result.stdout).not.toContain("which this config governs too");
   });
 });
 
