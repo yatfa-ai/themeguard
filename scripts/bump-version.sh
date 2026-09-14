@@ -13,9 +13,10 @@
 # bump, commit "bump: X -> Y", pull --rebase + push with up to 3 retries.
 #
 # Themeguard's analogue of yatfa's pre-bump migration check: a red main must
-# not burn a version. typecheck + test run BEFORE the bump commit, so a failed
-# gate leaves main untouched (the version is not spent on a release that
-# cannot ship) and the operator fixes main instead of re-running past a tag.
+# not burn a version. The gate runs against the BUMPED tree, not the pre-bump
+# one — the first release attempt died exactly there, on a suite that pinned
+# the version the bump had just changed — and a red gate restores
+# package.json, leaving main exactly as it was.
 #
 # When run inside GitHub Actions (GITHUB_OUTPUT set), exports `version` and
 # `tag` to the step's job outputs. Locally it just prints the new version.
@@ -33,13 +34,6 @@ if [ -n "$(git status --porcelain)" ]; then
     echo "Error: Working directory has uncommitted changes"
     exit 1
 fi
-
-# Fail fast on a red main, before the version is burned. Same doctrine as
-# yatfa's script/check_migrations.sh: catch what would abort the release
-# before we bump and push.
-npm ci
-npm run typecheck
-npm test
 
 # Read current version from package.json
 CURRENT_VERSION=$(node -p "require('./package.json').version")
@@ -63,6 +57,16 @@ NEW_VERSION="$NEW_VERSION" node -e "
   fs.writeFileSync(p, s.replace(re, \`\$1\${process.env.NEW_VERSION}\$2\`));
   console.log('package.json version -> ' + process.env.NEW_VERSION);
 "
+
+# Release gate: the suite must be green on the BUMPED tree before anything is
+# committed. `set -e` would abandon the bumped package.json on failure, so the
+# gate catches the failure explicitly and restores the file — a red release
+# costs nothing, and main stays exactly where it was.
+if ! (npm ci && npm run typecheck && npm test); then
+    git checkout -- package.json
+    echo "Error: release gate failed on the bumped tree; package.json restored to $CURRENT_VERSION. Fix main and run the release again."
+    exit 1
+fi
 
 # Create commit
 git add package.json

@@ -20,9 +20,10 @@
 #     the npm side (package settings -> Trusted Publisher): organization
 #     yatfa-ai, repository themeguard, workflow filename release.yml.
 #
-# A red main cannot burn a version: scripts/bump-version.sh runs typecheck +
-# test BEFORE the bump commit (themeguard's analogue of yatfa's
-# check_migrations.sh gate).
+# A red main cannot burn a version: scripts/bump-version.sh runs the suite
+# over the BUMPED tree before committing (themeguard's analogue of yatfa's
+# check_migrations.sh gate); a red gate restores package.json and exits, so
+# main stays exactly where it was.
 #
 # Required repo secrets:
 #   none beyond the auto-provided GITHUB_TOKEN (npm auth is OIDC trusted

@@ -99,8 +99,15 @@ beforeAll(() => {
 afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 
 describe("the manifest, before anything is packed", () => {
-  it("is version 0.1.17 — 0.1.6 added the fifth rule, unresolved-reference; 0.1.7 takes one invocation over several stylesheets; 0.1.9 adds the sixth rule, cycle-reference: a var() loop is a defect, judged from the resolver's kind:\"cycle\" chains; 0.1.11 lets a config judgement name the stylesheet it was recorded against; 0.1.10 makes the audit unit the file's import closure; 0.1.12 adds the seventh rule, duplicate-declaration: a name declared twice in one scope with differing values; 0.1.13 makes config discovery walk to the nearest ancestor; 0.1.14 adds the eighth rule, unresolved-import: a relative @import edge the loader could not follow — the file the specifier names is missing or unreadable — reports instead of auditing green; 0.1.15 adds the ninth rule, theme-partial-token: a token declared only in one theme's block never reaches the other views, and a chain that breaks on it is reported; 0.1.17 adds the command's first and only option, --json: the report as NDJSON, one object per stylesheet, so a pipeline caller reads the data beside the verdict instead of scraping prose", () => {
-    expect(manifest.version).toBe("0.1.17");
+  // The version is NOT pinned to a literal. The release workflow bumps the
+  // manifest (patch-only, scripts/bump-version.sh) and then runs this very
+  // suite over the bumped tree — a literal here would make every release
+  // commit red by construction, and 0.1.18's first release attempt died on
+  // exactly that. The version ledger is prose, not an assertion: feature
+  // commits append their notes to this title and to the manifest's "//"
+  // comment; a release bump adds a version and no prose.
+  it("is a plain semver — the ledger records what each version added: 0.1.6 added the fifth rule, unresolved-reference; 0.1.7 takes one invocation over several stylesheets; 0.1.9 adds the sixth rule, cycle-reference: a var() loop is a defect, judged from the resolver's kind:\"cycle\" chains; 0.1.11 lets a config judgement name the stylesheet it was recorded against; 0.1.10 makes the audit unit the file's import closure; 0.1.12 adds the seventh rule, duplicate-declaration: a name declared twice in one scope with differing values; 0.1.13 makes config discovery walk to the nearest ancestor; 0.1.14 adds the eighth rule, unresolved-import: a relative @import edge the loader could not follow — the file the specifier names is missing or unreadable — reports instead of auditing green; 0.1.15 adds the ninth rule, theme-partial-token: a token declared only in one theme's block never reaches the other views, and a chain that breaks on it is reported; 0.1.17 adds the command's first and only option, --json: the report as NDJSON, one object per stylesheet, so a pipeline caller reads the data beside the verdict instead of scraping prose", () => {
+    expect(manifest.version).toMatch(/^\d+\.\d+\.\d+$/);
   });
 
   it("declares the bin at a path the build actually emits", () => {
@@ -295,13 +302,16 @@ describe("publication readiness", () => {
    * `dist/cli.js` above — so what is left for this test is the manifest
    * validation the dry run performs, which is what it asserts.
    */
-  it("passes `npm publish --dry-run` and reports the 0.1.17 tarball", () => {
+  it("passes `npm publish --dry-run` and reports the tarball of the advertised version", () => {
     const output = execFileSync("npm", ["publish", "--dry-run", "--ignore-scripts"], {
       cwd: repo,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
     });
     const combined = output.toString();
-    expect(combined).toContain("themeguard@0.1.17");
+    // The version comes from the manifest, not a literal: this suite runs
+    // unchanged over the release workflow's bumped tree, and still proves
+    // the dry run validated a tarball named for the version being shipped.
+    expect(combined).toContain(`themeguard@${manifest.version}`);
   }, 300_000);
 });
