@@ -1,0 +1,163 @@
+# Release themeguard. Triggered manually from the Actions UI ("Run workflow"
+# button) — no tags, no push triggers. Click -> bump patch version -> publish
+# to npm -> create a GitHub Release with the tarball attached.
+#
+# Mirrors warden's release strategy (one-click workflow_dispatch, patch bump by
+# scripts/bump-version.sh, github-actions[bot] commit, tag-based GitHub
+# Release with re-runnable asset upload). Deltas from warden, all forced by
+# what themeguard ships:
+#   - the artifact is the npm package, not per-OS executables — no build
+#     matrix; the publish job runs `npm publish` from the release tag (the
+#     package's own prepublishOnly re-runs typecheck + test + build there, so
+#     what lands in the registry is exactly what the tag's source proves).
+#   - yatfa/specguard's `prod` deploy-mirror branch is dropped — npm is the
+#     distribution channel; there is nothing for a deploy watcher to poll.
+#   - `id-token: write` so `npm publish --provenance` can attest the build
+#     (provenance shows on npmjs.com with the repo + tag it was built from).
+#
+# A red main cannot burn a version: scripts/bump-version.sh runs typecheck +
+# test BEFORE the bump commit (themeguard's analogue of yatfa's
+# check_migrations.sh gate).
+#
+# Required repo secrets:
+#   NPM_TOKEN — npm automation/granular token for the account that owns the
+#               `themeguard` package (yatfa-admin). Publishing cannot use the
+#               auto-provided GITHUB_TOKEN; this is the family's only secret.
+#
+# One trigger per version: the bump commit + vX.Y.Z tag are made inside this
+# run (a GITHUB_TOKEN push spawns no further workflows — by design; the
+# downstream jobs are real job deps, as in warden).
+name: Release (Bump Version & Publish to npm)
+
+on:
+  workflow_dispatch:        # one-click from Actions UI; no inputs needed
+
+permissions:
+  contents: write           # bump commit + vX.Y.Z tag + GitHub Release
+  actions: write
+  id-token: write           # npm provenance attestation
+
+jobs:
+  bump:
+    name: Bump version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.bump.outputs.version }}
+      tag: ${{ steps.bump.outputs.tag }}
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0      # need full history for the rebase-and-push
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Configure Git
+        run: |
+          git config --global user.name  "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Bump version (commit + tag + push)
+        id: bump
+        run: ./scripts/bump-version.sh
+
+  publish:
+    name: Publish to npm
+    needs: bump
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.bump.outputs.tag }}   # exact bumped version
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          registry-url: https://registry.npmjs.org
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # prepublishOnly (typecheck + test + build) runs inside npm publish.
+      # The tarball ships dist/ only — src/ and tests/ stay out (files:).
+      - name: Publish
+        run: npm publish --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      # Stage the exact tarball the registry received and hand it to the
+      # release job, so the GitHub Release attaches the published bytes.
+      - name: Pack release tarball
+        run: |
+          mkdir staging
+          npm pack --pack-destination staging
+          echo "Staged assets:"
+          ls -la staging
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-tarball
+          path: staging/*.tgz
+          if-no-files-found: error   # fail loud if nothing was packed
+          retention-days: 14
+
+  release:
+    name: Publish GitHub Release
+    needs: [bump, publish]
+    runs-on: ubuntu-latest
+    steps:
+      # gh release create/view shell out to git to resolve the repo, so the
+      # job needs a checkout (shallow, at the release tag is enough).
+      - name: Checkout release tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.bump.outputs.tag }}
+          fetch-depth: 1
+
+      - name: Download tarball artifact
+        uses: actions/download-artifact@v4
+        with:
+          path: staging
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.bump.outputs.tag }}
+        run: |
+          # Create the release if missing, otherwise upload over existing
+          # assets (makes the job safe to re-run after a failed publish fix).
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG exists; uploading assets with --clobber"
+            gh release upload "$TAG" staging/npm-tarball/* --clobber
+          else
+            gh release create "$TAG" \
+              --title "$TAG" \
+              --generate-notes \
+              staging/npm-tarball/*
+          fi
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### Release ${{ needs.bump.outputs.tag }}"
+            echo ""
+            echo "Version: \`${{ needs.bump.outputs.version }}\`"
+            echo ""
+            echo "npm: https://www.npmjs.com/package/themeguard/v/${{ needs.bump.outputs.version }}"
+            echo '```'
+            gh release view "${{ needs.bump.outputs.tag }}" --json assets --jq '.assets[] | "\(.name)\t\(.size) bytes"' 2>/dev/null || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
