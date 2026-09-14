@@ -1,6 +1,6 @@
 {
   "name": "themeguard",
-  "version": "0.1.17",
+  "version": "0.1.18",
   "description": "Audits a project's CSS colour variables: value collisions between roles, dead tokens, ramps that collapse between themes, and families a theme tunes everywhere except the members it silently inherits.",
   "license": "MIT",
   "homepage": "https://github.com/yatfa-ai/themeguard",
