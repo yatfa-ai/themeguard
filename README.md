@@ -314,9 +314,13 @@ What is followed, and what is deliberately not:
   living anywhere in the closure. A file-scoped entry (0.1.11's `file` field) governs the same span by
   naming it: the stylesheet it names is the ENTRY
   stylesheet, the closure's root, so whatever the invocation audited, the entry covers. `themeguard-ignore` directives are the opposite:
-  a judgement written at one site in one file, and they are read from the entry file's text only — so a
-  directive matches only entry-file sites, by line, and never a finding spliced in from an imported file
-  whose line merely coincides.
+  a judgement written at one site of one file. Since 0.1.19 they are read from EVERY file of the closure —
+  each imported file's directives stamped with that file's name — so a directive matches the sites of the
+  file it was written in, by line, and never a finding from another file whose line merely coincides. The
+  old entry-only fence survives as exact file matching rather than a rule about the entry: an entry-file
+  directive still matches only entry-file sites (where an imported finding's line can coincide with it,
+  the finding still reports and the directive is named `unmatched`), and an imported file's directive can
+  never silence the entry or a sibling — only the file that carries it.
 
 `@import` is the one cross-file relationship that is *declared in source*, which is why it is the one that is
 followed: CSS defines the semantics, and the tool invents nothing. The genuinely unknown relationships — a
@@ -459,7 +463,10 @@ anything: there the orphaned judgement is named in the report's counted `unmatch
 still without becoming an error. That is the property the config cannot have: its entries match a
 finding's *identity*, so a judgement recorded about one line keeps suppressing after the code moves to
 another. Use the config for project-level judgements; use a directive when the judgement belongs to the
-file and should travel with it into vendored, regenerated or forked copies. The two work together — both
+file and should travel with it into vendored, regenerated or forked copies — and into every audit that
+reaches the file through an `@import`, which since 0.1.19 is where the property actually lives: the
+closure is the audit unit, so a vendored file is ordinarily consumed by being imported, and its
+judgement is honoured exactly there. The two work together — both
 merge into the same `suppressions` section, where a directive's line carries its `[file:line]` source
 clause:
 
@@ -468,8 +475,10 @@ clause:
 ```
 
 A directive the package cannot honour — an unknown rule id, no rule id at all, a missing or empty reason,
-a word in the head that is neither a rule id nor a `--` token name — exits `2` naming the comment's line,
-under the config's own never-silently-ignored discipline. In fact the *values* a directive may say are
+a word in the head that is neither a rule id nor a `--` token name — exits `2` naming the comment's file
+and line, in the entry file or in any imported member of its closure (the scan runs over the whole
+closure as it loads, so a malformed comment one import edge away is the same hard error, never a silent
+ignore), under the config's own never-silently-ignored discipline. In fact the *values* a directive may say are
 validated by the config's own parser, so the two mechanisms cannot drift apart on what a suppression may
 name. The keyword is recognized only in real comments: the same text inside a CSS string is prose.
 

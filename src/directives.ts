@@ -16,7 +16,13 @@
  * nothing left to announce anything, so the orphaned judgement is named
  * instead by the audit report's counted `unmatchedSuppressions` leg (the
  * CLI's `unmatched` section) — still not an error, never a silence. And when
- * the file is vendored, regenerated or forked, the judgement travels with it.
+ * the file is vendored, regenerated or forked, the judgement travels with it —
+ * and since 0.1.19 that property holds through an `@import` too: the loader
+ * scans EVERY member of the closure it loads, so a vendored file's judgement
+ * is honoured wherever the closure that imports it is audited, matched on the
+ * file's own entry-relative origin and line. A judgement one import edge away
+ * was silently DISCARDED before 0.1.19; it is now exactly as binding as the
+ * entry file's own.
  *
  * The grammar is one comment:
  *
@@ -40,7 +46,12 @@
  * drift from what a config entry may say: an unknown rule id, a missing or
  * empty reason is a HARD ERROR naming the comment's line (config's
  * never-silently-ignored discipline; a directive that silently did nothing
- * would leave a finding reported after all). The one shape config itself
+ * would leave a finding reported after all). Since 0.1.19 the scan runs over
+ * EVERY member of the audit's import closure — the loader asks for it as it
+ * reads each file — so the discipline reaches one edge past the entry file:
+ * an unhonourable comment in any closure member is the same hard error naming
+ * ITS file and line, where before it was silently ignored and left a finding
+ * reported after all. The one shape config itself
  * rejects is a directive that names no token — the SITE replaces the token
  * dimension there — so the round-trip carries a probe name for that field
  * alone, and the entry this module returns carries only what the directive
@@ -102,6 +113,16 @@ const REASON_SEPARATOR = /(?:^|\s)--(?:\s|$)/;
  * erases; consolidating the two would put directive grammar inside the parser,
  * which must stay judgement-free.
  *
+ * `path` is the diagnostic spelling for the file the text came from — the
+ * path as the caller names it, and for a closure member its entry-relative
+ * `origin`, the coordinate every report cites. `origin` (the third argument)
+ * is the MATCHING half of the same fact: when present, every entry returned
+ * carries it, so the audit matches the judgement against that one file's
+ * sites; when absent — the entry file's own scan — the entries carry no
+ * origin and match entry-file sites exactly as they always have. The two
+ * spellings are one discipline: `source` says where the judgement lives,
+ * `origin` says where it binds.
+ *
  * Pure: the caller reads the file; this module judges its text. Any malformed
  * directive throws {@link DirectiveError} naming the comment's line — an
  * unhonourable directive is never silently skipped, exactly as an
@@ -110,6 +131,7 @@ const REASON_SEPARATOR = /(?:^|\s)--(?:\s|$)/;
 export function scanIgnoreDirectives(
   css: string,
   path: string,
+  origin?: string,
 ): readonly IgnoreDirective[] {
   const directives: IgnoreDirective[] = [];
   let i = 0;
@@ -137,7 +159,7 @@ export function scanIgnoreDirectives(
       // blanker takes; the stylesheet is already broken on its own terms.
       const body = css.slice(i + 2, close === -1 ? css.length : close).trim();
       if (DIRECTIVE_COMMENT.test(body)) {
-        directives.push(parseDirective(body, lineOf(css, i), path));
+        directives.push(parseDirective(body, lineOf(css, i), path, origin));
       }
       i = stop;
       continue;
@@ -167,7 +189,12 @@ function lineOf(css: string, offset: number): number {
  * the rule id, the reason's emptiness, the token names — is validated by
  * config's own parser, so the two mechanisms cannot drift apart.
  */
-function parseDirective(body: string, line: number, path: string): IgnoreDirective {
+function parseDirective(
+  body: string,
+  line: number,
+  path: string,
+  origin?: string,
+): IgnoreDirective {
   const fail = (detail: string): never => {
     throw new DirectiveError(path, line, detail);
   };
@@ -233,6 +260,7 @@ function parseDirective(body: string, line: number, path: string): IgnoreDirecti
     ...(tokenNames.length > 0 ? { tokens: tokenNames } : {}),
     line,
     source: `${path}:${line}`,
+    ...(origin !== undefined ? { origin } : {}),
   };
 }
 

@@ -480,3 +480,54 @@ describe("runCli — the site-scoped suppression, end to end", () => {
     );
   });
 });
+
+/**
+ * The origin dimension (0.1.19): the same scan serves every member of an
+ * import closure, and the CALLER stamps each entry with the file it was
+ * scanned from — the loader, which knows the file. With an origin the entry
+ * binds to that file's sites; without one — the entry file's own scan — the
+ * entry carries no origin key at all and matches entry sites exactly as it
+ * always has.
+ */
+describe("scanIgnoreDirectives — the origin stamp, from the caller that knows the file", () => {
+  const css = [
+    ":root {",
+    "  --success: #16A34A;",
+    "  --accent: #16A34A; /* themeguard-ignore collision --accent --success -- vendor brand */",
+    "}",
+  ].join("\n");
+
+  it("stamps every entry with the origin it was scanned under, and cites it as source", () => {
+    expect(scanIgnoreDirectives(css, "card.css", "card.css")).toEqual([
+      {
+        rule: "collision",
+        tokens: ["--accent", "--success"],
+        reason: "vendor brand",
+        line: 3,
+        source: "card.css:3",
+        origin: "card.css",
+      },
+    ]);
+  });
+
+  it("names a nested member by its entry-relative origin in errors and source alike", () => {
+    const bad = [
+      ":root {",
+      "  --a: #333333; /* themeguard-ignore nonsense-rule --a -- bogus */",
+      "}",
+    ].join("\n");
+    try {
+      scanIgnoreDirectives(bad, "shared/leaf.css", "shared/leaf.css");
+      throw new Error("expected scanIgnoreDirectives to throw");
+    } catch (error) {
+      expect(error).toBeInstanceOf(DirectiveError);
+      expect((error as DirectiveError).message).toContain("at shared/leaf.css:2");
+      expect((error as DirectiveError).path).toBe("shared/leaf.css");
+    }
+  });
+
+  it("leaves the no-origin scan byte-identical — no origin key on the entry", () => {
+    const [directive] = scanIgnoreDirectives(css, "vendor.css");
+    expect(directive).not.toHaveProperty("origin");
+  });
+});

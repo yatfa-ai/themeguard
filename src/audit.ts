@@ -151,12 +151,15 @@ export interface AuditOptions {
    * judgement, and the report still names it. When several entries match one
    * finding, the first in the list supplies the reason.
    *
-   * An entry may also carry a SITE — `line` and `source`, the shape
-   * {@link SiteScopedSuppressionEntry} — which is how an in-source
+   * An entry may also carry a SITE — `line` and `source`, and for a
+   * directive scanned from an imported closure member its `origin`, the
+   * shape {@link SiteScopedSuppressionEntry} — which is how an in-source
    * `themeguard-ignore` directive participates: the entry then matches only
-   * findings living at the directive's own position, so the judgement is
-   * bound to its site by construction. A config entry never carries one, and
-   * config entries behave byte-identically to before this dimension existed.
+   * findings living at the directive's own position in its own file (an
+   * entry-file directive carries no origin and matches entry-file sites), so
+   * the judgement is bound to its site by construction. A config entry never
+   * carries one, and config entries behave byte-identically to before this
+   * dimension existed.
    *
    * An entry may also carry a FILE SCOPE — `file`, naming the stylesheet the
    * judgement was recorded against. The CLI resolves the spelling against the
@@ -202,6 +205,19 @@ export interface AuditOptions {
 export interface SuppressionSite {
   readonly line: number;
   readonly source: string;
+  /**
+   * The file the directive was scanned from, relative to the audit's ENTRY
+   * file — the same spelling a {@link FindingSite} origin writes. Absent for
+   * an entry-file directive, which matches no-origin sites exactly as it
+   * always has; present for an imported closure member's directive, which
+   * matches only the sites of ITS OWN file. The conjunct is what makes a
+   * site-scoped judgement exact across a closure: line numbers restart per
+   * file, so the origin — never the bare line — is what keeps an entry-file
+   * directive from silencing a finding spliced in from a member whose line
+   * merely coincides, and what lets a member's own directive silence exactly
+   * the finding it was written against.
+   */
+  readonly origin?: string;
 }
 
 /**
@@ -315,13 +331,17 @@ export function audit(
   //     there the SITE is the judgement and the token dimension is genuinely
   //     optional, matching any finding of the rule that lives at the site.
   //   - the SITE — carried only by an in-source `themeguard-ignore` directive
-  //     (`line`, see `directives.ts`); a config entry never has one, and for
-  //     it this conjunct is absent, which is why config entries behave
-  //     byte-identically to before it existed. A directive matches when one
-  //     of the finding's own position lines equals the directive's line (a
-  //     trailing comment on the judged declaration) or the line directly
-  //     below it (a standalone comment on the preceding line) — the two
-  //     industry placements. Move the defect and the directive orphans:
+  //     (`line`, and since 0.1.19 `origin`, see `directives.ts`); a config
+  //     entry never has one, and for it this conjunct is absent, which is
+  //     why config entries behave byte-identically to before it existed. A
+  //     directive matches when one of the finding's own position lines
+  //     equals the directive's line (a trailing comment on the judged
+  //     declaration) or the line directly below it (a standalone comment on
+  //     the preceding line) — the two industry placements — within the file
+  //     the directive names: an entry-file directive (no origin) matches
+  //     only no-origin sites, a closure member's directive only its own
+  //     file's sites, so a coinciding line across an import edge never
+  //     silences a splice. Move the defect and the directive orphans:
   //     nothing matches, the finding prints and moves the exit code — the
   //     self-announcing miss, never a silence. That miss is self-announcing
   //     only while the finding EXISTS: fix the defect rather than move it and
@@ -341,10 +361,20 @@ export function audit(
   //     the entry now can SAY which file it does aim at. A caller that omits
   //     `stylesheet` gets the same honest no-match for a scoped entry: an
   //     entry cannot claim a file the audit was never told about.
-  const findingLines = (finding: Finding): readonly number[] => {
+  // The finding's position lines in the coordinate ONE directive can match:
+  // `origin` is the directive's own file, and the answer is that file's
+  // lines — no-origin sites for an entry-file directive (origin undefined,
+  // today's reading byte for byte), the named file's sites for a closure
+  // member's directive. Line numbers restart per file, so the ORIGIN is the
+  // coordinate that makes the two readings disjoint: an entry-file directive
+  // still cannot reach a site spliced in from a member, and a member's
+  // directive cannot reach the entry or another member — the fence that kept
+  // a coinciding line from silencing a splice survives as equality instead
+  // of a blanket skip.
+  const findingLines = (finding: Finding, origin?: string): readonly number[] => {
     if (finding.sites !== undefined)
       return finding.sites
-        .filter((s) => s.origin === undefined)
+        .filter((s) => s.origin === origin)
         .map((s) => s.line);
     // A rule that carries no `sites` (dead-token) still publishes its lines —
     // as `evidence.declaredIn` strings in `":root:4"` shape. That is public,
@@ -355,27 +385,42 @@ export function audit(
     // declaration that holds the dangling `var()` is a judgement at the site
     // the finding lives at, exactly as it is for a declaration site.
     //
-    // A citation of an IMPORTED file (`tokens.css:4`) is skipped: directives
-    // are read from the entry file's text only, so a judgement written here
-    // cannot govern a site living in another file — and since line numbers
-    // restart per file, matching on the bare number would let an entry-file
-    // directive silence a finding spliced in from a closure file whose line
-    // happened to coincide. The known origins come from the sheet itself, so
-    // the skip is exact rather than a shape guess.
+    // Both spellings cite an imported site as `origin:line`
+    // (`tokens.css:4`) and an entry site as `selector:line`, so the two
+    // branches below read the SAME strings with the directive's own origin
+    // as the split: an entry-file directive (origin undefined) keeps only
+    // the bare citations — a judgement written in the entry cannot govern a
+    // site living in another file, and since line numbers restart per file,
+    // matching on the bare number would let it silence a finding spliced in
+    // from a closure file whose line happened to coincide (the skip is exact
+    // rather than a shape guess: the known origins come from the sheet). A
+    // member's directive (origin set) keeps only the citations of ITS OWN
+    // file — the exact inverse, the same fence.
     const declared: unknown =
       finding.evidence["declaredIn"] ?? finding.evidence["usedIn"];
     if (!Array.isArray(declared)) return [];
-    const origins = new Set<string>();
-    for (const s of resolved.stylesheet.scopes) if (s.origin !== undefined) origins.add(s.origin);
-    for (const r of resolved.stylesheet.references)
-      if (r.origin !== undefined) origins.add(r.origin);
     const lines: number[] = [];
-    for (const entry of declared as readonly unknown[]) {
-      const text = String(entry);
-      const at = /:(\d+)$/.exec(text);
-      if (at === null) continue;
-      if (origins.has(text.slice(0, text.length - at[0].length))) continue;
-      lines.push(Number(at[1]));
+    if (origin === undefined) {
+      const origins = new Set<string>();
+      for (const s of resolved.stylesheet.scopes) if (s.origin !== undefined) origins.add(s.origin);
+      for (const r of resolved.stylesheet.references)
+        if (r.origin !== undefined) origins.add(r.origin);
+      for (const entry of declared as readonly unknown[]) {
+        const text = String(entry);
+        const at = /:(\d+)$/.exec(text);
+        if (at === null) continue;
+        if (origins.has(text.slice(0, text.length - at[0].length))) continue;
+        lines.push(Number(at[1]));
+      }
+    } else {
+      const prefix = `${origin}:`;
+      for (const entry of declared as readonly unknown[]) {
+        const text = String(entry);
+        if (!text.startsWith(prefix)) continue;
+        const at = /:(\d+)$/.exec(text);
+        if (at === null) continue;
+        lines.push(Number(at[1]));
+      }
     }
     return lines;
   };
@@ -399,7 +444,12 @@ export function audit(
       if (scope !== undefined && scope !== options.stylesheet) return false;
     }
     if ("line" in entry) {
-      const at = findingLines(finding);
+      // The site conjunct is ORIGIN-AWARE since 0.1.19: the directive's own
+      // file narrows `findingLines` to that file's sites. An entry-file
+      // directive carries no origin and gets today's no-origin reading,
+      // byte-identical; an imported member's directive gets its own file's
+      // sites and can never reach across an edge.
+      const at = findingLines(finding, entry.origin);
       if (!at.some((line) => line === entry.line || line === entry.line + 1)) return false;
     }
     return true;
