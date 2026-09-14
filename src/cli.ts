@@ -1,8 +1,22 @@
 #!/usr/bin/env node
 /**
- * The command — `themeguard <file.css> [file.css…]`.
+ * The command — `themeguard [--json] <file.css> [file.css…]`.
  *
- * One command, zero options; the positionals repeat. Each named stylesheet is
+ * One command, ONE option; the positionals repeat. The sentence this replaces
+ * — "one command, zero options" — was written at 0.1.2, when the command took
+ * a single stylesheet, ran three rules, and had no pipeline caller to serve:
+ * it described the surface as it then was, and it never argued that no caller
+ * would ever need the DATA. 0.1.7 made the pipeline caller first-class (N
+ * files, ONE aggregated verdict) without giving it anything but the number,
+ * and `--json` is the other half of that: the number stays the verdict
+ * channel, and the flag adds a DATA channel beside it. It is the only option,
+ * it is accepted anywhere among the arguments, and repeating it changes
+ * nothing. Everything that is not `--json` is a positional, exactly as
+ * before — an unknown `--flag` is still read as a path and still fails as
+ * one, because inventing flag VALIDATION here would change the exit
+ * semantics of invocations that work today.
+ *
+ * Each named stylesheet is
  * read from disk, run through the same
  * `audit(resolveStylesheet(loadStylesheet(path)))` the library exposes — that
  * file's IMPORT CLOSURE, not the file alone — and printed under its own
@@ -130,6 +144,33 @@
  * so those kinds are appended to the parenthetical when present rather than
  * vanishing from the count.
  *
+ * ── `--json`: the data channel beside the number ──────────────────────────
+ * With `--json`, stdout carries ONE compact JSON object per file — NDJSON,
+ * one line per stylesheet, emitted as each file completes, in argument order.
+ * The prose above is not produced at all in that mode, and the prose mode is
+ * not changed by a byte when the flag is absent.
+ *
+ * The object is the {@link AuditReport} the library already returns, rendered
+ * verbatim, with the audited `path` in front of it: no field is renamed,
+ * summarized or dropped. That is the point — the prose renderer is a lossy
+ * PROJECTION (sites become clause text, evidence becomes sentence fragments,
+ * scopes become bracket suffixes), so a caller that wanted "which file, which
+ * token, which line" had to scrape sentences the tool shapes for people.
+ *
+ * Three properties a pipeline caller may rely on:
+ *
+ *   - The exit codes are UNCHANGED. The flag adds a channel; it does not move
+ *     the verdict. A caller branches on the number exactly as it does today
+ *     and parses stdout for the detail behind it.
+ *   - stdout is never MIXED. It is either pure prose or pure NDJSON — usage
+ *     errors, unreadable files, `ConfigError` and `DirectiveError` stay on
+ *     stderr as prose in BOTH modes — so every line of a `--json` run parses
+ *     without a mode check, and `jq` needs no filter for stray diagnostics.
+ *   - Fail-fast keeps the lines already written. The first file that cannot
+ *     be audited ends the invocation with 2, and the JSON lines for the files
+ *     before it are already on stdout — the same contract the prose reports
+ *     have had since 0.1.7.
+ *
  * ── The exit contract, and why findings are not code 2 ─────────────────────
  * Three distinct codes, because a caller in a shell — a pipeline, a
  * pre-commit hook — can only branch on the number:
@@ -198,7 +239,15 @@ export interface CliIo {
   readonly err: (line: string) => void;
 }
 
-export const USAGE = "usage: themeguard <file.css> [file.css…]";
+export const USAGE = "usage: themeguard [--json] <file.css> [file.css…]";
+
+/**
+ * The one option, and the only argument that is not a stylesheet path.
+ *
+ * Deliberately no short alias in v1: `-j` is cheap to add later and
+ * impossible to take back, and nothing has asked for it yet.
+ */
+const JSON_FLAG = "--json";
 
 /** The order groups are printed in — the library's own reading order. */
 const RULE_ORDER: readonly RuleId[] = [
@@ -297,9 +346,25 @@ function tokenScope(entry: SuppressionEntry | SiteScopedSuppressionEntry): strin
  * 0 (precedence 2 > 1 > 0 — see the exit contract in the header). Pure but for
  * the file reads: everything printed goes through `io`, so a test reads the
  * report instead of scraping a subprocess.
+ *
+ * `--json` is the one option, and it is removed here rather than anywhere
+ * deeper: everything that survives the filter is a positional, so the rest of
+ * the command sees exactly the argument list it always saw. The flag is
+ * position-free (any slot among the paths) and idempotent (`--json --json` is
+ * one flag), because both are free consequences of a filter and a caller that
+ * appends it to an argv it did not build should not have to care.
+ *
+ * The zero-positionals case stays the usage error it has always been, and
+ * that INCLUDES `themeguard --json` alone: a flag is not a stylesheet, and a
+ * run with nothing to audit must not answer 0 with an empty stdout — a
+ * pipeline reading that as "clean" is exactly the false pass the exit
+ * contract exists to prevent.
  */
 export function runCli(args: readonly string[], io: CliIo): number {
-  if (args.length === 0) {
+  const json = args.includes(JSON_FLAG);
+  const paths = args.filter((arg) => arg !== JSON_FLAG);
+
+  if (paths.length === 0) {
     io.err(USAGE);
     io.err("themeguard: no stylesheet given.");
     return EXIT_ERROR;
@@ -310,8 +375,8 @@ export function runCli(args: readonly string[], io: CliIo): number {
   // is what survives the loop and turns into the aggregated exit.
   let anyFindings = false;
 
-  for (const path of args) {
-    const outcome = auditStylesheet(path, io);
+  for (const path of paths) {
+    const outcome = auditStylesheet(path, io, json);
     if (outcome === EXIT_ERROR) {
       // Fail-fast: the first file that cannot be audited ends the invocation
       // with 2, whatever the files before it reported — those reports are
@@ -339,8 +404,14 @@ export function runCli(args: readonly string[], io: CliIo): number {
  * this file's config or directive). Pure but for the file read: everything
  * printed goes through `io`, so a test reads the report instead of scraping a
  * subprocess.
+ *
+ * `json` selects the RENDERER and nothing else. Every line above this one —
+ * the read, the config walk, the directive scan, the audit, the outcome — is
+ * byte-identical in both modes, and so are the diagnostics, which stay prose
+ * on `io.err` either way: the flag chooses what a SUCCESSFUL audit prints to
+ * stdout, never what an error says or which code it returns.
  */
-function auditStylesheet(path: string, io: CliIo): number {
+function auditStylesheet(path: string, io: CliIo, json = false): number {
   let css: string;
   try {
     css = readFileSync(path, "utf8");
@@ -455,7 +526,8 @@ function auditStylesheet(path: string, io: CliIo): number {
     suppressions: [...scoped, ...directives],
     stylesheet: resolve(path),
   });
-  for (const line of formatReport(path, report)) io.out(line);
+  if (json) io.out(formatReportJson(path, report));
+  else for (const line of formatReport(path, report)) io.out(line);
 
   // Findings here are the UNSUPPRESSED ones — a finding the user has recorded
   // as deliberate no longer holds the exit code hostage, which is the whole
@@ -625,6 +697,57 @@ export function formatReport(
   );
 
   return lines;
+}
+
+/**
+ * The report as ONE line of JSON — the `--json` renderer, separated from the
+ * I/O for exactly the reason {@link formatReport} is: a test reads it as data
+ * instead of scraping a subprocess.
+ *
+ * One compact object per file, emitted as that file completes, which makes an
+ * invocation's stdout NDJSON: `themeguard --json a.css b.css | jq …` streams,
+ * and a fail-fast exit 2 on the second file leaves the first file's line
+ * already written and already parseable. There is deliberately no
+ * invocation-level envelope around the lines — an array would have to be
+ * closed at the end, and the end is exactly what a fail-fast run does not
+ * reach.
+ *
+ * ── The shape ─────────────────────────────────────────────────────────────
+ * The {@link AuditReport} VERBATIM, with `path` in front of it. Nothing is
+ * renamed, summarized, flattened or dropped: a consumer that has the library's
+ * types has this object's types, and the CLI stops being the one consumer that
+ * only gets prose. `path` is the string the caller NAMED on the command line,
+ * not a resolved absolute — it is what the caller will match its own argv
+ * against, and the prose header quotes it the same way.
+ *
+ * ⚠️ The key order is the REPORT OBJECT's own insertion order — `findings`,
+ * `countsByRule`, `suppressed`, `unmatchedSuppressions`, `skipped`,
+ * `coverage` (`audit.ts`'s return literal). That is NOT the prose renderer's
+ * section order, which prints `skipped` BEFORE `suppressed`. Follow the
+ * object: `JSON.stringify` preserves insertion order, and the project already
+ * treats that order as a compatibility surface — `tests/package.test.ts` pins
+ * `JSON.stringify(report.countsByRule)` as an exact byte string, key order
+ * included. A later reader "fixing" this to match the prose would break a
+ * consumer for cosmetics.
+ *
+ * ⚠️ `sites` is ABSENT on the findings of rules that carry none
+ * (`dead-token`, `unresolved-reference`, `duplicate-declaration`) rather than
+ * `null`. That is the library's own serialization — `JSON.stringify` omits an
+ * undefined optional — and {@link import("./rules/finding").Finding.sites}
+ * documents the absence as a FACT rather than an omission: a consumer reads
+ * `sites` as "the position, if the rule has one to give". Emitting `null`
+ * would invent a value the library never had.
+ *
+ * `suppressed` entries carry `{finding, reason, entry}` whole, the entry
+ * including its scope fields (`theme` / `tokens` / `token` / `file` /
+ * `source` / `line`) and the `fileBeyondConfigHome` annotation — the prose
+ * renders those as bracket suffixes, and a machine consumer gets the fields.
+ */
+export function formatReportJson(
+  path: string,
+  report: ReturnType<typeof audit>,
+): string {
+  return JSON.stringify({ path, ...report });
 }
 
 /**

@@ -121,7 +121,7 @@ npm install --save-dev themeguard
 
 ## Usage
 
-One command, zero options — point it at a CSS file.
+One command, one option — point it at a CSS file.
 
 ```bash
 npx themeguard path/to/application.css
@@ -147,6 +147,46 @@ invocation**, precedence `2 > 1 > 0` — any file errored, `2`; else any file re
 findings, `1`; else `0`. A pipeline or pre-commit hook gets one invocation and one verdict over a
 whole project's stylesheets, instead of N runs and a hand-ORed aggregate that one mistyped path
 silently poisons.
+
+### `--json` — the report as data
+
+`--json` is the one option. It replaces the prose on stdout with **NDJSON** — one compact JSON object
+per stylesheet, written as that file completes, in argument order:
+
+```bash
+npx themeguard --json src/*.css
+```
+
+The object is the **same report the library returns**, verbatim, with the audited `path` in front of it:
+`findings` (each with its `rule`, `theme`, `tokens`, `message`, `evidence` and — where the rule has a
+position to give — its `sites`, each naming a token, a line and the imported file it was spliced from),
+`countsByRule`, `suppressed`, `unmatchedSuppressions`, `skipped` and `coverage`. Nothing is renamed,
+summarized or dropped. The prose renderer is a lossy projection of that object — sites become clause
+text, evidence becomes sentence fragments, scopes become bracket suffixes — so a caller that wanted
+*which file, which token, which line* had to scrape sentences shaped for people.
+
+It composes with `jq` the way a per-line stream should:
+
+```bash
+themeguard --json src/*.css | jq -c 'select(.findings | length > 0)'
+themeguard --json src/*.css | jq -r '.path as $p | .findings[] | "\($p): [\(.rule)] \(.message)"'
+```
+
+Three properties a pipeline caller may rely on:
+
+- **The exit codes are unchanged.** The flag adds a channel; it does not move the verdict. Branch on the
+  number exactly as today, and parse stdout for the detail behind it.
+- **stdout is never mixed.** It is either pure prose or pure NDJSON — usage errors, unreadable files, an
+  unhonourable config and a malformed directive stay on **stderr as prose** in both modes — so every line
+  of a `--json` run parses without a mode check.
+- **Fail-fast keeps the lines already written.** The first file that cannot be audited ends the invocation
+  with `2`, and the JSON lines for the files before it are already on stdout — which is why this is NDJSON
+  rather than one array, whose closing bracket a fail-fast run never reaches.
+
+The flag is accepted in any position among the paths, and repeating it changes nothing. There is no short
+alias. Everything that is not `--json` is a positional, exactly as before — an unknown `--flag` is read as
+a path and fails as one — and `themeguard --json` with no stylesheet is the usage error it has always
+been, never a silent success.
 
 Run over this repository's own calibration fixture (a real 97 KB Tailwind stylesheet with two themes,
 vendored at `tests/fixtures/application.tailwind.css`), it prints:
@@ -490,8 +530,11 @@ were there unsuppressed findings.
 | `1` | The audit ran and reported findings. |
 | `2` | The audit did not run — bad usage, or the file could not be read. |
 
-`1` and `2` are kept apart on purpose: in a pipeline or a pre-commit hook the number is all a caller has,
-and a real finding must never be confusable with a typo in the path — nor with a clean stylesheet.
+`1` and `2` are kept apart on purpose: in a pipeline or a pre-commit hook the number is all a caller has
+*to branch on*, and a real finding must never be confusable with a typo in the path — nor with a clean
+stylesheet. The number stays exactly that; [`--json`](#--json--the-report-as-data) adds the DATA beside
+it, on stdout, without moving the verdict — a caller reads the code for the decision and the NDJSON for
+the detail behind it. Diagnostics stay on stderr as prose in both modes, so stdout is never mixed.
 
 Over one invocation naming several stylesheets, these codes **aggregate per invocation** with the
 precedence `2 > 1 > 0`: if any file errored, the invocation exits `2` — fail-fast, with the reports the
@@ -524,6 +567,9 @@ for (const finding of report.findings) {
 }
 console.log(report.countsByRule); // { collision: 11, "dead-token": 2, "scale-collapse": 2, "family-consistency": 7, "unresolved-reference": 0, "cycle-reference": 0, "duplicate-declaration": 0, "theme-partial-token": 0 }
 ```
+
+This is the same object [`themeguard --json`](#--json--the-report-as-data) prints, one line per file — so
+a CLI consumer and a library consumer read one shape, and moving between them costs nothing.
 
 `resolveCss` audits the TEXT you hand it — no base directory is known, so `@import` statements are
 collected but not followed, and the report describes that one file. A caller with a file on disk — the
@@ -590,7 +636,7 @@ facts and passes no judgement, the upper one judges those facts and nothing else
 | `src/audit.ts` | `audit(resolved)` — the nine rules in one pass, returning findings tagged `collision`, `dead-token`, `scale-collapse`, `family-consistency`, `unresolved-reference`, `cycle-reference`, `duplicate-declaration`, `unresolved-import` or `theme-partial-token`, plus the per-theme coverage inventory. Passing `suppressions` moves caller-declared findings out of `findings` and the counts into a `suppressed` leg. |
 | `src/config.ts` | `themeguard.config.json` — optional, discovered at or above the stylesheet (nearest ancestor wins; a config beside the stylesheet is the first hop). Parses and validates the `suppress` entries (strictly: an unhonourable config is an error naming the entry, never a silent skip) into the structured declarations `audit()` filters a finished report by. |
 | `src/rules/` | One module per question. Each docstring carries its judgement heuristics and, more usefully, what it deliberately does **not** report. `rules/coverage.ts` also carries the coverage inventory itself — the facts rule 4 is measured over, printed by the CLI as an informational section and never an exit code. |
-| `src/cli.ts` | The command. I/O and presentation over `audit()` — no rule, no heuristic and no judgement of its own. |
+| `src/cli.ts` | The command. I/O and presentation over `audit()` — no rule, no heuristic and no judgement of its own. Two renderers over the same report: the default prose, and `--json`'s NDJSON projection, which serializes the report verbatim for a pipeline caller. |
 
 ```ts
 import { resolveCss, audit } from "themeguard";

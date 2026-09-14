@@ -99,8 +99,8 @@ beforeAll(() => {
 afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 
 describe("the manifest, before anything is packed", () => {
-  it("is version 0.1.15 — 0.1.6 added the fifth rule, unresolved-reference; 0.1.7 takes one invocation over several stylesheets; 0.1.9 adds the sixth rule, cycle-reference: a var() loop is a defect, judged from the resolver's kind:\"cycle\" chains; 0.1.11 lets a config judgement name the stylesheet it was recorded against; 0.1.10 makes the audit unit the file's import closure; 0.1.12 adds the seventh rule, duplicate-declaration: a name declared twice in one scope with differing values; 0.1.13 makes config discovery walk to the nearest ancestor; 0.1.14 adds the eighth rule, unresolved-import: a relative @import edge the loader could not follow — the file the specifier names is missing or unreadable — reports instead of auditing green; 0.1.15 adds the ninth rule, theme-partial-token: a token declared only in one theme's block never reaches the other views, and a chain that breaks on it is reported", () => {
-    expect(manifest.version).toBe("0.1.15");
+  it("is version 0.1.17 — 0.1.6 added the fifth rule, unresolved-reference; 0.1.7 takes one invocation over several stylesheets; 0.1.9 adds the sixth rule, cycle-reference: a var() loop is a defect, judged from the resolver's kind:\"cycle\" chains; 0.1.11 lets a config judgement name the stylesheet it was recorded against; 0.1.10 makes the audit unit the file's import closure; 0.1.12 adds the seventh rule, duplicate-declaration: a name declared twice in one scope with differing values; 0.1.13 makes config discovery walk to the nearest ancestor; 0.1.14 adds the eighth rule, unresolved-import: a relative @import edge the loader could not follow — the file the specifier names is missing or unreadable — reports instead of auditing green; 0.1.15 adds the ninth rule, theme-partial-token: a token declared only in one theme's block never reaches the other views, and a chain that breaks on it is reported; 0.1.17 adds the command's first and only option, --json: the report as NDJSON, one object per stylesheet, so a pipeline caller reads the data beside the verdict instead of scraping prose", () => {
+    expect(manifest.version).toBe("0.1.17");
   });
 
   it("declares the bin at a path the build actually emits", () => {
@@ -175,6 +175,33 @@ describe("a project that has installed the package", () => {
     expect(bin(clean).code).toBe(0);
     expect(bin(join(consumer, "absent.css")).code).toBe(2);
     expect(bin().code).toBe(2);
+  });
+
+  it("emits the report as NDJSON under --json, from the installed bin", () => {
+    // The CLI consumer and the library consumer now read ONE shape — the test
+    // below pins `JSON.stringify(report.countsByRule)` as an exact byte string
+    // through the library, and this pins that the command hands out the same
+    // object rather than a projection of it. The key order is the report
+    // object's own insertion order, which is the compatibility surface that
+    // pin has always asserted.
+    const result = bin("--json", FIXTURE_PATH);
+    expect(result.code).toBe(1);
+    const lines = result.stdout.trimEnd().split("\n");
+    expect(lines).toHaveLength(1);
+    const report = JSON.parse(lines[0]!) as { path: string; countsByRule: Record<string, number> };
+    expect(Object.keys(report)).toEqual([
+      "path",
+      "findings",
+      "countsByRule",
+      "suppressed",
+      "unmatchedSuppressions",
+      "skipped",
+      "coverage",
+    ]);
+    expect(report.path).toBe(FIXTURE_PATH);
+    expect(JSON.stringify(report.countsByRule)).toBe(
+      '{"collision":11,"dead-token":2,"scale-collapse":2,"family-consistency":7,"unresolved-reference":0,"cycle-reference":0,"duplicate-declaration":0,"unresolved-import":0,"theme-partial-token":0}',
+    );
   });
 
   it("resolves the library through the exports map at RUNTIME", () => {
@@ -268,13 +295,13 @@ describe("publication readiness", () => {
    * `dist/cli.js` above — so what is left for this test is the manifest
    * validation the dry run performs, which is what it asserts.
    */
-  it("passes `npm publish --dry-run` and reports the 0.1.15 tarball", () => {
+  it("passes `npm publish --dry-run` and reports the 0.1.17 tarball", () => {
     const output = execFileSync("npm", ["publish", "--dry-run", "--ignore-scripts"], {
       cwd: repo,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
     });
     const combined = output.toString();
-    expect(combined).toContain("themeguard@0.1.15");
+    expect(combined).toContain("themeguard@0.1.17");
   }, 300_000);
 });
