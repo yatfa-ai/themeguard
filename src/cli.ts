@@ -105,11 +105,17 @@
  * comment's line, never a silent skip. The two mechanisms merge at the single
  * `suppressions` seam below; the config stays the project-level mechanism,
  * the directive its site-level one, and neither changed the other's semantics.
- * Since 0.1.10 the audit sees the file's import closure, but directives are
- * still scanned from the ENTRY file's text only — the config is the mechanism
- * that governs the whole closure; a directive is a judgement written at one
- * site, and an imported file's directives are not read (a stated limit, not a
- * silent one).
+ * Since 0.1.10 the audit sees the file's import closure, and since 0.1.19 the
+ * directives are the closure's too: the LOADER scans every member's text in
+ * the same pass that stamps each member's `origin`, and hands the whole set
+ * back on the sheet — an imported file's judgement now reaches the audit that
+ * imports it, matched against that file's own sites. Matching stays exact:
+ * an entry-file directive matches only entry-file sites, and a member's
+ * directive matches only its own file's sites — the fence that kept a
+ * coinciding line from silencing a splice survives, as file equality instead
+ * of an entry-only rule. A malformed directive in ANY member exits 2 naming
+ * ITS file and line, the same never-silently-ignored contract the entry file
+ * always had.
  *
  * ── The unmatched ─────────────────────────────────────────────────────────
  * The complement of `suppressed`, under the same counted-even-at-zero
@@ -218,10 +224,11 @@ import {
   readConfig,
   type SuppressionEntry,
 } from "./config.js";
-import { DirectiveError, scanIgnoreDirectives } from "./directives.js";
+import { DirectiveError } from "./directives.js";
 import { loadStylesheet } from "./load.js";
 import { resolveStylesheet } from "./resolve.js";
 import type { TokenKind } from "./resolve.js";
+import type { Stylesheet } from "./parse.js";
 import type { RuleId } from "./rules/finding.js";
 
 /** The audit ran and reported nothing. */
@@ -397,13 +404,14 @@ export function runCli(args: readonly string[], io: CliIo): number {
  * Audit ONE stylesheet: the per-file body, unchanged by how many files the
  * invocation names. Reads the file, loads the config discovered AT OR ABOVE
  * it (the nearest `themeguard.config.json`, per {@link configPathFor}'s walk),
- * scans its directives, audits, prints its report under its own
+ * loads the closure — whose loader scans every member's directives — audits,
+ * prints its report under its own
  * `themeguard — <path>` header, and returns that file's outcome — 1 when the
  * file carries unsuppressed findings, 0 when it is clean, 2 when it cannot be
  * audited at all (with the diagnostic on `io.err`, naming this file's path or
- * this file's config or directive). Pure but for the file read: everything
- * printed goes through `io`, so a test reads the report instead of scraping a
- * subprocess.
+ * this file's config or any member's malformed directive). Pure but for the
+ * file read: everything printed goes through `io`, so a test reads the report
+ * instead of scraping a subprocess.
  *
  * `json` selects the RENDERER and nothing else. Every line above this one —
  * the read, the config walk, the directive scan, the audit, the outcome — is
@@ -412,9 +420,13 @@ export function runCli(args: readonly string[], io: CliIo): number {
  * stdout, never what an error says or which code it returns.
  */
 function auditStylesheet(path: string, io: CliIo, json = false): number {
-  let css: string;
+  // The entry's readability gate, byte-identical to 0.1.4: this read pins the
+  // `cannot read <path>` diagnostic — and its precedence, ahead of the
+  // config's, exactly as shipped. The loader re-reads the file (it has since
+  // the audit unit became the closure) and since 0.1.19 scans the directives
+  // there too; this read's remaining job is this diagnostic, in this order.
   try {
-    css = readFileSync(path, "utf8");
+    readFileSync(path, "utf8");
   } catch (error) {
     io.err(`themeguard: cannot read ${path}`);
     io.err(`  ${error instanceof Error ? error.message : String(error)}`);
@@ -454,23 +466,28 @@ function auditStylesheet(path: string, io: CliIo, json = false): number {
     return EXIT_ERROR;
   }
 
-  // The in-source complement: `/* themeguard-ignore … *\/` directives,
-  // scanned from the ORIGINAL stylesheet text — the judgement recorded where
-  // a reader of the CSS can see it, bound to its site by construction. A
-  // malformed directive is the config's own contract: exit 2 naming the
-  // comment's line, never a silent skip.
-  let directives;
+  // The in-source complement: `/* themeguard-ignore … *\/` directives. Since
+  // 0.1.19 the scan lives IN THE LOADER — every member of the closure is
+  // scanned as it is read, each imported member's entries stamped with its
+  // entry-relative origin, the entry file's left unstamped exactly as this
+  // function's own entry-only scan left them — and the closure's judgements
+  // arrive on the sheet this call loads. The grammar's contract rides along:
+  // a malformed directive in ANY member throws out of the load and ends this
+  // file's audit with 2, the same sentence the entry-only scan threw, now
+  // naming the comment's own file and line.
+  let sheet: Stylesheet;
   try {
-    directives = scanIgnoreDirectives(css, path);
+    sheet = loadStylesheet(path);
   } catch (error) {
-    io.err(
-      error instanceof DirectiveError
-        ? `themeguard: ${error.message}`
-        : `themeguard: cannot scan themeguard-ignore directives — ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-    );
-    return EXIT_ERROR;
+    if (error instanceof DirectiveError) {
+      io.err(`themeguard: ${error.message}`);
+      return EXIT_ERROR;
+    }
+    // Anything else is not this function's sentence to rewrite: the read
+    // above gates the entry's I/O and a member's read failure is recorded,
+    // never thrown, so nothing else is known to escape the loader — whatever
+    // does propagates unchanged, exactly as it did before the scan moved in.
+    throw error;
   }
 
   // The merge seam: a directive entry is structurally a config entry carrying
@@ -522,8 +539,8 @@ function auditStylesheet(path: string, io: CliIo, json = false): number {
         : { fileBeyondConfigHome: true as const }),
     };
   });
-  const report = audit(resolveStylesheet(loadStylesheet(path)), {
-    suppressions: [...scoped, ...directives],
+  const report = audit(resolveStylesheet(sheet), {
+    suppressions: [...scoped, ...(sheet.directives ?? [])],
     stylesheet: resolve(path),
   });
   if (json) io.out(formatReportJson(path, report));

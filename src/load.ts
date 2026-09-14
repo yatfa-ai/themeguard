@@ -90,6 +90,36 @@
  * edge's target — a citation that names a file but points at someone else's
  * declaration carries false authority, which is worse than a bare number.
  *
+ * ── Directives ─────────────────────────────────────────────────────────────
+ * The same frames that stamp origins also scan each member's text for
+ * `/* themeguard-ignore … *\/` directives, because since 0.1.19 the
+ * judgement written IN a file must reach the audit that reads the file over
+ * an `@import` — before this, a directive one import edge away was silently
+ * discarded, which falsified the one property the feature documents as its
+ * reason to exist (the judgement travels with the file into vendored,
+ * regenerated or forked copies — and since 0.1.10 the ordinary way a vendored
+ * file is consumed is by being imported). Each frame scans its OWN text
+ * before following any edge, and stamps its own entries with that frame's
+ * `from` — the entry file's entries carry none, exactly as the entry-only
+ * scan left them, so matching stays byte-identical for every entry-file
+ * judgement. The visited set splices each member once, so each member's text
+ * is scanned exactly once and a directive cannot be double-counted; a member
+ * the loader never loads (a bare specifier, an absolute path, a URL) has no
+ * text here to scan and contributes no directives BY CONSTRUCTION — the
+ * standing import fence, not a new rule. The scan lives with the load so a
+ * caller of {@link loadStylesheet} gets the closure's judgements in one
+ * return: the audit unit is the closure, and now its suppression ledger is
+ * too.
+ *
+ * One stamp per directive, same as the items above: a child's entries arrive
+ * already stamped by the frame that scanned them, and the splice re-stamps
+ * nothing (the `origin === undefined` guard below is the same belt the
+ * scopes and references wear). And an unhonourable directive is NOT a failed
+ * edge: the edge-classifying catch below rethrows {@link DirectiveError}
+ * untouched, so a malformed comment in any member exits 2 naming ITS file
+ * and line — config's never-silently-ignored discipline, one edge wider —
+ * instead of wearing an `unresolved-import` finding's clothes.
+ *
  * An unreadable ENTRY file throws — that is the caller's error to render (the
  * CLI already turns it into exit 2 with the path named), and swallowing it
  * here would audit nothing and call it a pass.
@@ -97,6 +127,7 @@
 
 import { readFileSync } from "node:fs";
 import { dirname, relative, resolve } from "node:path";
+import { DirectiveError, scanIgnoreDirectives, type IgnoreDirective } from "./directives.js";
 import {
   parseStylesheet,
   type Scope,
@@ -109,8 +140,11 @@ import {
  * Read `entryPath`, follow the `@import` edges its text declares, and return
  * the closure as one {@link Stylesheet} — entry scopes and references in
  * their own order, each followed file's spliced in at its statement, every
- * spliced item carrying its `origin`, and every failed RELATIVE edge carried
- * on `unresolvedImports`.
+ * spliced item carrying its `origin`, every failed RELATIVE edge carried
+ * on `unresolvedImports`, and every member's `themeguard-ignore` directives
+ * carried on `directives`, each imported member's stamped with its
+ * entry-relative origin. Throws {@link DirectiveError} for an unhonourable
+ * directive in ANY member — the caller's exit-2, never a silent skip.
  */
 export function loadStylesheet(entryPath: string): Stylesheet {
   const entryAbsolute = resolve(entryPath);
@@ -121,7 +155,8 @@ export function loadStylesheet(entryPath: string): Stylesheet {
   const visited = new Set<string>([entryAbsolute]);
 
   const load = (filePath: string): Stylesheet => {
-    const sheet = parseStylesheet(readFileSync(filePath, "utf8"));
+    const text = readFileSync(filePath, "utf8");
+    const sheet = parseStylesheet(text);
     // Imported content FIRST, the file's own second. Every collected `@import`
     // precedes the first qualified rule (the parser collects nothing later),
     // so browser order — imported rules, then the author's — is exactly this
@@ -131,6 +166,7 @@ export function loadStylesheet(entryPath: string): Stylesheet {
     const scopes: Scope[] = [];
     const references: Reference[] = [];
     const unresolvedImports: UnresolvedImport[] = [];
+    const directives: IgnoreDirective[] = [];
     const fileDir = dirname(filePath);
     // This frame's own entry-relative origin, in the Scope/Reference spelling:
     // absent for the entry file, the normalized relative path for anything
@@ -139,6 +175,21 @@ export function loadStylesheet(entryPath: string): Stylesheet {
     // origin below, so an edge broken two hops in is named with its own
     // from-file, never with an outer edge's target.
     const from = filePath === entryAbsolute ? undefined : relative(entryDir, filePath);
+
+    // THIS member's own directives, scanned before any edge is followed: the
+    // entry file's malformed comment is reported before its imports are even
+    // read, the same order the CLI's entry-only scan had before the scan
+    // moved in here. The diagnostic spelling keeps the entry's caller-named
+    // path (byte-identical to that scan) and names a closure member by its
+    // entry-relative origin — the coordinate the report's citations and the
+    // entry's own `source` clause use. The origin rides on every entry as
+    // the MATCHING half: an entry-file judgement carries none and matches
+    // entry sites only, a member's judgement carries its own file and can
+    // never reach across an edge — the line-coincidence fence, now exact
+    // instead of blanket.
+    directives.push(
+      ...scanIgnoreDirectives(text, from ?? entryPath, from),
+    );
 
     for (const imp of sheet.imports) {
       // v1 fence, restated: relative specifiers only. `./` and `../` are the
@@ -154,6 +205,12 @@ export function loadStylesheet(entryPath: string): Stylesheet {
       try {
         child = load(target);
       } catch (err) {
+        // An unhonourable directive in the child's text is NOT a failed edge:
+        // it keeps config's never-silently-ignored contract and propagates as
+        // the caller's exit 2, naming the comment's own file and line — it
+        // must not be reclassified below as an `unreadable` import and
+        // reported as a finding.
+        if (err instanceof DirectiveError) throw err;
         // Missing or unreadable RELATIVE import target — recorded, never
         // silent: the closure is the audit unit, and this failed edge breaks
         // its own composition. `missing` is the file system's ENOENT; anything
@@ -195,6 +252,18 @@ export function loadStylesheet(entryPath: string): Stylesheet {
       // statement order — a child's breakage lands where its edge was
       // written, this frame's own failures where theirs were.
       unresolvedImports.push(...(child.unresolvedImports ?? []));
+      // The child's directives travel with the child, under the same
+      // one-stamp discipline as the scopes and references above: the map
+      // touches only entries still missing an origin. Every frame stamps its
+      // own text at scan time, so nothing arrives unstamped today and the
+      // map is a pass-through — it is the guard that keeps any future
+      // change from re-stamping a deeper frame's directive with THIS edge's
+      // target.
+      directives.push(
+        ...(child.directives ?? []).map((d) =>
+          d.origin === undefined ? { ...d, origin } : d,
+        ),
+      );
     }
 
     scopes.push(...sheet.scopes);
@@ -205,7 +274,13 @@ export function loadStylesheet(entryPath: string): Stylesheet {
     // the audit saw and chose not to follow. Beside it, the failed relative
     // follows of the whole closure: the record of the edges the audit tried
     // and could not.
-    return { scopes, references, imports: sheet.imports, unresolvedImports };
+    return {
+      scopes,
+      references,
+      imports: sheet.imports,
+      unresolvedImports,
+      directives,
+    };
   };
 
   return load(entryAbsolute);

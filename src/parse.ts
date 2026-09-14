@@ -66,6 +66,8 @@
  * is a false statement about the stylesheet rather than a judgement call.
  */
 
+import type { IgnoreDirective } from "./directives.js";
+
 /** Which of the recognised declaration shapes a block is. */
 export type ScopeKind = "root" | "theme" | "theme-inline" | "other";
 
@@ -254,6 +256,17 @@ export interface Stylesheet {
    * system to consult), and empty when every relative edge followed.
    */
   readonly unresolvedImports?: readonly UnresolvedImport[];
+  /**
+   * The `themeguard-ignore` directives scanned from this closure's text, when
+   * the sheet was loaded by {@link loadStylesheet} — every member's in-source
+   * judgement, each stamped with its own file's entry-relative `origin`
+   * (absent for the entry file's own, which is how matching tells an
+   * entry-file judgement from an imported one). Absent on the text-only path
+   * (`parseStylesheet`/`resolveCss` never set it — there is no file to read
+   * the comments from). The GRAMMAR is `directives.ts`'s, not the parser's:
+   * this field carries what the loader collected, nothing more.
+   */
+  readonly directives?: readonly IgnoreDirective[];
 }
 
 const DATA_THEME = /\[\s*data-theme\s*=\s*["']?([^"'\]]+)["']?\s*\]/;
