@@ -4,14 +4,18 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { audit } from "../src/audit.js";
 import {
   EXIT_ERROR,
   EXIT_FINDINGS,
   EXIT_OK,
   USAGE,
+  formatReportJson,
   runCli,
   type CliIo,
 } from "../src/cli.js";
+import { loadStylesheet } from "../src/load.js";
+import { resolveStylesheet } from "../src/resolve.js";
 import { FIXTURE_PATH } from "./fixture.js";
 
 /**
@@ -414,7 +418,7 @@ describe("usage and file errors", () => {
     expect(result.out).toEqual([]);
   });
 
-  it("accepts several files in one invocation — the positionals repeat, still zero options", () => {
+  it("accepts several files in one invocation — the positionals repeat, and the one option is --json", () => {
     // The exact invocation the single-file contract REJECTED — one path, the
     // same path twice — is the multi-file contract's acceptance case: each
     // positional is audited, each report prints under its own header, and the
@@ -600,6 +604,29 @@ describe("node dist/cli.js — the built artifact", () => {
     expect(failed.stdout).toContain("No findings.");
     expect(failed.stderr).toContain("cannot read");
   });
+
+  it("emits parseable NDJSON under --json, through a real process", () => {
+    // In-process `runCli` proves the renderer; this proves the built artifact
+    // actually writes those bytes to a real stdout, one line per file, with
+    // nothing else mixed in — which is the only form the pipeline caller ever
+    // sees.
+    const result = spawn("--json", CLEAN_PATH, ONE_FINDING_PATH);
+    expect(result.code).toBe(EXIT_FINDINGS);
+    const lines = result.stdout.trimEnd().split("\n");
+    expect(lines).toHaveLength(2);
+    const reports = lines.map((l) => JSON.parse(l) as { path: string; countsByRule: Record<string, number> });
+    expect(reports.map((r) => r.path)).toEqual([CLEAN_PATH, ONE_FINDING_PATH]);
+    expect(reports[0]?.countsByRule["dead-token"]).toBe(0);
+    expect(reports[1]?.countsByRule["dead-token"]).toBe(1);
+
+    // stdout stays pure NDJSON when a later file cannot be read: the first
+    // file's line is written, the diagnostic is prose on stderr.
+    const failed = spawn("--json", CLEAN_PATH, join(tmp, "spawn-absent.css"));
+    expect(failed.code).toBe(EXIT_ERROR);
+    expect(failed.stdout.trimEnd().split("\n")).toHaveLength(1);
+    expect(() => JSON.parse(failed.stdout.trimEnd())).not.toThrow();
+    expect(failed.stderr).toContain("cannot read");
+  });
 });
 
 /**
@@ -775,5 +802,265 @@ describe("the unmatched section — judgements that matched nothing, counted and
     expect(result.out.find((l) => l.startsWith("  [unmatched] "))).toContain(
       '"stale — the token is long gone"',
     );
+  });
+});
+
+/**
+ * `--json` — the DATA channel beside the number.
+ *
+ * The exit code has been the whole of what a pipeline caller gets since
+ * 0.1.7, when one invocation started aggregating N files into one verdict.
+ * The report's structured half — which file, which token, which line, which
+ * evidence — existed all along as a typed object and was thrown away at the
+ * render boundary, so a CI annotation step had to split a prose stream on
+ * header lines and regex coordinates out of sentences the tool shapes for
+ * people.
+ *
+ * These assert the three things a caller builds on: the object is the
+ * library's report VERBATIM (so the CLI consumer and the library consumer
+ * read the same shape), the exit codes did not move (the flag adds a channel,
+ * it does not relocate the verdict), and stdout is never MIXED — pure prose
+ * or pure NDJSON, so every line parses without a mode check.
+ */
+describe("--json — the report as data, one NDJSON line per file", () => {
+  const dir = join(tmp, "json-fixtures");
+  mkdirSync(dir, { recursive: true });
+
+  /*
+   * One sheet carrying all three populations at once: an UNSUPPRESSED
+   * collision (so the run exits 1 and `findings` is non-empty), a dead token
+   * the config signs off (so `suppressed` carries an entry with its scope
+   * fields), and a config entry aimed at nothing (so `unmatchedSuppressions`
+   * carries one). A shape test over a report with an empty everything would
+   * prove almost nothing.
+   */
+  const MIXED_PATH = join(dir, "mixed.css");
+  writeFileSync(
+    MIXED_PATH,
+    `
+:root {
+  --card-bg: #3366CC;
+  --card-fg: #3366CC;
+  --unused: #101010;
+}
+
+.card { background: var(--card-bg); color: var(--card-fg); }
+`,
+    "utf8",
+  );
+  writeFileSync(
+    join(dir, "themeguard.config.json"),
+    JSON.stringify({
+      suppress: [
+        { rule: "dead-token", token: "--unused", reason: "reserved for the print stylesheet" },
+        { rule: "scale-collapse", token: "--long-gone", reason: "stale — the token is long gone" },
+      ],
+    }),
+    "utf8",
+  );
+
+  function jsonLines(...args: string[]): { code: number; lines: unknown[]; raw: string[]; err: string[] } {
+    const result = run(...args);
+    return {
+      code: result.code,
+      // Every line parses — that IS the contract, so parsing is the assertion
+      // as much as the shape below is. A stray diagnostic on stdout would
+      // throw here rather than slip through as an unread field.
+      lines: result.out.map((line) => JSON.parse(line) as unknown),
+      raw: result.out,
+      err: result.err,
+    };
+  }
+
+  it("emits ONE line per file, and it is the library's report verbatim with the path in front", () => {
+    const result = jsonLines("--json", MIXED_PATH);
+    expect(result.code).toBe(EXIT_FINDINGS);
+    expect(result.raw).toHaveLength(1);
+
+    const report = result.lines[0] as Record<string, unknown>;
+    // The key order is the REPORT OBJECT's own insertion order, not the prose
+    // renderer's section order (which prints `skipped` before `suppressed`).
+    // `JSON.stringify` preserves insertion order and the project already pins
+    // that order as a compatibility surface for `countsByRule`.
+    expect(Object.keys(report)).toEqual([
+      "path",
+      "findings",
+      "countsByRule",
+      "suppressed",
+      "unmatchedSuppressions",
+      "skipped",
+      "coverage",
+    ]);
+    // The path is the string the CALLER named, not a resolved absolute — it
+    // is what the caller matches its own argv against.
+    expect(report.path).toBe(MIXED_PATH);
+  });
+
+  it("carries the coordinates the prose can only spell inside a sentence", () => {
+    const report = jsonLines("--json", MIXED_PATH).lines[0] as {
+      findings: { rule: string; theme: string | null; tokens: string[]; message: string;
+        sites?: { name: string; line: number }[];
+        evidence: Record<string, unknown> }[];
+      countsByRule: Record<string, number>;
+    };
+
+    const collision = report.findings.find((f) => f.rule === "collision");
+    expect(collision).toBeDefined();
+    expect(collision?.theme).toBe("root");
+    expect(collision?.tokens).toEqual(["--card-bg", "--card-fg"]);
+    // The whole point: file, token and line as FIELDS, not as the "Declared at
+    // lines 3 and 4." clause a consumer would otherwise have to regex out.
+    expect(collision?.sites).toEqual([
+      { name: "--card-bg", line: 3 },
+      { name: "--card-fg", line: 4 },
+    ]);
+    expect(collision?.evidence.value).toBe("#3366CC");
+    expect(report.countsByRule.collision).toBe(1);
+    // Suppressed findings are out of `findings` and out of the counts, exactly
+    // as the prose census reports them.
+    expect(report.countsByRule["dead-token"]).toBe(0);
+  });
+
+  it("omits `sites` on a rule that carries none rather than emitting null", () => {
+    // `dead-token` has no `sites` by design — it already names `:root:6` in
+    // its own message, with a selector `FindingSite` deliberately cannot
+    // supply. The absence is a FACT, and the serialization says so by leaving
+    // the key out: a consumer reads `sites` as "the position, IF the rule has
+    // one to give". `null` would invent a value the library never had.
+    const report = jsonLines("--json", MIXED_PATH).lines[0] as {
+      suppressed: { finding: Record<string, unknown> }[];
+    };
+    const dead = report.suppressed[0]?.finding;
+    expect(dead?.rule).toBe("dead-token");
+    expect("sites" in (dead as object)).toBe(false);
+  });
+
+  it("carries a suppression whole — finding, reason, and the entry's scope fields", () => {
+    const report = jsonLines("--json", MIXED_PATH).lines[0] as {
+      suppressed: { finding: { rule: string }; reason: string; entry: Record<string, unknown> }[];
+      unmatchedSuppressions: Record<string, unknown>[];
+    };
+
+    expect(report.suppressed).toHaveLength(1);
+    expect(report.suppressed[0]?.reason).toBe("reserved for the print stylesheet");
+    // The scope fields the prose renders as bracket suffixes, as data.
+    expect(report.suppressed[0]?.entry).toMatchObject({
+      rule: "dead-token",
+      token: "--unused",
+      reason: "reserved for the print stylesheet",
+    });
+
+    // And the complement: the entry that matched nothing, carried verbatim.
+    expect(report.unmatchedSuppressions).toHaveLength(1);
+    expect(report.unmatchedSuppressions[0]).toMatchObject({
+      rule: "scale-collapse",
+      token: "--long-gone",
+      reason: "stale — the token is long gone",
+    });
+  });
+
+  it("carries a directive-sourced suppression's own site — its file and its line", () => {
+    const result = jsonLines("--json", SUPPRESSED_BY_DIRECTIVE_PATH);
+    expect(result.code).toBe(EXIT_OK);
+    const report = result.lines[0] as {
+      suppressed: { entry: Record<string, unknown> }[];
+    };
+    expect(report.suppressed[0]?.entry).toMatchObject({
+      rule: "dead-token",
+      line: 4,
+      source: `${SUPPRESSED_BY_DIRECTIVE_PATH}:4`,
+    });
+  });
+
+  it("emits exactly one line per file, in argument order", () => {
+    const result = jsonLines("--json", CLEAN_PATH, ONE_FINDING_PATH, CLEAN2_PATH);
+    expect(result.raw).toHaveLength(3);
+    expect(result.lines.map((l) => (l as { path: string }).path)).toEqual([
+      CLEAN_PATH,
+      ONE_FINDING_PATH,
+      CLEAN2_PATH,
+    ]);
+    // 0 and 1 and 0 aggregate to 1 — unchanged by the flag.
+    expect(result.code).toBe(EXIT_FINDINGS);
+  });
+
+  it("keeps the earlier files' lines on stdout when a later file cannot be read — and the diagnostic off it", () => {
+    const missing = join(tmp, "json-absent.css");
+    const result = run("--json", CLEAN_PATH, missing);
+    expect(result.code).toBe(EXIT_ERROR);
+    // Fail-fast, and the line already written is already parseable: that is
+    // what makes NDJSON the right shape rather than one closing array.
+    expect(result.out).toHaveLength(1);
+    expect((JSON.parse(result.out[0]!) as { path: string }).path).toBe(CLEAN_PATH);
+    // stdout is NEVER mixed: the diagnostic is prose, and it is on stderr.
+    expect(result.stderr).toContain(`cannot read ${missing}`);
+    expect(result.stdout).not.toContain("cannot read");
+  });
+
+  it("keeps diagnostics off stdout for a malformed config and a malformed directive too", () => {
+    const badConfig = run("--json", BAD_CONFIG_PATH);
+    expect(badConfig.code).toBe(EXIT_ERROR);
+    expect(badConfig.out).toEqual([]);
+    expect(badConfig.stderr).toContain("themeguard:");
+
+    const badDirective = run("--json", BAD_DIRECTIVE_PATH);
+    expect(badDirective.code).toBe(EXIT_ERROR);
+    expect(badDirective.out).toEqual([]);
+    expect(badDirective.stderr).toContain("themeguard:");
+  });
+
+  it("does not move the exit code — 0, 1 and 2 are the same numbers with and without it", () => {
+    expect(run(CLEAN_PATH).code).toBe(run("--json", CLEAN_PATH).code);
+    expect(run("--json", CLEAN_PATH).code).toBe(EXIT_OK);
+
+    expect(run(FIXTURE_PATH).code).toBe(run("--json", FIXTURE_PATH).code);
+    expect(run("--json", FIXTURE_PATH).code).toBe(EXIT_FINDINGS);
+
+    const missing = join(tmp, "json-parity-absent.css");
+    expect(run(missing).code).toBe(run("--json", missing).code);
+    expect(run("--json", missing).code).toBe(EXIT_ERROR);
+  });
+
+  it("is accepted in any position, and repeating it changes nothing", () => {
+    const leading = run("--json", MIXED_PATH).stdout;
+    expect(run(MIXED_PATH, "--json").stdout).toBe(leading);
+    expect(run("--json", "--json", MIXED_PATH).stdout).toBe(leading);
+    expect(run(CLEAN_PATH, "--json", ONE_FINDING_PATH).out).toHaveLength(2);
+  });
+
+  it("is not a stylesheet — `themeguard --json` alone is the usage error it has always been", () => {
+    // The one case a filter could get wrong in the dangerous direction: a run
+    // with nothing to audit answering 0 with an empty stdout, which a
+    // pipeline reads as "clean".
+    const result = run("--json");
+    expect(result.code).toBe(EXIT_ERROR);
+    expect(result.err).toContain(USAGE);
+    expect(result.out).toEqual([]);
+  });
+
+  it("names the option in the usage line", () => {
+    expect(USAGE).toBe("usage: themeguard [--json] <file.css> [file.css…]");
+  });
+
+  it("leaves the prose default byte-identical — no flag, no change", () => {
+    // The invariant the whole slice rests on: the flag ADDS a renderer, it
+    // does not touch the one every existing pin reads.
+    const prose = run(FIXTURE_PATH);
+    expect(prose.out[0]).toBe(`themeguard — ${FIXTURE_PATH}`);
+    expect(prose.stdout).toContain("collision (11)");
+    expect(prose.stdout).toContain("dead-token (2)");
+    expect(prose.stdout).toContain("scale-collapse (2)");
+    expect(prose.stdout).toContain("22 findings");
+    // And nothing on that stdout is JSON.
+    expect(() => JSON.parse(prose.out[0]!)).toThrow();
+  });
+
+  it("renders through formatReportJson as data, without the command around it", () => {
+    // The same separated-from-I/O discipline `formatReport` has: the renderer
+    // is readable as a function so a test need not scrape a process for it.
+    const report = audit(resolveStylesheet(loadStylesheet(CLEAN_PATH)));
+    const line = formatReportJson("some/path.css", report);
+    expect(line).not.toContain("\n");
+    expect(JSON.parse(line)).toEqual({ path: "some/path.css", ...report });
   });
 });
