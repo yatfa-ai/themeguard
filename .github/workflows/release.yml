@@ -12,17 +12,21 @@
 #     what lands in the registry is exactly what the tag's source proves).
 #   - yatfa/specguard's `prod` deploy-mirror branch is dropped — npm is the
 #     distribution channel; there is nothing for a deploy watcher to poll.
-#   - `id-token: write` so `npm publish --provenance` can attest the build
-#     (provenance shows on npmjs.com with the repo + tag it was built from).
+#   - `id-token: write` so `npm publish` can both authenticate and attest via
+#     OIDC trusted publishing — no NPM_TOKEN secret exists. npm picks up the
+#     Actions OIDC token when NODE_AUTH_TOKEN is absent (needs npm >= 11.5.1;
+#     Node 24 ships well past that), and --provenance signs the publish with
+#     the repo + tag it was built from, shown on npmjs.com. One-time setup on
+#     the npm side (package settings -> Trusted Publisher): organization
+#     yatfa-ai, repository themeguard, workflow filename release.yml.
 #
 # A red main cannot burn a version: scripts/bump-version.sh runs typecheck +
 # test BEFORE the bump commit (themeguard's analogue of yatfa's
 # check_migrations.sh gate).
 #
 # Required repo secrets:
-#   NPM_TOKEN — npm automation/granular token for the account that owns the
-#               `themeguard` package (yatfa-admin). Publishing cannot use the
-#               auto-provided GITHUB_TOKEN; this is the family's only secret.
+#   none beyond the auto-provided GITHUB_TOKEN (npm auth is OIDC trusted
+#   publishing; see the delta above).
 #
 # One trigger per version: the bump commit + vX.Y.Z tag are made inside this
 # run (a GITHUB_TOKEN push spawns no further workflows — by design; the
@@ -89,10 +93,11 @@ jobs:
 
       # prepublishOnly (typecheck + test + build) runs inside npm publish.
       # The tarball ships dist/ only — src/ and tests/ stay out (files:).
+      # Auth is OIDC trusted publishing: no NODE_AUTH_TOKEN is set, so npm
+      # exchanges the workflow's id-token for a registry token (the package's
+      # Trusted Publisher on npmjs.com must name this workflow: release.yml).
       - name: Publish
         run: npm publish --provenance
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       # Stage the exact tarball the registry received and hand it to the
       # release job, so the GitHub Release attaches the published bytes.
