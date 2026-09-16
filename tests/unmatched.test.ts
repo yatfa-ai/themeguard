@@ -178,6 +178,58 @@ describe("audit — the unmatchedSuppressions leg", () => {
     expect(report.unmatchedSuppressions.map((e) => (e as SuppressionEntry).reason)).toEqual([]);
   });
 
+  it("does not report a site directive that covers the same finding as a config entry — the README's advertised combination", () => {
+    // The OTHER half of the same fix, and a different matching path: a
+    // directive carries `line` + `source`, so `matches()` runs the site
+    // conjunct a config entry skips entirely. README:469 advertises using
+    // both together ("the two work together — both merge into the same
+    // `suppressions` section"), and the CLI composes exactly that at
+    // `src/cli.ts:543`: `[...scoped, ...(sheet.directives ?? [])]` — one
+    // array, config entries first, directives after. Before every matching
+    // slot was booked, the directive fell into the complement and the report
+    // advised retiring a judgement whose finding was printed under
+    // `suppressed` in the same report.
+    const configEntry = {
+      rule: "collision" as const,
+      tokens: ["--accent", "--success"],
+      reason: "project-level: accent is deliberately the success green",
+    };
+    const directiveEntry = {
+      rule: "collision" as const,
+      tokens: ["--accent", "--success"],
+      reason: "in-file judgement: vendor brand",
+      line: 2,
+      source: "tokens.css:2",
+    };
+    const report = audit(resolved, {
+      suppressions: [configEntry, directiveEntry] as readonly (
+        | SuppressionEntry
+        | (SuppressionEntry & { line: number; source: string })
+      )[],
+    });
+    // Attribution is unchanged: the FIRST match supplies the reason, and the
+    // finding is suppressed exactly once.
+    expect(report.suppressed).toHaveLength(1);
+    expect(report.suppressed[0]?.reason).toBe(
+      "project-level: accent is deliberately the success green",
+    );
+    // And the directive — which matched — is NOT advertised as retirable.
+    expect(report.unmatchedSuppressions.map((e) => (e as SuppressionEntry).reason)).toEqual([]);
+
+    // Order-independent across the two entry KINDS: declare the directive
+    // first and attribution moves to it, while the config twin it displaced
+    // still matched and so still must not be reported.
+    const reversed = audit(resolved, {
+      suppressions: [directiveEntry, configEntry] as readonly (
+        | SuppressionEntry
+        | (SuppressionEntry & { line: number; source: string })
+      )[],
+    });
+    expect(reversed.suppressed).toHaveLength(1);
+    expect(reversed.suppressed[0]?.reason).toBe("in-file judgement: vendor brand");
+    expect(reversed.unmatchedSuppressions.map((e) => (e as SuppressionEntry).reason)).toEqual([]);
+  });
+
   it("names an orphaned directive whose defect was FIXED — the case no finding can announce", () => {
     // Line 9 is nowhere near either declaration, so the site conjunct misses:
     // the findings print (pinned by the orphan test beside this one), and the
