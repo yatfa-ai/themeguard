@@ -459,9 +459,19 @@ export function audit(
   // array, never by shape: the same entry can match many findings, and two
   // distinct entries can be structurally similar, so the complement below is
   // a set-difference over the entries themselves — the array's own slots —
-  // and not over their fields. `findIndex` reads the same first-match the
-  // `find` it replaces read, so the matching behaviour is unchanged; only
-  // what the loop remembers about a match is new.
+  // and not over their fields.
+  //
+  // EVERY matching slot is booked, not just the one that supplies the reason.
+  // The two questions the loop answers are separate: WHICH entry attributes
+  // the suppression (the FIRST match — a finding is suppressed once, with one
+  // reason, and that pinned rule is unchanged) and WHICH entries matched
+  // anything at all (all of them). Booking only the first conflated the two,
+  // so a second entry that legitimately covered the same finding fell into
+  // the complement below and the report told its author the judgement had
+  // outlived its defect and could be retired — false advice about a working
+  // entry, with the finding it covers sitting right there under `suppressed`.
+  // Two config entries for one pair, and the config-entry + directive
+  // combination the README advertises, are both that shape.
   const matched = new Array<boolean>(suppressions.length).fill(false);
   const suppressed: SuppressedFinding[] = [];
   const kept: Finding[] = [];
@@ -476,10 +486,22 @@ export function audit(
     ...unresolvedImports,
     ...themePartials,
   ])) {
-    const index = suppressions.findIndex((s) => matches(s, finding));
+    let index = -1;
+    for (let i = 0; i < suppressions.length; i += 1) {
+      const candidate = suppressions[i] as
+        | SuppressionEntry
+        | SiteScopedSuppressionEntry
+        | FileScopedSuppressionEntry;
+      if (!matches(candidate, finding)) continue;
+      // Booked whether or not it attributes: a later slot covering the same
+      // finding matched, and the complement must not claim otherwise.
+      matched[i] = true;
+      if (index === -1) index = i;
+    }
     if (index === -1) kept.push(finding);
     else {
-      matched[index] = true;
+      // Attribution is the FIRST match, as it has always been: one row in
+      // `suppressed`, carrying that entry's reason and identity.
       const entry = suppressions[index] as SuppressionEntry | SiteScopedSuppressionEntry | FileScopedSuppressionEntry;
       suppressed.push({ finding, reason: entry.reason, entry });
     }

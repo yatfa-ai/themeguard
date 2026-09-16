@@ -103,42 +103,79 @@ describe("audit — the unmatchedSuppressions leg", () => {
     expect(report.unmatchedSuppressions).toEqual([]);
   });
 
-  it("reports an entry as unmatched by IDENTITY, not by shape", () => {
-    // Two entries that are structurally similar but distinct objects: the
-    // first matches the collision, the second — same shape, different reason
-    // — matched nothing, and it is THE SECOND one the leg carries.
-    const first = {
+  it("reports an entry as unmatched by SLOT IDENTITY, not by shape", () => {
+    // The property: the complement is a set-difference over the caller's
+    // array SLOTS, never over entry shape — the specific object that matched
+    // nothing is the one carried, and two slots carrying the same shape are
+    // two separate answers rather than one deduped one.
+    //
+    // This used to be demonstrated with two IDENTICAL-shape collision
+    // entries, asserting the second was left unmatched because the first had
+    // claimed the finding. That demonstration is no longer constructible:
+    // every matching slot is now booked, and `matches()` is a pure function
+    // of an entry's own fields, so two identical shapes always match exactly
+    // the same findings — slot-booking and shape-booking converge there. The
+    // two scenarios below are the ones that still tell them apart.
+    //
+    // (a) Structurally similar entries where exactly ONE matches: both name
+    // `--accent`, but only the first pairs it with a token the collision
+    // finding does not carry, so the finding fails its includes-check. The
+    // leg carries THAT slot — the one that genuinely matched nothing — and
+    // not merely "the later entry".
+    const missing = {
+      rule: "collision" as const,
+      tokens: ["--accent", "--unused"],
+      reason: "aimed at a pair that does not collide",
+    };
+    const matching = {
       rule: "collision" as const,
       tokens: ["--accent", "--success"],
       reason: "the real judgement",
     };
-    const second = {
-      rule: "collision" as const,
-      tokens: ["--accent", "--success"],
-      reason: "a duplicate nobody aimed",
-    };
-    const report = audit(resolved, { suppressions: [first, second] });
+    const report = audit(resolved, { suppressions: [missing, matching] });
     expect(report.suppressed).toHaveLength(1);
-    expect(report.suppressed[0]?.entry).toBe(first);
+    expect(report.suppressed[0]?.entry).toBe(matching);
     expect(report.unmatchedSuppressions).toHaveLength(1);
-    expect(report.unmatchedSuppressions[0]).toBe(second);
+    expect(report.unmatchedSuppressions[0]).toBe(missing);
+
+    // (b) Two entries of the SAME shape that both match nothing are BOTH
+    // carried, in declaration order: the leg reports slots, so it never
+    // folds two judgements into one because they happen to read alike.
+    const twinA = {
+      rule: "scale-collapse" as const,
+      token: "--token-that-exists-nowhere",
+      reason: "first ledger line",
+    };
+    const twinB = {
+      rule: "scale-collapse" as const,
+      token: "--token-that-exists-nowhere",
+      reason: "second ledger line",
+    };
+    const twins = audit(resolved, { suppressions: [twinA, twinB] });
+    expect(twins.suppressed).toHaveLength(0);
+    expect(twins.unmatchedSuppressions).toHaveLength(2);
+    expect(twins.unmatchedSuppressions[0]).toBe(twinA);
+    expect(twins.unmatchedSuppressions[1]).toBe(twinB);
   });
 
-  it("leaves a second entry unmatched when the first already claimed the finding — first match wins", () => {
-    // Both entries would match the collision; the first supplies the reason.
-    // The second is honestly reported as matching nothing THIS run — the
-    // partition's first-wins rule is unchanged, and the leg tells the truth
-    // about what each entry did.
+  it("does not report a second entry that covers the same finding — first match wins ATTRIBUTION only", () => {
+    // Both entries match the collision. The FIRST supplies the reason and
+    // the finding is suppressed exactly once — that partition rule is
+    // unchanged. What the second entry is NOT is unmatched: it matched a
+    // finding, and the complement's prose offers a reader only two readings
+    // ("the defect was fixed and the judgement can be retired" / "the entry
+    // never aimed at a finding that exists"), both false here — the finding
+    // it covers is printed under `suppressed` in the same report. Reporting
+    // it would steer the author into retiring a working judgement.
     const report = audit(resolved, {
       suppressions: [
         { rule: "collision", tokens: ["--accent", "--success"], reason: "the one that worked" },
         { rule: "collision", tokens: ["--accent", "--success"], reason: "redundant twin" },
       ],
     });
+    expect(report.suppressed).toHaveLength(1);
     expect(report.suppressed[0]?.reason).toBe("the one that worked");
-    expect(report.unmatchedSuppressions.map((e) => (e as SuppressionEntry).reason)).toEqual([
-      "redundant twin",
-    ]);
+    expect(report.unmatchedSuppressions.map((e) => (e as SuppressionEntry).reason)).toEqual([]);
   });
 
   it("names an orphaned directive whose defect was FIXED — the case no finding can announce", () => {
