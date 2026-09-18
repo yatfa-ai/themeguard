@@ -82,7 +82,15 @@
  * interplay (the registration is invisible to scope lookup — the named
  * false-positive class of unresolved-reference — and reading it is a parser
  * change). No parse or resolve changes: `kind: "cycle"` and `chain` are this
- * rule's SUBJECT, not something to change.
+ * rule's SUBJECT, not something to change. That fence binds the RULE's own
+ * discipline — data, not verdicts: the rule must never reach into the
+ * resolver to manufacture the facts it judges. It is not a claim that the
+ * resolver's coverage of its own fourth fact is finished: 0.1.20 completed it
+ * resolver-side, minting `cycle` for a loop whose closing edge is embedded in
+ * a compound value (`--divider: 1px solid var(--divider-color)`) rather than
+ * spelled as the whole value. This rule stayed byte-identical through that
+ * work — the loops simply arrive now — which is the fence holding, not being
+ * relaxed.
  */
 
 import { ROOT_THEME, type ResolvedStylesheet } from "../resolve.js";
