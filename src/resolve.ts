@@ -6,6 +6,32 @@
  * indirections, including Tailwind v4's `@theme inline` alias namespace
  * (`--color-app-cta: var(--app-cta)`).
  *
+ * Chains are followed through EMBEDDED references too, not only through values
+ * that are exactly one `var()` call: `1px solid var(--c)` and
+ * `calc(var(--x) + 2px)` are the ordinary shapes real stylesheets are written
+ * in, and a chain that closes on one of them is a cycle whichever way the
+ * value is spelled. For a compound value v1 mints the CYCLE fact only — a
+ * MISSING embedded name stays rule 5's (`unresolved-reference`), judged at use
+ * level from the references the parser already collects, because minting
+ * `unresolved` for the declaration too would report one defect twice. The
+ * edges read from a compound value are PRIMARY-position references — the first
+ * argument of each `var()` call — never a name inside a `var()`'s own fallback
+ * segment. Reading one would invent an edge the walk does not take on the
+ * ordinary shape: `--a: var(--b, var(--a))` mentions `--a` in its own fallback,
+ * so a scan that read it would close a loop on iteration zero and report
+ * `--a → --a`, losing the real `--a → --b → --a`.
+ *
+ * That constraint makes the compound scan NARROWER than the whole-value walk on
+ * exactly one shape, and the difference is a stated v1 residual rather than a
+ * parallel: the whole-value walk DOES descend into a fallback — and does treat
+ * the names in it as edges — when the primary is UNDECLARED and the browser
+ * would therefore substitute that fallback. So `--a: var(--nope, var(--a))` is
+ * `cycle` (chain `--a → --nope → --a`) while `1px solid var(--nope, var(--a))`
+ * is not: the compound scan reads `--nope` and stops, because deciding that a
+ * fallback segment is the live one requires knowing which primaries are
+ * undeclared, which the scan deliberately does not do in v1. Both shapes are
+ * pinned in `tests/compound-cycle.test.ts`.
+ *
  * ── This stage produces DATA, never verdicts ────────────────────────────────
  * Nothing here decides that two tokens holding the same colour is a defect, or
  * that an unresolved reference is an error. It reports what is there. The rules
@@ -28,7 +54,11 @@
  *                        resolves to kind `unresolved`, naming the reference.
  *   4. Cycles          — a `var()` chain that returns to a name already on the
  *                        chain resolves to kind `cycle`, carrying the path.
- *                        It never throws and never loops forever.
+ *                        It never throws and never loops forever. The closing
+ *                        edge counts whether it is the whole value
+ *                        (`--a: var(--b)`) or embedded in a compound one
+ *                        (`--a: 1px solid var(--b)`), in primary position
+ *                        either way.
  */
 
 import { parseColor, isTranslucent, toCss, type Color } from "./color.js";
@@ -132,6 +162,59 @@ export interface ResolvedStylesheet {
 }
 
 const VAR_ONLY = /^var\(\s*(--[\w-]+)\s*(?:,([\s\S]*))?\)$/;
+
+/** The primary argument of a `var()` call: the name, before any `,fallback`. */
+const VAR_PRIMARY = /^\s*(--[\w-]+)/;
+
+/**
+ * Every PRIMARY-position custom property a value references.
+ *
+ * `VAR_ONLY` answers the whole-value question — is this value exactly one
+ * `var()` call — and returns nothing at all for `1px solid var(--c)` or
+ * `calc(var(--x) + 2px)`, which is how the majority of real token values are
+ * written. This reads the same edges out of a compound value: for each `var()`
+ * call, the first argument, and nothing else.
+ *
+ * "Nothing else" is the load-bearing half. Each call's own parentheses are
+ * SKIPPED once its primary name is taken, so a reference living inside a
+ * `var()`'s FALLBACK segment (`var(--c, var(--a))`) is never collected. Reading
+ * one would invent an edge the resolution walk does not take for that value:
+ * `--a: var(--b, var(--a))` mentions `--a` in its own fallback, so an
+ * unconstrained scan would close a loop on iteration zero and report
+ * `--a → --a`, losing `--b` and contradicting the walk that actually runs.
+ *
+ * This is NARROWER than the whole-value walk, not identical to it. That walk
+ * does follow a fallback — and does treat its names as edges — in the one case
+ * where the browser would substitute it: when the primary is UNDECLARED
+ * (`VAR_ONLY` captures the primary, then sets `value = fallback` if `lookup`
+ * misses). Telling that case apart requires knowing which primaries are
+ * declared, which this scan deliberately does not do, so
+ * `1px solid var(--nope, var(--a))` stays unflagged where the whole-value
+ * `var(--nope, var(--a))` is `cycle`. Pinned as a residual in
+ * `tests/compound-cycle.test.ts`.
+ */
+function primaryReferences(value: string): string[] {
+  const names: string[] = [];
+  for (let i = 0; i < value.length; ) {
+    const at = value.indexOf("var(", i);
+    if (at === -1) break;
+    const open = at + 4;
+    const primary = value.slice(open).match(VAR_PRIMARY);
+    if (primary) names.push(primary[1]);
+    // Walk to this call's own closing paren, so its fallback segment — the
+    // only place a nested `var()` can sit — is passed over rather than read.
+    let depth = 1;
+    let j = open;
+    while (j < value.length && depth > 0) {
+      const ch = value[j];
+      if (ch === "(") depth++;
+      else if (ch === ")") depth--;
+      j++;
+    }
+    i = j > open ? j : open;
+  }
+  return names;
+}
 
 interface ScopeTable {
   readonly theme: string;
@@ -263,6 +346,42 @@ export function resolveStylesheet(sheet: Stylesheet): ResolvedStylesheet {
     for (;;) {
       const m = value.match(VAR_ONLY);
       if (!m) {
+        // The COMPOUND branch. The whole-value walk above declined, so this
+        // value is not exactly one `var()` call — `1px solid var(--c)`,
+        // `calc(var(--x) + 2px)`, `color-mix(in srgb, var(--a) 15%, var(--b))`.
+        // A chain that closes here is the same defect a whole-value loop is:
+        // per CSS custom-property semantics every property in the loop is
+        // invalid at computed-value time however the value is spelled. So the
+        // embedded PRIMARY-position references are read for a back edge, and
+        // one that lands on a name already on the walk mints the identical
+        // fact the whole-value branch mints — same kind, same null value, same
+        // `[...chain, name]` shape.
+        //
+        // Only the back edge is minted. A compound value is not FOLLOWED (the
+        // walk has no substituted value to continue with — the rest of the
+        // value is literal text), and an embedded name nothing declares stays
+        // rule 5's at use level rather than becoming a second `unresolved`
+        // fact about this declaration. Every whole-value shape — plain loop,
+        // self-loop, fallback-missing, fallback-cycle — is handled above and
+        // never reaches here, so their facts are unchanged by construction.
+        //
+        // The not-followed half has one visible consequence, pinned in the
+        // tests as a residual: a TAIL declaration whose walk enters a loop
+        // THROUGH a compound value (`--tail: var(--a)` where `--a` closes a
+        // compound loop) stops at that value and classifies as its literal
+        // text, where a tail into a whole-value loop is itself marked `cycle`.
+        // The loop's own fact is minted either way, so the defect is reported;
+        // only the dependent declaration goes unlisted.
+        for (const name of primaryReferences(value)) {
+          if (seen.has(name)) {
+            return {
+              resolvedValue: null,
+              kind: "cycle",
+              chain: [...chain, name],
+              missingReference: null,
+            };
+          }
+        }
         return { resolvedValue: value, kind: classifyValue(value), chain, missingReference: null };
       }
       const referenced = m[1];
