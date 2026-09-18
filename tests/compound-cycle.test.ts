@@ -37,9 +37,11 @@ import { CENSUS, fixtureCss, FIXTURE_PATH } from "./fixture.js";
  *      and a compound value with no back edge falls through to `classifyValue`
  *      exactly as before.
  *   3. SCAN SCOPE — a back edge that sits only inside a `var()`'s own FALLBACK
- *      segment is NOT an edge. This is the walk's existing semantics, and
- *      pinning it is what keeps `--a: var(--b, var(--a))` reporting the full
- *      `--a → --b → --a` chain instead of a truncated `--a → --a`.
+ *      segment is NOT a scanned edge, because reading one would truncate
+ *      `--a: var(--b, var(--a))` from its real `--a → --b → --a` chain to
+ *      `--a → --a`. The scan is therefore narrower than the whole-value walk on
+ *      one shape — an UNDECLARED primary whose fallback self-references — and
+ *      that residual is pinned rather than implied.
  */
 
 interface Run {
@@ -261,12 +263,15 @@ describe("the canonical compound shapes all close, and each is ONE finding namin
 });
 
 describe("SCAN SCOPE — a fallback-only back edge is NOT an edge", () => {
-  // The load-bearing constraint. The walk has never treated a name inside a
-  // var()'s own fallback segment as an edge: `VAR_ONLY` captures the primary
-  // and descends into a fallback only when the primary is UNDECLARED. Reading
-  // a fallback name here would invent an edge the resolution walk does not
-  // have — and on `--a: var(--b, var(--a))` it would close a loop on iteration
-  // zero, truncating a real `--a → --b → --a` chain to `--a → --a`.
+  // The load-bearing constraint. A name inside a var()'s own fallback segment
+  // is not a SCANNED edge, because reading one would invent an edge the walk
+  // does not take for that value — and on `--a: var(--b, var(--a))` it would
+  // close a loop on iteration zero, truncating a real `--a → --b → --a` chain
+  // to `--a → --a`.
+  //
+  // The scan is therefore NARROWER than the whole-value walk, which DOES follow
+  // a fallback (and treat its names as edges) when the primary is UNDECLARED.
+  // That asymmetry is the residual pinned at the end of this block.
   it("a compound value whose only back edge sits in a fallback segment stays clean", () => {
     const r = resolveCss(`:root { --a: calc(var(--x, var(--a)) + 2px); --x: 3px; }`);
     const t = r.token("--a", ROOT_THEME);
@@ -300,6 +305,29 @@ describe("SCAN SCOPE — a fallback-only back edge is NOT an edge", () => {
     expect(t?.kind).toBe("non-color");
     expect(t?.resolvedValue).toBe("1px solid #ccc");
     expect(t?.chain).toEqual(["--a"]);
+  });
+
+  it("RESIDUAL, pinned: an UNDECLARED primary whose fallback self-references is reported whole-value, not compound", () => {
+    // The one shape where the compound scan is NARROWER than the whole-value
+    // walk, and the reason it is: that walk follows a fallback — and treats its
+    // names as edges — precisely when the primary is UNDECLARED and the browser
+    // would therefore substitute that fallback. The compound scan reads primary
+    // positions only and does not consult the declaration table, so it reads
+    // `--nope`, finds it is not on the walk, and stops.
+    //
+    // Same CSS defect, reported in one spelling and silent in the other. It is
+    // the deliberate v1 edge: resolving it needs the scan to know which
+    // primaries are undeclared, which is a design decision, not a line. Pinned
+    // here so the next reader finds the limit stated rather than implied.
+    const whole = resolveCss(`:root { --a: var(--nope, var(--a)); }`);
+    expect(whole.token("--a", ROOT_THEME)?.kind).toBe("cycle");
+    expect(whole.token("--a", ROOT_THEME)?.chain).toEqual(["--a", "--nope", "--a"]);
+    expect(audit(whole).countsByRule["cycle-reference"]).toBe(1);
+
+    const compound = resolveCss(`:root { --a: 1px solid var(--nope, var(--a)); }`);
+    expect(compound.token("--a", ROOT_THEME)?.kind).toBe("non-color");
+    expect(compound.token("--a", ROOT_THEME)?.chain).toEqual(["--a"]);
+    expect(audit(compound).countsByRule["cycle-reference"]).toBe(0);
   });
 });
 

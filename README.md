@@ -37,8 +37,11 @@
    one** (`--divider: 1px solid var(--divider-color)`, `calc(var(--x) + 2px)`,
    `color-mix(in srgb, var(--a) 15%, var(--b))`) — the shapes most real token values are written in.
    The reference read from a compound value is each `var()` call's **primary** argument; a name
-   inside a `var()`'s own fallback segment is not an edge, exactly as the whole-value walk has always
-   treated it. The finding is
+   inside a `var()`'s own fallback segment is not a scanned edge, because reading one would close a
+   loop on the wrong iteration — `--a: var(--b, var(--a))` would report `--a → --a` and lose the real
+   `--a → --b → --a`. One residual follows from that constraint and is pinned rather than papered
+   over: the whole-value walk DOES follow a fallback when the primary is undeclared, so
+   `var(--nope, var(--a))` is reported and `1px solid var(--nope, var(--a))` is not. The finding is
    one per loop per author: a loop the base declarations (or the `@theme inline` alias namespace)
    author is reported once for the stylesheet, and a loop a theme's own declarations close is
    reported for that theme — a theme that merely inherits a root-authored loop never re-reports it.

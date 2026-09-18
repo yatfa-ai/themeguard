@@ -16,9 +16,21 @@
  * `unresolved` for the declaration too would report one defect twice. The
  * edges read from a compound value are PRIMARY-position references — the first
  * argument of each `var()` call — never a name inside a `var()`'s own fallback
- * segment: that is the edge semantics the whole-value walk has always had
- * (it captures the primary name and never descends into fallbacks), applied
- * to compound values rather than changed.
+ * segment. Reading one would invent an edge the walk does not take on the
+ * ordinary shape: `--a: var(--b, var(--a))` mentions `--a` in its own fallback,
+ * so a scan that read it would close a loop on iteration zero and report
+ * `--a → --a`, losing the real `--a → --b → --a`.
+ *
+ * That constraint makes the compound scan NARROWER than the whole-value walk on
+ * exactly one shape, and the difference is a stated v1 residual rather than a
+ * parallel: the whole-value walk DOES descend into a fallback — and does treat
+ * the names in it as edges — when the primary is UNDECLARED and the browser
+ * would therefore substitute that fallback. So `--a: var(--nope, var(--a))` is
+ * `cycle` (chain `--a → --nope → --a`) while `1px solid var(--nope, var(--a))`
+ * is not: the compound scan reads `--nope` and stops, because deciding that a
+ * fallback segment is the live one requires knowing which primaries are
+ * undeclared, which the scan deliberately does not do in v1. Both shapes are
+ * pinned in `tests/compound-cycle.test.ts`.
  *
  * ── This stage produces DATA, never verdicts ────────────────────────────────
  * Nothing here decides that two tokens holding the same colour is a defect, or
@@ -165,14 +177,21 @@ const VAR_PRIMARY = /^\s*(--[\w-]+)/;
  *
  * "Nothing else" is the load-bearing half. Each call's own parentheses are
  * SKIPPED once its primary name is taken, so a reference living inside a
- * `var()`'s FALLBACK segment (`var(--c, var(--a))`) is never collected — the
- * walk has never treated a fallback name as an edge (`VAR_ONLY` captures the
- * primary and descends into a fallback only when the primary is undeclared),
- * and reading one here would invent an edge the resolution walk does not have.
- * The distinction is not academic: `--a: var(--b, var(--a))` mentions `--a` in
- * its own fallback, so an unconstrained scan would close a loop on iteration
- * zero and report `--a → --a`, losing `--b` and contradicting the walk that
- * actually runs for that value.
+ * `var()`'s FALLBACK segment (`var(--c, var(--a))`) is never collected. Reading
+ * one would invent an edge the resolution walk does not take for that value:
+ * `--a: var(--b, var(--a))` mentions `--a` in its own fallback, so an
+ * unconstrained scan would close a loop on iteration zero and report
+ * `--a → --a`, losing `--b` and contradicting the walk that actually runs.
+ *
+ * This is NARROWER than the whole-value walk, not identical to it. That walk
+ * does follow a fallback — and does treat its names as edges — in the one case
+ * where the browser would substitute it: when the primary is UNDECLARED
+ * (`VAR_ONLY` captures the primary, then sets `value = fallback` if `lookup`
+ * misses). Telling that case apart requires knowing which primaries are
+ * declared, which this scan deliberately does not do, so
+ * `1px solid var(--nope, var(--a))` stays unflagged where the whole-value
+ * `var(--nope, var(--a))` is `cycle`. Pinned as a residual in
+ * `tests/compound-cycle.test.ts`.
  */
 function primaryReferences(value: string): string[] {
   const names: string[] = [];
