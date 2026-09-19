@@ -42,8 +42,16 @@
 
 export {
   audit,
+  crossFileAims,
+  closureOrigins,
+  findingLinesIn,
+  findingSiteCoordinates,
+  matchesEntryIdentity,
+  siteLineCovers,
   type AuditReport,
   type AuditOptions,
+  type CrossFileAim,
+  type SiteCoordinate,
   type SuppressedFinding,
   type SiteScopedSuppressionEntry,
 } from "./audit.js";

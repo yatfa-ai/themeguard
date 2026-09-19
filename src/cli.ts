@@ -128,14 +128,27 @@
  * prints even at zero, because an empty section is the PROOF that every
  * recorded judgement is still doing work; like `skipped` and `coverage` it
  * is hygiene, never a defect, and never moves the exit code. Its prose names
- * the two possible causes and stops — the tool cannot tell an expired
- * judgement (defect fixed, retire the entry) from a mis-aimed one, and must
- * not pretend to. One cause it CAN tell, and since 0.1.11 says so: an entry
- * carrying a ` [file: …]` clause names the stylesheet it was recorded
- * against, so its presence on this report is neither expiry nor mis-aim — it
- * aims at a sibling file this config governs, and that file's report is the
- * one that states its fate. A clause-carrying entry is never advised retired
- * on this report's word.
+ * the two possible causes and stops — IN GENERAL the tool cannot tell an
+ * expired judgement (defect fixed, retire the entry) from a mis-aimed one, and
+ * must not pretend to. Two causes it CAN tell, each with its own line beside
+ * that prose. Since 0.1.11: an entry carrying a ` [file: …]` clause names the
+ * stylesheet it was recorded against, so its presence on this report is neither
+ * expiry nor mis-aim — it aims at a sibling file this config governs, and that
+ * file's report is the one that states its fate. A clause-carrying entry is
+ * never advised retired on this report's word. And since 0.1.24: a SITE-scoped
+ * judgement whose rule and tokens match a live finding every one of whose sites
+ * lives in ANOTHER file of the closure. There both readings are outright false
+ * — the defect is not fixed (the finding prints above, in this same report) and
+ * the entry did aim at a finding that exists, one `@import` edge away — so the
+ * row names the finding, WHERE it sits, and the two moves that reach it: move
+ * the comment into that file, or record the judgement in the config, whose
+ * reach is the closure. Claimed only where the FILE is the whole reason nothing
+ * matched; a directive that missed on its LINE while its own file holds a site
+ * keeps the existing advice, whose clauses are closer to true there, and so
+ * does every config entry, whose identity matching is already closure-wide.
+ * DIAGNOSIS and never suppression: the entry is still unmatched, the counts and
+ * the exit code do not move, and a directive still never reaches across an
+ * edge — {@link crossFileAims} reads a FINISHED report.
  *
  * `coverage` is printed under the same precedent. It is the fact inventory rule
  * 4 is measured over — per theme, every base-theme token marked overridden or
@@ -162,6 +175,14 @@
  * PROJECTION (sites become clause text, evidence becomes sentence fragments,
  * scopes become bracket suffixes), so a caller that wanted "which file, which
  * token, which line" had to scrape sentences the tool shapes for people.
+ *
+ * ONE key is the CLI's own rather than the library's, and it is additive: an
+ * `unmatchedSuppressions` row whose judgement names a live finding in another
+ * file of the closure carries `crossFileAim`, `{rule, site}` — the machine form
+ * of the prose's `— matches a live …` clause, so the pointer is read as data
+ * instead of regexed out of a sentence. ABSENT (never `null`) on every row
+ * without one, the same absence-is-a-fact discipline `sites` carries, which is
+ * what keeps every row this does not apply to byte-identical.
  *
  * Three properties a pipeline caller may rely on:
  *
@@ -198,8 +219,12 @@
  * exit 2 alongside the usage errors, naming the offending entry.
  *
  * The `unmatched` section is likewise outside the exit: a declared entry that
- * matched nothing is a stale or mis-aimed JUDGEMENT, not a defect in the
- * stylesheet, so an expired judgement must never turn a green pipeline red.
+ * matched nothing is a stale, mis-aimed or MISFILED JUDGEMENT, not a defect in
+ * the stylesheet, so an expired judgement must never turn a green pipeline red.
+ * That holds for the misfiled one too — a site-scoped judgement whose finding
+ * lives one `@import` edge away has its aim NAMED on its row since 0.1.24, and
+ * naming it moves nothing: the finding was already counted (it is live, and it
+ * prints), the entry is still unmatched, and the code is what it was.
  * The exit stays exactly the question it has always been — were there
  * unsuppressed findings.
  *
@@ -217,8 +242,14 @@
 import { readFileSync, realpathSync } from "node:fs";
 import { dirname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { audit, type SiteScopedSuppressionEntry } from "./audit.js";
 import {
+  audit,
+  crossFileAims,
+  type CrossFileAim,
+  type SiteScopedSuppressionEntry,
+} from "./audit.js";
+import {
+  CONFIG_FILENAME,
   ConfigError,
   configPathFor,
   readConfig,
@@ -341,6 +372,35 @@ function beyondConfigHome(
  */
 function tokenScope(entry: SuppressionEntry | SiteScopedSuppressionEntry): string {
   return entry.token !== undefined ? ` [token: ${entry.token}]` : "";
+}
+
+/**
+ * The cross-file aim clause an unmatched site-scoped judgement earns when its
+ * conjuncts match a live finding that lives in ANOTHER file of the closure —
+ * the additive sentence that keeps the section's retirement advice from being
+ * flatly wrong about it.
+ *
+ * The section's two readings are "the defect was fixed, retire the entry" and
+ * "the entry never aimed at a finding that exists". For this one shape BOTH are
+ * false: the finding prints above in the same report, and the entry did aim at
+ * it — one `@import` edge away. So this clause says what the report DOES know:
+ * which finding, WHERE it sits, and the two ways to reach it. A directive
+ * governs only the file it is written in (the fence is unchanged, and this
+ * clause is a diagnosis rather than a suppression), so the moves are moving the
+ * comment into that file, or recording the judgement in the config, whose reach
+ * is the whole closure.
+ *
+ * `""` for every other entry, which keeps every section this does not apply to
+ * byte-identical. It joins the `tokenScope` / `scopeSuffix` / `fileClause` /
+ * `sourceClause` family and composes after them: in practice disjoint from the
+ * `[file: …]` clause (a file-scoped config entry carries no `line`, so it never
+ * earns an aim), and the composition stays honest if some shape ever carries
+ * both.
+ */
+function crossFileClause(aim: CrossFileAim | undefined): string {
+  return aim === undefined
+    ? ""
+    : ` — matches a live [${aim.rule}] finding at ${aim.site}; a directive governs only the file it is written in — move it there, or record it in ${CONFIG_FILENAME} to cover the whole closure.`;
 }
 
 /**
@@ -539,12 +599,19 @@ function auditStylesheet(path: string, io: CliIo, json = false): number {
         : { fileBeyondConfigHome: true as const }),
     };
   });
-  const report = audit(resolveStylesheet(sheet), {
+  const resolved = resolveStylesheet(sheet);
+  const report = audit(resolved, {
     suppressions: [...scoped, ...(sheet.directives ?? [])],
     stylesheet: resolve(path),
   });
-  if (json) io.out(formatReportJson(path, report));
-  else for (const line of formatReport(path, report)) io.out(line);
+  // The cross-file aim of each unmatched site-scoped judgement — DIAGNOSIS
+  // only, derived from the finished report and consulted by nothing that
+  // suppresses. Computed here because this is the one frame holding both
+  // halves: the report, and the resolved sheet whose origin set tells an
+  // imported citation from an entry-file one.
+  const aims = crossFileAims(report.unmatchedSuppressions, report.findings, resolved);
+  if (json) io.out(formatReportJson(path, report, aims));
+  else for (const line of formatReport(path, report, aims)) io.out(line);
 
   // Findings here are the UNSUPPRESSED ones — a finding the user has recorded
   // as deliberate no longer holds the exit code hostage, which is the whole
@@ -552,10 +619,21 @@ function auditStylesheet(path: string, io: CliIo, json = false): number {
   return report.findings.length > 0 ? EXIT_FINDINGS : EXIT_OK;
 }
 
-/** The printed report, as lines. Separated from the I/O so tests can read it. */
+/**
+ * The printed report, as lines. Separated from the I/O so tests can read it.
+ *
+ * `aims` is the per-unmatched-entry cross-file diagnosis
+ * ({@link crossFileAims}), ALIGNED BY INDEX with `report.unmatchedSuppressions`
+ * — the leg reports SLOTS, so a keyed lookup would fold two structurally
+ * identical judgements into one. Additive and optional: omit it and every line
+ * is byte-identical to before the diagnosis existed, which is what a caller
+ * holding only a report (and not the resolved sheet the aims are derived from)
+ * gets.
+ */
 export function formatReport(
   path: string,
   report: ReturnType<typeof audit>,
+  aims: readonly (CrossFileAim | undefined)[] = [],
 ): string[] {
   const lines: string[] = [`themeguard — ${path}`, ""];
 
@@ -615,15 +693,23 @@ export function formatReport(
   // already have — the rule, the declared scope, the directive's `file:line`
   // source where it has one, the reason quoted — because an unmatched entry
   // is an entry like any other, only without a finding behind it. The prose
-  // names the two causes honestly and stops: the tool cannot tell an expired
-  // judgement (defect fixed, retire the entry) from a mis-aimed one, and
-  // must not pretend to. ONE case it can tell, and the carve-out line below
-  // says so whenever this section carries such an entry: an entry with a
+  // names the two causes honestly and stops: IN GENERAL the tool cannot tell
+  // an expired judgement (defect fixed, retire the entry) from a mis-aimed
+  // one, and must not pretend to. TWO cases it CAN tell, each with its own
+  // carve-out line below, each printing only when this section actually
+  // carries such an entry — so every section they do not apply to stays
+  // byte-identical. FIRST, an entry with a
   // `file` scope names the stylesheet it was recorded against, so its
   // unmatchedness HERE is neither expiry nor mis-aim — it aims at a sibling
-  // this config governs, and that file's report states its fate. The carve-
-  // out prints only when at least one unmatched entry carries the clause, so
-  // every section it does not apply to stays byte-identical. A BOUNDARY the
+  // this config governs, and that file's report states its fate. SECOND, an
+  // entry carrying a SITE whose rule and tokens match a live finding every one
+  // of whose sites lives in ANOTHER file of the closure: there BOTH readings
+  // are false — the defect prints above in this same report, and the entry did
+  // aim at a finding that exists, one `@import` edge away — and the row names
+  // that finding, where it sits, and the two moves that reach it. DIAGNOSIS
+  // and never suppression: the entry is still unmatched, the fence that keeps
+  // a directive inside its own file is untouched, and `crossFileAims` reads a
+  // FINISHED report. A BOUNDARY the
   // section also states, since config discovery reaches down a subtree: the
   // config governs its own directory and below, so an entry whose scope
   // resolves OUTSIDE that subtree can never be honoured by ANY run — and for
@@ -641,6 +727,11 @@ export function formatReport(
     lines.push(
       "  declared suppressions no finding matched. Either the defect was fixed and the judgement can be retired, or the entry never aimed at a finding that exists — the report cannot tell which.",
     );
+    if (aims.some((aim) => aim !== undefined)) {
+      lines.push(
+        "  an entry naming a live finding in another file is a third case this report CAN tell: its rule and tokens match a finding printed above, whose declaration lives in another file of the import closure. Neither reading above holds for it — the defect is not fixed, and the entry did aim at a finding that exists — so it is one move from working rather than retirable, and its line names where.",
+      );
+    }
     if (
       report.unmatchedSuppressions.some(
         (entry) => entry.file !== undefined && !beyondConfigHome(entry),
@@ -655,9 +746,9 @@ export function formatReport(
         "  an entry whose [file: …] clause resolves OUTSIDE this config's own directory can never be honoured — a config governs its own directory and below, and no run of this config audits a stylesheet beyond its reach, so this report is that entry's fate-statement: re-aim the entry inside the config's directory, or retire it.",
       );
     }
-    for (const entry of report.unmatchedSuppressions) {
+    for (const [index, entry] of report.unmatchedSuppressions.entries()) {
       lines.push(
-        `  [unmatched] [${entry.rule}] — "${entry.reason}"${tokenScope(entry)}${scopeSuffix(entry)}${fileClause(entry)}${sourceClause(entry)}`,
+        `  [unmatched] [${entry.rule}] — "${entry.reason}"${tokenScope(entry)}${scopeSuffix(entry)}${fileClause(entry)}${sourceClause(entry)}${crossFileClause(aims[index])}`,
       );
     }
   }
@@ -759,12 +850,38 @@ export function formatReport(
  * including its scope fields (`theme` / `tokens` / `token` / `file` /
  * `source` / `line`) and the `fileBeyondConfigHome` annotation — the prose
  * renders those as bracket suffixes, and a machine consumer gets the fields.
+ *
+ * ⚠️ `unmatchedSuppressions` rows are the library's entries with ONE additive
+ * key: `crossFileAim`, `{rule, site}` naming the live finding the entry's
+ * conjuncts match in ANOTHER file of the closure — the machine form of the
+ * prose's `— matches a live …` clause, so a pipeline caller reads the pointer
+ * as data instead of regexing a sentence out of it. The key is ABSENT (not
+ * `null`) on every row without one, which is every config entry and every
+ * directive whose miss is not the cross-file one — the same absence-is-a-fact
+ * discipline `sites` carries above, and what keeps every row this does not
+ * apply to byte-identical. It is a DIAGNOSIS, never a suppression: the entry is
+ * still unmatched, it is still on this leg, and the counts and the exit code are
+ * untouched.
+ *
+ * `aims` is that diagnosis ({@link crossFileAims}), ALIGNED BY INDEX with
+ * `report.unmatchedSuppressions`. Additive and optional: omit it and the object
+ * is byte-identical to before the diagnosis existed.
  */
 export function formatReportJson(
   path: string,
   report: ReturnType<typeof audit>,
+  aims: readonly (CrossFileAim | undefined)[] = [],
 ): string {
-  return JSON.stringify({ path, ...report });
+  // The rows are rebuilt only where an aim exists, and the entry's own keys are
+  // spread FIRST so the added one lands last and no existing key order moves. A
+  // row with no aim is passed through as the SAME object — not a copy with an
+  // undefined key, which would serialize identically but invites a reader to
+  // think the shape changed for every row.
+  const unmatchedSuppressions = report.unmatchedSuppressions.map((entry, index) => {
+    const aim = aims[index];
+    return aim === undefined ? entry : { ...entry, crossFileAim: aim };
+  });
+  return JSON.stringify({ path, ...report, unmatchedSuppressions });
 }
 
 /**

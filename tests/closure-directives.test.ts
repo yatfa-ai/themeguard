@@ -219,10 +219,25 @@ describe("the fence that must survive — an entry-file directive never crosses 
     expect(result.stdout).toContain("Declared at inner.css:2 and inner.css:3.");
     expect(result.stdout).toContain("suppressed (0)");
     expect(result.stdout).toContain("unmatched (1)");
+    // The SUPPRESSION half of this pin is the fence and is unchanged: the
+    // finding prints, the directive suppresses nothing, the exit moves. What
+    // the line now ALSO says is where the judgement would work — the
+    // cross-file diagnosis, additive to a byte-identical prefix. The retirement
+    // advice above it was flatly wrong about exactly this shape: the defect is
+    // not fixed (it prints, one line up in this same assertion) and the entry
+    // did aim at a finding that exists, one `@import` edge away. Diagnosis
+    // only: nothing here is suppressed, and the next assertion holds the fence.
     expect(result.out.find((l) => l.startsWith("  [unmatched] "))).toBe(
       '  [unmatched] [collision] — "entry-file judgement aimed at an imported site" [tokens: --p, --q] [' +
         entry +
-        ":2]",
+        ":2] — matches a live [collision] finding at inner.css:2; a directive governs only the file it is" +
+        " written in — move it there, or record it in themeguard.config.json to cover the whole closure.",
+    );
+    // And the section states the third case beside its two readings, so a
+    // reader scanning the prose is not left with a dichotomy both of whose
+    // clauses the row below contradicts.
+    expect(result.stdout).toContain(
+      "an entry naming a live finding in another file is a third case this report CAN tell",
     );
   });
 
