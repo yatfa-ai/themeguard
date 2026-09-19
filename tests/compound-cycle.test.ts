@@ -74,6 +74,21 @@ import { CENSUS, fixtureCss, FIXTURE_PATH } from "./fixture.js";
  *      untouched, and the remaining residual (a loop whose EVERY member
  *      stops at a compound value mints nothing to propagate from — a gap in
  *      MINTING, not in completing) is pinned rather than implied.
+ *
+ * 0.1.23 closes that last residual — the MINT half:
+ *
+ *   7. THE NAMES-ONLY MINT — a loop no walk closes (every member's walk
+ *      stops at its own compound value before completing the circuit) is
+ *      minted by a pass over the theme's primary-position edges before the
+ *      completion pass runs: declared names only, fallback segments unread,
+ *      no value substituted. Members gain `kind: "cycle"` carrying the loop
+ *      chain spelled from themselves; a walk-minted chain is never
+ *      rewritten, so every pre-existing loop shape stays byte-identical;
+ *      dependents that enter such a loop complete on the EXISTING fixed
+ *      point with no further change — the pinned `--tail` below flips to
+ *      asserting exactly that. A member of such a loop that one theme
+ *      re-declares into health stays healthy there, as every loop's
+ *      authorship doctrine requires.
  */
 
 interface Run {
@@ -633,20 +648,238 @@ describe("the canonical compound shapes all close, and each is ONE finding namin
     ]);
   });
 
-  it("RESIDUAL, pinned: a loop whose EVERY member stops at a compound value still mints nothing to propagate from", () => {
-    // The gap the fixed point does NOT close, because it is a gap in MINTING
-    // the loop rather than in completing its dependents: no walk closes
+  it("MINT: a loop whose EVERY member stops at a compound value is minted by the names-only pass — and its dependent completes on the existing fixed point", () => {
+    // Was the pinned residual of 0.1.21–0.1.22: no walk closes
     // `--m1: 1px solid var(--m2); --m2: 1px solid var(--m1)` — each stops at
     // its own compound value with the other name not yet on the walk — so
-    // there is no membership for this pass to consult and nothing to
-    // propagate. Stated here rather than implied.
+    // nothing was minted and the whole population audited green. The
+    // names-only cycle pass reads the SAME primary-position edges as a graph
+    // over the theme's declared names, finds the loop no walk could close,
+    // and marks both members `cycle` with the loop chain spelled from
+    // themselves. The `--tail` dependent (which walks INTO the loop through
+    // a whole-value edge and stops at `--m1`'s compound value) needs no new
+    // machinery: the completion pass's fixed point reads the minted
+    // membership and re-marks it — minting was the only missing half.
     const r = resolveCss(
       `:root { --m1: 1px solid var(--m2); --m2: 1px solid var(--m1); --tail: var(--m1); }`,
     );
-    expect(r.token("--m1", ROOT_THEME)?.kind).toBe("non-color");
-    expect(r.token("--m2", ROOT_THEME)?.kind).toBe("non-color");
-    expect(r.token("--tail", ROOT_THEME)?.kind).toBe("non-color");
-    expect(audit(r).countsByRule["cycle-reference"]).toBe(0);
+    expect(r.token("--m1", ROOT_THEME)?.kind).toBe("cycle");
+    expect(r.token("--m1", ROOT_THEME)?.chain).toEqual(["--m1", "--m2", "--m1"]);
+    expect(r.token("--m2", ROOT_THEME)?.kind).toBe("cycle");
+    expect(r.token("--m2", ROOT_THEME)?.chain).toEqual(["--m2", "--m1", "--m2"]);
+    // The tail completes through the EXISTING completion pass: its stopped
+    // value (`--m1`'s compound declaration) references the minted member
+    // `--m2`, and its chain closes on the first name it had already
+    // visited — `--m1` — exactly as a tail into any other loop spells.
+    expect(r.token("--tail", ROOT_THEME)?.kind).toBe("cycle");
+    expect(r.token("--tail", ROOT_THEME)?.resolvedValue).toBeNull();
+    expect(r.token("--tail", ROOT_THEME)?.chain).toEqual([
+      "--tail",
+      "--m1",
+      "--m2",
+      "--m1",
+    ]);
+
+    // Two findings: the loop's own, and the dependent walk's (its set gains
+    // the tail, so it does not dedupe into the loop's) — the same
+    // two-findings semantics every other loop shape carries.
+    const findings = audit(r).findings.filter((f) => f.rule === "cycle-reference");
+    expect(findings).toHaveLength(2);
+    const loop = findings.find((f) => !f.tokens.includes("--tail"))!;
+    const dependent = findings.find((f) => f.tokens.includes("--tail"))!;
+    expect([...loop.tokens].sort()).toEqual(["--m1", "--m2"]);
+    expect(loop.message).toContain("--m1 → --m2 → --m1 is a var() cycle");
+    expect(dependent.message).toContain("--tail → --m1 → --m2 → --m1 is a var() cycle");
+  });
+});
+
+describe("THE NAMES-ONLY MINT — loops no walk closes, minted before the completion pass runs", () => {
+  // 0.1.23. The walk mints `cycle` only on a back edge to a name ALREADY on
+  // its own path, and a compound value is never followed — so a loop whose
+  // every member stops the walk short never completes a circuit from any
+  // seed. The mint reads the same primary-position edges as a graph over the
+  // theme's DECLARED names (fallback segments unread, no value substituted,
+  // dead ends skipped) and marks the unmarked members of the loops it finds.
+  // The ticket's own probes, at the resolver fact and at the report.
+
+  it("the two-member all-compound loop emits the finding, exit 0 → 1", () => {
+    const css = ":root { --a: 1px solid var(--b); --b: 2px solid var(--a); }\n";
+    const r = resolveCss(css);
+    expect(r.token("--a", ROOT_THEME)?.kind).toBe("cycle");
+    expect(r.token("--a", ROOT_THEME)?.chain).toEqual(["--a", "--b", "--a"]);
+    expect(r.token("--b", ROOT_THEME)?.kind).toBe("cycle");
+    expect(r.token("--b", ROOT_THEME)?.chain).toEqual(["--b", "--a", "--b"]);
+    const result = run(cssFixture("mint-two.css", css));
+    expect(result.code).toBe(EXIT_FINDINGS);
+    expect(result.stdout).toContain("cycle-reference (1)");
+    expect(result.stdout).toContain(
+      "  [cycle-reference] --a → --b → --a is a var() cycle: every property in the loop, and every var() consuming a member, is invalid at computed-value time. Declared at lines 1 and 1.",
+    );
+  });
+
+  it("the three-member all-compound loop names all three in the one finding", () => {
+    const css =
+      ":root { --x: 1px solid var(--y); --y: 1px solid var(--z); --z: 1px solid var(--x); }\n";
+    const r = resolveCss(css);
+    for (const [name, chain] of [
+      ["--x", ["--x", "--y", "--z", "--x"]],
+      ["--y", ["--y", "--z", "--x", "--y"]],
+      ["--z", ["--z", "--x", "--y", "--z"]],
+    ] as const) {
+      expect(r.token(name, ROOT_THEME)?.kind, name).toBe("cycle");
+      expect(r.token(name, ROOT_THEME)?.chain, name).toEqual(chain);
+    }
+    const result = run(cssFixture("mint-three.css", css));
+    expect(result.code).toBe(EXIT_FINDINGS);
+    expect(result.stdout).toContain("cycle-reference (1)");
+    expect(result.stdout).toContain("--x → --y → --z → --x is a var() cycle");
+  });
+
+  it("the color-mix pair — the shape resolve.ts's own header calls most common — closes too", () => {
+    const css =
+      ":root { --primary: color-mix(in srgb, var(--secondary) 20%, white); --secondary: color-mix(in srgb, var(--primary) 30%, black); }\n";
+    const findings = audit(resolveCss(css)).findings.filter(
+      (f) => f.rule === "cycle-reference",
+    );
+    expect(findings).toHaveLength(1);
+    expect(findings[0]!.tokens).toEqual(["--primary", "--secondary"]);
+    expect(findings[0]!.message).toContain(
+      "--primary → --secondary → --primary is a var() cycle",
+    );
+    const result = run(cssFixture("mint-mix.css", css));
+    expect(result.code).toBe(EXIT_FINDINGS);
+    expect(result.stdout).toContain("cycle-reference (1)");
+  });
+
+  it("a loop with ONE whole-value member and TWO compound members closes — the walk stops short, the graph does not", () => {
+    // The same root cause one member wider: the walk from the whole-value
+    // member reaches the first compound value and stops BEFORE the circuit
+    // completes, so no seed ever closes it either. The graph reads every
+    // primary-position edge and finds the whole loop.
+    const r = resolveCss(
+      `:root { --w: var(--p); --p: 1px solid var(--q); --q: 2px solid var(--w); }`,
+    );
+    expect(r.token("--w", ROOT_THEME)?.kind).toBe("cycle");
+    expect(r.token("--w", ROOT_THEME)?.chain).toEqual(["--w", "--p", "--q", "--w"]);
+    expect(r.token("--p", ROOT_THEME)?.kind).toBe("cycle");
+    expect(r.token("--q", ROOT_THEME)?.kind).toBe("cycle");
+    expect(audit(r).findings.filter((f) => f.rule === "cycle-reference")).toHaveLength(1);
+  });
+
+  it("a reference naming nothing declared is a dead end, never a loop — and does not hide the loop behind it", () => {
+    // The graph is over DECLARED names: an edge to `--gone` has no node to
+    // reach (rule 5's population stays rule 5's), and the DFS skips the dead
+    // end rather than descending into nothing.
+    const r = resolveCss(
+      `:root { --a: 1px solid var(--gone) var(--b); --b: 2px solid var(--a); }`,
+    );
+    expect(r.token("--a", ROOT_THEME)?.kind).toBe("cycle");
+    expect(r.token("--a", ROOT_THEME)?.chain).toEqual(["--a", "--b", "--a"]);
+    expect(r.token("--gone", ROOT_THEME)).toBeUndefined();
+  });
+
+  it("MINT, theme view: a loop closed only by a theme's OWN compound declarations is theme-scoped, and the base view stays clean", () => {
+    // The mint is per-theme-view like every pass before it: root's
+    // `--member` is a plain colour, so root's compound declaration reaches
+    // no loop; dark re-points it as a compound value back at `--edge`, and
+    // the loop exists — and is reported — in dark's view only.
+    const css = [
+      ":root {",
+      "  --edge: 1px solid var(--member);",
+      "  --member: #cccccc;",
+      "}",
+      '[data-theme="dark"] {',
+      "  --member: 2px solid var(--edge);",
+      "}",
+      "",
+    ].join("\n");
+    const r = resolveCss(css);
+    expect(r.token("--edge", ROOT_THEME)?.kind, "root").toBe("non-color");
+    expect(r.token("--member", "dark")?.kind, "dark").toBe("cycle");
+    const findings = audit(r).findings.filter((f) => f.rule === "cycle-reference");
+    expect(findings).toHaveLength(1);
+    expect(findings[0]!.theme).toBe("dark");
+    expect(findings[0]!.message).toContain('is a var() cycle in theme "dark"');
+  });
+
+  it("MINT, byte-identity: a loop the walk already closed is detected and passed over — no chain is rewritten", () => {
+    // The mixed loop's walks mint `--divider-color` and the completion pass
+    // heals `--divider`; the graph holds the same cycle, and the mint skips
+    // both members. The finding is byte-identical to pre-0.1.23 — the same
+    // loop set, the same representative, the same text.
+    const r = resolveCss(
+      `:root { --divider: 1px solid var(--divider-color); --divider-color: var(--divider); }`,
+    );
+    expect(r.token("--divider", ROOT_THEME)?.chain).toEqual([
+      "--divider",
+      "--divider-color",
+      "--divider",
+    ]);
+    expect(r.token("--divider-color", ROOT_THEME)?.chain).toEqual([
+      "--divider-color",
+      "--divider",
+      "--divider-color",
+    ]);
+    const findings = audit(r).findings.filter((f) => f.rule === "cycle-reference");
+    expect(findings).toHaveLength(1);
+    expect(findings[0]!.message).toContain(
+      "--divider → --divider-color → --divider is a var() cycle",
+    );
+  });
+
+  it("MINT, determinism: the loop spelled is the same whichever order the declarations sit in", () => {
+    // The graph walks names in the view's insertion order, so the detected
+    // segment's SPELLING can rotate with declaration order — but the loop
+    // set, the finding count and the representative's text do not: the rule
+    // picks the alphabetically first member and prints its walk, and both
+    // orders give `--a` the chain `--a → --b → --a`.
+    const forward = resolveCss(`:root { --a: 1px solid var(--b); --b: 2px solid var(--a); }`);
+    const reversed = resolveCss(`:root { --b: 2px solid var(--a); --a: 1px solid var(--b); }`);
+    for (const r of [forward, reversed]) {
+      expect(r.token("--a", ROOT_THEME)?.chain).toEqual(["--a", "--b", "--a"]);
+      expect(r.token("--b", ROOT_THEME)?.chain).toEqual(["--b", "--a", "--b"]);
+    }
+    expect(
+      audit(forward).findings.map((f) => f.message),
+    ).toEqual(audit(reversed).findings.map((f) => f.message));
+  });
+
+  it("MINT, no over-marking: compound DAGs, chains and tails into a minted loop keep their classifications", () => {
+    // The diamond: two compound values pointing at the same healthy name
+    // converge but never cycle. The chain: compound values referencing each
+    // other in a line. The tail: a compound value referencing INTO a minted
+    // loop without being referenced back — a dependent, completed by the
+    // existing pass as its own finding, never a loop member.
+    const r = resolveCss(
+      `:root {
+         --base: #ffffff;
+         --p: 1px solid var(--base);
+         --q: 2px solid var(--base);
+         --c1: calc(var(--p) + 1px);
+         --c2: calc(var(--c1) + 1px);
+         --m1: 1px solid var(--m2);
+         --m2: 1px solid var(--m1);
+         --into: 3px solid var(--m1);
+       }`,
+    );
+    for (const name of ["--p", "--q", "--c1", "--c2"]) {
+      expect(r.token(name, ROOT_THEME)?.kind, name).toBe("non-color");
+      expect(r.token(name, ROOT_THEME)?.resolvedValue, name).not.toBeNull();
+    }
+    expect(r.token("--into", ROOT_THEME)?.kind).toBe("cycle");
+    // The dependent's chain closes on the loop, and its set gains the tail:
+    // three findings — the loop's, the tail's, and nothing else.
+    expect(r.token("--into", ROOT_THEME)?.chain).toEqual([
+      "--into",
+      "--m1",
+      "--m2",
+      "--m1",
+    ]);
+    const findings = audit(r).findings.filter((f) => f.rule === "cycle-reference");
+    expect(findings).toHaveLength(2);
+    expect(
+      findings.find((f) => f.tokens.includes("--into"))!.message,
+    ).toContain("--into → --m1 → --m2 → --m1 is a var() cycle");
   });
 });
 
@@ -856,6 +1089,13 @@ describe("CENSUS PRESERVATION — the calibration fixture keeps its numbers AND 
   // are the `color-mix` toast-surface family, and each points at a plain
   // non-ancestor colour — 0 back edges — so the scan runs on them and finds
   // nothing. Zero new cycle facts, and the report is unchanged.
+  //
+  // Re-derived again at 0.1.23 branch time, now over the mint's graph: the
+  // fixture's theme views carry 140 primary-position references, ALL of them
+  // landing on declared names, and the resulting graph holds NO cycle — the
+  // names-only pass walks every view's edges and marks nothing, so the
+  // printed report is byte-identical (7916 bytes, `cycle-reference (0)`,
+  // 22 findings) for the fourth consecutive release.
   const VAR_ONLY_PROBE = /^var\(\s*(--[\w-]+)\s*(?:,([\s\S]*))?\)$/;
 
   it("the fixture holds exactly 4 compound-with-var declarations, and they are the toast surfaces", () => {

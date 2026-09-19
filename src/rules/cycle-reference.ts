@@ -85,17 +85,21 @@
  * rule's SUBJECT, not something to change. That fence binds the RULE's own
  * discipline — data, not verdicts: the rule must never reach into the
  * resolver to manufacture the facts it judges. It is not a claim that the
- * resolver's coverage of its own fourth fact is finished: 0.1.20 completed it
+ * resolver's coverage of its fourth fact is finished: 0.1.20 completed it
  * resolver-side, minting `cycle` for a loop whose closing edge is embedded in
  * a compound value (`--divider: 1px solid var(--divider-color)`) rather than
  * spelled as the whole value; 0.1.21 completed the dependent-declaration
  * half this file documents above — a walk that STOPS at a compound value now
  * arrives marked `cycle` too, re-marked by a pass in `resolveStylesheet`
- * that reads the walks' finished results; and 0.1.22 made that consult
+ * that reads the walks' finished results; 0.1.22 made that consult
  * complete, asking loop MEMBERSHIP rather than which member's walk happened
  * to close the loop, and iterating to a fixed point so a dependent several
- * hops out arrives as well. This rule stayed byte-identical through all
- * three — the loops and their dependents simply arrive now — which is the
+ * hops out arrives as well; and 0.1.23 completed the MINT half — a loop no
+ * walk closes (every member stopping at its own compound value before
+ * completing the circuit) now arrives too, minted by a names-only pass over
+ * the theme's primary-position edges that runs before the completion pass.
+ * This rule stayed byte-identical through all four — the loops, their
+ * dependents and now the walk-blind loops simply arrive — which is the
  * fence holding, not being relaxed.
  */
 
