@@ -79,6 +79,7 @@ import { scaleCollapseRule, type SkippedPair } from "./rules/scale-collapse.js";
 import {
   citeSite as citeSiteFromFinding,
   sortFindings,
+  THEMELESS_RULES,
   type Finding,
   type RuleId,
 } from "./rules/finding.js";
@@ -136,7 +137,15 @@ export interface AuditReport {
    * is one file move from working. This leg carries the judgement whole,
    * exactly as before; the derivation that names the aim is
    * {@link crossFileAims}, which reads a FINISHED report and is consulted by
-   * nothing that suppresses.
+   * nothing that suppresses. A FIFTH knowable case, since 0.1.26: an entry
+   * whose `theme` scope names a rule that measures STYLESHEET-WIDE — five of
+   * the nine push `theme: null` by construction — so the theme conjunct is
+   * not a miss but a structurally DEAD scope: no finding of that rule in any
+   * file or any run ever carries a theme. There both readings are false too
+   * — the defect prints above, and the entry did aim at a finding that exists
+   * — and the entry is ONE KEY DELETION from working. The derivation that
+   * names it is {@link themelessAims}, on the same reads-a-finished-report,
+   * suppresses-nothing footing.
    */
   readonly unmatchedSuppressions: readonly (
     SuppressionEntry | SiteScopedSuppressionEntry | FileScopedSuppressionEntry
@@ -566,6 +575,110 @@ export function crossFileAims(
       if (first !== undefined) aim = { rule: finding.rule, site: citeSite(first) };
     }
     return aim;
+  });
+}
+
+/**
+ * WHY an unmatched judgement whose theme scope names a THEME-LESS rule can
+ * never match — the other reading the `unmatched` section's retirement
+ * dichotomy gets FLATLY WRONG, and a structural dead scope rather than a miss.
+ *
+ * `rule` is the rule whose findings the entry aims at — the one that publishes
+ * `theme: null` by construction, so no theme spelling can ever equal it.
+ */
+export interface ThemelessAim {
+  /** The theme-less rule of the live finding the entry's other conjuncts match. */
+  readonly rule: RuleId;
+}
+
+/**
+ * For each unmatched entry, the THEME-LESS-RULE diagnosis — or `undefined`,
+ * which is every other entry.
+ *
+ * ── Why this exists ────────────────────────────────────────────────────────
+ * The `unmatched` section offers a reader two readings ("the defect was fixed
+ * and the judgement can be retired" / "the entry never aimed at a finding that
+ * exists"), and for ONE more shape both are false: a config entry whose
+ * `theme` scope names a rule that measures STYLESHEET-WIDE. The theme conjunct
+ * in {@link matchesEntryIdentity} rejects a finding when `entry.theme !==
+ * finding.theme`, and five of the nine rules push `theme: null` at their own
+ * push sites by construction (`dead-token`, `duplicate-declaration`,
+ * `theme-partial-token`, `unresolved-import`, `unresolved-reference` — each
+ * docblock says "measured stylesheet-wide, not in a theme"). For those the
+ * conjunct is not a near-miss that a different file or a different run might
+ * satisfy: no finding of that rule in THIS file, ANY file of the closure, or
+ * ANY run of this config ever carries a theme, so the entry can never suppress
+ * anything, ever. Meanwhile the defect PRINTS above, and the judgement is ONE
+ * KEY DELETION from working. A reader following the advice retires it.
+ *
+ * ── The predicate ─────────────────────────────────────────────────────────
+ * Only an entry that NAMES a theme qualifies (`theme !== undefined`); an
+ * unscoped entry has no theme conjunct to be dead, and is returned `undefined`
+ * here, which keeps its advice byte-for-byte.
+ *
+ * For a theme-scoped entry: its rule is one of the five that report `theme:
+ * null` BY CONSTRUCTION ({@link THEMELESS_RULES}, declared beside the rule ids
+ * themselves), AND at least one kept finding matches its OTHER identity
+ * conjuncts — the rule and the token dimension, asked through
+ * {@link matchesEntryIdentity} with the theme dropped, so the includes
+ * semantics are the matcher's own and never a re-derived twin — AND **every**
+ * such finding carries `theme: null`.
+ *
+ * The declared set is what makes the claim honest, and the all-null quantifier
+ * is the belt beside it. The clause asserts something about the RULE — "this
+ * rule reports no theme, ever" — which no single report can evidence: a run
+ * whose only `cycle-reference` loops happen to be base-authored carries nothing
+ * but `theme: null` findings too, and for THAT rule the scope stays aimable in
+ * principle (its push site is `themeAuthored ? theme : null`), so it is absent
+ * from the set and the arm stays `undefined` — the same shape as the cross-file
+ * arm's same-file-wrong-line disqualification. A theme scope on a
+ * theme-BEARING rule that simply missed the right theme is likewise left alone:
+ * its rule is not in the set, and the generic advice — which may yet be true of
+ * it, since a shared-subtree config can aim the entry at a sibling file where
+ * that theme exists — is what prints.
+ *
+ * ── What it is NOT ────────────────────────────────────────────────────────
+ * DIAGNOSIS, never suppression. Nothing here is consulted by the matcher:
+ * {@link matchesEntryIdentity} is untouched, the entry stays unmatched, the
+ * counts are untouched, and the `unmatched` leg still sits outside the exit
+ * code. This function reads a finished report and names why the scope is dead;
+ * deleting the key is the reader's to do.
+ *
+ * @param unmatched the report's `unmatchedSuppressions`, in its own order.
+ * @param kept the report's `findings` — the LIVE ones. A finding some other
+ *   entry already suppressed is not live, and pointing an author at it would
+ *   trade one false claim for another.
+ * @returns one slot per unmatched entry, ALIGNED BY INDEX with `unmatched`,
+ *   for the same reason {@link crossFileAims} aligns that way: the leg reports
+ *   SLOTS, and a map keyed on shape would fold two identical judgements.
+ */
+export function themelessAims(
+  unmatched: readonly (
+    SuppressionEntry | SiteScopedSuppressionEntry | FileScopedSuppressionEntry
+  )[],
+  kept: readonly Finding[],
+): readonly (ThemelessAim | undefined)[] {
+  return unmatched.map((entry) => {
+    if (entry.theme === undefined) return undefined;
+    // The RULE's own stance first: the clause claims this rule never publishes
+    // a theme, which is a fact about the rule and not about this run. A rule
+    // outside the declared set declines here, however theme-less this run's
+    // findings happen to be.
+    if (!THEMELESS_RULES.has(entry.rule)) return undefined;
+    // The entry's identity conjuncts MINUS the theme — asked of the exported
+    // predicate with the key dropped rather than re-spelled here, so the token
+    // dimension's includes semantics stay the matcher's own.
+    const themeless = { ...entry, theme: undefined };
+    let matched = false;
+    for (const finding of kept) {
+      if (!matchesEntryIdentity(themeless, finding)) continue;
+      // The belt beside the declared set: one theme-bearing finding of the
+      // rule would make the clause false, so it disqualifies the whole entry
+      // rather than merely that finding.
+      if (finding.theme !== null) return undefined;
+      matched = true;
+    }
+    return matched ? { rule: entry.rule } : undefined;
   });
 }
 

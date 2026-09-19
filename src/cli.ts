@@ -153,7 +153,16 @@
  * does every config entry, whose identity matching is already closure-wide.
  * DIAGNOSIS and never suppression: the entry is still unmatched, the counts and
  * the exit code do not move, and a directive still never reaches across an
- * edge — {@link crossFileAims} reads a FINISHED report.
+ * edge — {@link crossFileAims} reads a FINISHED report. And since 0.1.26: a
+ * judgement whose `theme` scope names a rule measured STYLESHEET-WIDE. Five of
+ * the nine rules report `theme: null` by construction, so such a scope is not
+ * a near-miss but a structurally DEAD conjunct — no finding of that rule in
+ * this file, any file of the closure, or any run of this config carries a
+ * theme — while the finding the entry's rule and tokens DO match prints above.
+ * Both readings are false again, and the row names the rule, the dead scope
+ * and the one-key move that revives the judgement. DIAGNOSIS on the same
+ * terms: {@link themelessAims} reads a FINISHED report, the matcher is
+ * untouched, and the entry stays unmatched.
  *
  * `coverage` is printed under the same precedent. It is the fact inventory rule
  * 4 is measured over — per theme, every base-theme token marked overridden or
@@ -187,7 +196,10 @@
  * of the prose's `— matches a live …` clause, so the pointer is read as data
  * instead of regexed out of a sentence. ABSENT (never `null`) on every row
  * without one, the same absence-is-a-fact discipline `sites` carries, which is
- * what keeps every row this does not apply to byte-identical.
+ * what keeps every row this does not apply to byte-identical. A SECOND such key
+ * since 0.1.26, on the same terms: `themelessAim`, `{rule}` — the machine form
+ * of the dead-theme-scope clause, on the rows whose `theme` scope names a rule
+ * that reports no theme at all.
  *
  * Three properties a pipeline caller may rely on:
  *
@@ -250,7 +262,9 @@ import { fileURLToPath } from "node:url";
 import {
   audit,
   crossFileAims,
+  themelessAims,
   type CrossFileAim,
+  type ThemelessAim,
   type SiteScopedSuppressionEntry,
 } from "./audit.js";
 import {
@@ -408,6 +422,37 @@ function crossFileClause(aim: CrossFileAim | undefined): string {
   return aim === undefined
     ? ""
     : ` — matches a live [${aim.rule}] finding at ${aim.site}; a directive governs only the file it is written in — move it there, or record it in ${CONFIG_FILENAME} to cover the whole closure.`;
+}
+
+/**
+ * The dead-theme-scope clause an unmatched judgement earns when its `theme`
+ * scope names a rule that measures STYLESHEET-WIDE — the additive sentence
+ * that keeps the section's retirement advice from being flatly wrong about it.
+ *
+ * The section's two readings are "the defect was fixed, retire the entry" and
+ * "the entry never aimed at a finding that exists". For this shape BOTH are
+ * false: the finding prints above in the same report, and the entry's rule and
+ * tokens match it — only the theme conjunct failed, and it fails
+ * STRUCTURALLY. Five of the nine rules push `theme: null` at their own push
+ * sites, so no theme spelling can ever equal it, in this file, any file of the
+ * closure, or any run of this config. So this clause says what the report DOES
+ * know: which rule, why the scope is dead, and the one-key move that revives
+ * the judgement.
+ *
+ * `""` for every other entry, which keeps every section this does not apply to
+ * byte-identical. It joins the `tokenScope` / `scopeSuffix` / `fileClause` /
+ * `sourceClause` / `crossFileClause` family and composes after them: in
+ * practice disjoint from the cross-file clause (a directive carries no theme
+ * scope — the grammar has none — so a row can never earn both), and the
+ * composition stays honest if some shape ever carries both.
+ */
+function themelessClause(
+  entry: SuppressionEntry | SiteScopedSuppressionEntry,
+  aim: ThemelessAim | undefined,
+): string {
+  return aim === undefined
+    ? ""
+    : ` — [${aim.rule}] findings are measured stylesheet-wide and carry no theme, so the [theme: ${entry.theme}] scope can never match; drop the theme key to aim the judgement.`;
 }
 
 /**
@@ -683,8 +728,14 @@ function auditStylesheet(path: string, io: CliIo, json = false): number {
   // halves: the report, and the resolved sheet whose origin set tells an
   // imported citation from an entry-file one.
   const aims = crossFileAims(report.unmatchedSuppressions, report.findings, resolved);
-  if (json) io.out(formatReportJson(path, report, aims));
-  else for (const line of formatReport(path, report, aims)) io.out(line);
+  // The dead-theme-scope diagnosis, on the same footing: derived from the
+  // finished report, consulted by nothing that suppresses. It needs only the
+  // report — the rule's theme-lessness is DECLARED beside the rule ids
+  // (`THEMELESS_RULES`) and the findings carry their own `theme`, so no
+  // resolved sheet enters it.
+  const themeless = themelessAims(report.unmatchedSuppressions, report.findings);
+  if (json) io.out(formatReportJson(path, report, aims, themeless));
+  else for (const line of formatReport(path, report, aims, themeless)) io.out(line);
 
   // Findings here are the UNSUPPRESSED ones — a finding the user has recorded
   // as deliberate no longer holds the exit code hostage, which is the whole
@@ -702,11 +753,17 @@ function auditStylesheet(path: string, io: CliIo, json = false): number {
  * is byte-identical to before the diagnosis existed, which is what a caller
  * holding only a report (and not the resolved sheet the aims are derived from)
  * gets.
+ *
+ * `themeless` is the sibling diagnosis ({@link themelessAims}), aligned by
+ * index the same way and additive on the same terms: a theme-scoped entry
+ * aimed at a rule that measures stylesheet-wide earns a clause naming the dead
+ * scope, and every other row is untouched.
  */
 export function formatReport(
   path: string,
   report: ReturnType<typeof audit>,
   aims: readonly (CrossFileAim | undefined)[] = [],
+  themeless: readonly (ThemelessAim | undefined)[] = [],
 ): string[] {
   const lines: string[] = [`themeguard — ${path}`, ""];
 
@@ -769,7 +826,7 @@ export function formatReport(
   // is an entry like any other, only without a finding behind it. The prose
   // names the two causes honestly and stops: IN GENERAL the tool cannot tell
   // an expired judgement (defect fixed, retire the entry) from a mis-aimed
-  // one, and must not pretend to. TWO cases it CAN tell, each with its own
+  // one, and must not pretend to. THREE cases it CAN tell, each with its own
   // carve-out line below, each printing only when this section actually
   // carries such an entry — so every section they do not apply to stays
   // byte-identical. FIRST, an entry with a
@@ -783,7 +840,13 @@ export function formatReport(
   // that finding, where it sits, and the two moves that reach it. DIAGNOSIS
   // and never suppression: the entry is still unmatched, the fence that keeps
   // a directive inside its own file is untouched, and `crossFileAims` reads a
-  // FINISHED report. A BOUNDARY the
+  // FINISHED report. THIRD, since 0.1.26: an entry whose `theme` scope names a
+  // rule that measures STYLESHEET-WIDE — five of the nine push `theme: null`
+  // at their own push sites — so the theme conjunct is not a near-miss but a
+  // structurally DEAD scope, and the entry can never suppress anything in any
+  // run. Both readings are false there too (the defect prints above, and the
+  // rule and tokens DO match the finding that printed), and the row names the
+  // rule, the dead scope and the one-key move. A BOUNDARY the
   // section also states, since config discovery reaches down a subtree: the
   // config governs its own directory and below, so an entry whose scope
   // resolves OUTSIDE that subtree can never be honoured by ANY run — and for
@@ -806,6 +869,11 @@ export function formatReport(
         "  an entry naming a live finding in another file is a third case this report CAN tell: its rule and tokens match a finding printed above, whose declaration lives in another file of the import closure. Neither reading above holds for it — the defect is not fixed, and the entry did aim at a finding that exists — so it is one move from working rather than retirable, and its line names where.",
       );
     }
+    if (themeless.some((aim) => aim !== undefined)) {
+      lines.push(
+        "  an entry whose [theme: …] scope names a rule measured STYLESHEET-WIDE is a further case this report CAN tell: five of the nine rules report no theme at all, so such a scope matches nothing in this file, in any file of the closure, or in any run of this config. Neither reading above holds for it — the defect is not fixed, and the entry did aim at a finding that exists — so it is one key deletion from working rather than retirable, and its line names which key.",
+      );
+    }
     if (
       report.unmatchedSuppressions.some(
         (entry) => entry.file !== undefined && !beyondConfigHome(entry),
@@ -822,7 +890,7 @@ export function formatReport(
     }
     for (const [index, entry] of report.unmatchedSuppressions.entries()) {
       lines.push(
-        `  [unmatched] [${entry.rule}] — "${entry.reason}"${tokenScope(entry)}${scopeSuffix(entry)}${fileClause(entry)}${sourceClause(entry)}${crossFileClause(aims[index])}`,
+        `  [unmatched] [${entry.rule}] — "${entry.reason}"${tokenScope(entry)}${scopeSuffix(entry)}${fileClause(entry)}${sourceClause(entry)}${crossFileClause(aims[index])}${themelessClause(entry, themeless[index])}`,
       );
     }
   }
@@ -940,11 +1008,19 @@ export function formatReport(
  * `aims` is that diagnosis ({@link crossFileAims}), ALIGNED BY INDEX with
  * `report.unmatchedSuppressions`. Additive and optional: omit it and the object
  * is byte-identical to before the diagnosis existed.
+ *
+ * ⚠️ A SECOND additive key rides the same discipline since 0.1.26:
+ * `themelessAim`, `{rule}` naming the theme-less rule an entry's `theme` scope
+ * aimed at — the machine form of the prose's `— [rule] findings are measured
+ * stylesheet-wide …` clause. ABSENT (not `null`) on every row without one, and
+ * `themeless` ({@link themelessAims}) is that diagnosis, aligned by index the
+ * same way and optional on the same terms.
  */
 export function formatReportJson(
   path: string,
   report: ReturnType<typeof audit>,
   aims: readonly (CrossFileAim | undefined)[] = [],
+  themeless: readonly (ThemelessAim | undefined)[] = [],
 ): string {
   // The rows are rebuilt only where an aim exists, and the entry's own keys are
   // spread FIRST so the added one lands last and no existing key order moves. A
@@ -953,7 +1029,13 @@ export function formatReportJson(
   // think the shape changed for every row.
   const unmatchedSuppressions = report.unmatchedSuppressions.map((entry, index) => {
     const aim = aims[index];
-    return aim === undefined ? entry : { ...entry, crossFileAim: aim };
+    const themelessAim = themeless[index];
+    if (aim === undefined && themelessAim === undefined) return entry;
+    return {
+      ...entry,
+      ...(aim === undefined ? {} : { crossFileAim: aim }),
+      ...(themelessAim === undefined ? {} : { themelessAim }),
+    };
   });
   return JSON.stringify({ path, ...report, unmatchedSuppressions });
 }

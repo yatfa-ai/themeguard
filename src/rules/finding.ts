@@ -65,6 +65,35 @@ export type RuleId =
   | "theme-partial-token";
 
 /**
+ * The rules that report `theme: null` BY CONSTRUCTION — each pushes the literal
+ * at its own push site, because what it measures is a fact about the
+ * STYLESHEET rather than about one theme's view of it (each rule's own docblock
+ * says so: "measured stylesheet-wide, not in a theme").
+ *
+ * Declared rather than inferred from a run's findings, because the claim a
+ * reader is handed is about the RULE and not about this report: a config entry
+ * whose `theme` scope names one of these can never match — not in this file,
+ * not in any file of the closure, not in any run — and that is a structural
+ * statement no single report can evidence. A run whose only `cycle-reference`
+ * loops happen to be base-authored carries nothing but `theme: null` findings
+ * too, and for THAT rule the scope stays aimable in principle (its push site is
+ * `themeAuthored ? theme : null`), so it is deliberately absent here.
+ *
+ * Read by {@link import("../audit").themelessAims}, which is a DIAGNOSIS and
+ * suppresses nothing. A rule added later and left out of this set makes the
+ * diagnosis silently decline rather than assert — the safe direction, since a
+ * missing sentence costs a reader a hint and a wrong one costs them a working
+ * judgement.
+ */
+export const THEMELESS_RULES: ReadonlySet<RuleId> = new Set<RuleId>([
+  "dead-token",
+  "duplicate-declaration",
+  "theme-partial-token",
+  "unresolved-import",
+  "unresolved-reference",
+]);
+
+/**
  * WHERE a finding's token was declared — the declaration the resolver actually
  * judged, not merely a place the name appears.
  *
