@@ -58,7 +58,11 @@
  *                        edge counts whether it is the whole value
  *                        (`--a: var(--b)`) or embedded in a compound one
  *                        (`--a: 1px solid var(--b)`), in primary position
- *                        either way.
+ *                        either way. A declaration whose walk stops at a
+ *                        compound value that references a loop — the
+ *                        dependent-declaration half of the same defect — is
+ *                        re-marked `cycle` by a completion pass after the
+ *                        walks run, reading finished results only.
  */
 
 import { parseColor, isTranslucent, toCss, type Color } from "./color.js";
@@ -365,13 +369,14 @@ export function resolveStylesheet(sheet: Stylesheet): ResolvedStylesheet {
         // self-loop, fallback-missing, fallback-cycle — is handled above and
         // never reaches here, so their facts are unchanged by construction.
         //
-        // The not-followed half has one visible consequence, pinned in the
-        // tests as a residual: a TAIL declaration whose walk enters a loop
-        // THROUGH a compound value (`--tail: var(--a)` where `--a` closes a
-        // compound loop) stops at that value and classifies as its literal
-        // text, where a tail into a whole-value loop is itself marked `cycle`.
-        // The loop's own fact is minted either way, so the defect is reported;
-        // only the dependent declaration goes unlisted.
+        // The not-followed half has one visible consequence, completed one
+        // release later: a TAIL declaration whose walk enters a loop THROUGH
+        // a compound value (`--tail: var(--a)` where `--a` closes a compound
+        // loop) stops at that value and cannot know — mid-walk — that the
+        // name it reached is inside a loop at all. The walk mints the loop's
+        // own fact either way; the dependent declaration is re-marked
+        // `cycle` by the completion pass in `resolveStylesheet`, which reads
+        // the walk's finished results once every theme's walk has run.
         for (const name of primaryReferences(value)) {
           if (seen.has(name)) {
             return {
@@ -450,6 +455,76 @@ export function resolveStylesheet(sheet: Stylesheet): ResolvedStylesheet {
       if (found.origin === "inherited") {
         absences.push({ name, theme, inheritedValue: found.value });
       }
+    }
+  }
+
+  // ── The dependent-declaration completion ─────────────────────────────────
+  // A walk that STOPS at a compound value classifies that value as its
+  // literal text — but per CSS custom-property semantics a declaration whose
+  // value reaches, through substitution, a name inside a var() loop is
+  // INVALID at computed-value time exactly like the loop's own members. The
+  // walk cannot know that while it runs (the loop closes on some other
+  // token's walk, and a compound value is never followed), so this pass
+  // re-marks it after the fact. Additive, and fenced three ways:
+  //
+  //   1. The consult is over ALREADY-COMPUTED results, per theme: the cycle
+  //      tokens the walk itself minted in this theme's own view, looked up
+  //      by name. Never a nested walk, never a compound value chased.
+  //   2. Edges stay PRIMARY-position only — `primaryReferences` over the
+  //      stopped value, the same scan the compound branch ran — so a name
+  //      inside a var()'s fallback segment is still never consulted.
+  //   3. Whole-value shapes are untouched by construction: their walks
+  //      already closed above the compound branch (kind "cycle",
+  //      resolvedValue null) and never enter this pass.
+  //
+  // The chain carries the stopping walk's path plus the loop it depends on,
+  // spelled the way the walk WOULD have closed had the compound value been
+  // substitutable: the referenced cycle name, then that walk's own chain up
+  // to the first name the stopped walk has already visited — closing there —
+  // or the referenced walk's own closing repeat when the two share nothing.
+  // That keeps the discipline the whole-value walk follows: the chain's last
+  // element is the first revisited name, so loop-set grouping (sorted unique
+  // names) makes the dependent walk its own finding beside the loop's —
+  // exactly cycle-reference's documented two-findings semantics — while a
+  // loop member healed into the same set merely joins the loop's group as a
+  // rotation (same set, same finding count; the deterministic representative
+  // may rotate, which the landed dedupe doctrine calls equivalent).
+  //
+  // The consult reads the WALK's kinds, not this pass's own re-marks: one
+  // pass, so a compound-stopped value referencing ANOTHER compound-stopped
+  // value that itself depends on a loop two hops away stays unlisted — a
+  // narrower residual of the same not-followed fence, pinned in
+  // tests/compound-cycle.test.ts.
+  for (const theme of themeNames) {
+    const cycles = new Map(
+      tokens
+        .filter((t) => t.theme === theme && t.kind === "cycle")
+        .map((t) => [t.name, t] as const),
+    );
+    if (cycles.size === 0) continue;
+    for (let i = 0; i < tokens.length; i++) {
+      const t = tokens[i]!;
+      if (t.theme !== theme || t.kind === "cycle" || t.resolvedValue === null) continue;
+      const referenced = primaryReferences(t.resolvedValue).find((n) => cycles.has(n));
+      if (referenced === undefined) continue;
+      const walk = cycles.get(referenced)!.chain;
+      // Where the stopped walk closes inside the referenced walk: the first
+      // name of it the stopped walk has already visited, or — when the two
+      // share nothing — the referenced walk's own closing repeat. A cycle
+      // chain always ends in a repeat, so `cut` is at least 1 either way
+      // (the referenced name itself is never on the stopped walk: the
+      // compound branch would have closed on it mid-walk).
+      const seen = new Set<string>(t.chain);
+      let cut = walk.findIndex((name) => seen.has(name));
+      if (cut === -1) cut = walk.length - 1;
+      tokens[i] = {
+        ...t,
+        resolvedValue: null,
+        kind: "cycle",
+        color: null,
+        translucent: false,
+        chain: [...t.chain, referenced, ...walk.slice(1, cut + 1)],
+      };
     }
   }
 
