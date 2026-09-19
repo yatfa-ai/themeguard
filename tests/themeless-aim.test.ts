@@ -39,6 +39,15 @@ import { resolveStylesheet } from "../src/resolve.js";
  * semantics are untouched, the entry stays ON the `unmatched` leg, the counts
  * stay put and the exit code does not move. The slice adds a SENTENCE to a row
  * that was already printing.
+ *
+ * ⚠️ THE ONE-KEY MOVE IS IDENTITY-ONLY. The clause promises that deleting the
+ * theme key aims the judgement — a promise that is FALSE for an entry that
+ * ALSO carries a `file` scope, where a second dead conjunct would leave the
+ * entry unmatched after the deletion (the exact defect a review probe caught:
+ * the advice was executed and suppressed nothing). `themelessAims` therefore
+ * declines any entry carrying a `file` scope, and this spec pins all three
+ * sub-cases — sibling file, beyond-config-home, and the audited sheet itself —
+ * each keeping the generic prose byte-identical and the `--json` key absent.
  */
 
 const tmp = mkdtempSync(join(tmpdir(), "themeguard-themeless-aim-"));
@@ -417,6 +426,107 @@ describe("the arms that KEEP the existing advice — the diagnosis is the dead-s
   });
 });
 
+describe("an entry that ALSO carries a `file` scope DECLINES — the theme is not the only dead conjunct", () => {
+  // The review probe that forced this gate: a theme-scoped entry whose `file`
+  // scope names ANOTHER stylesheet matched every gate the derivation asked
+  // (identity minus theme is exactly its match), so its row earned "drop the
+  // theme key to aim the judgement" — and executing that advice suppressed
+  // NOTHING, because the `file` scope is what kept the entry out. The clause
+  // claims the theme is the WHOLE reason nothing matched; a `file` scope is a
+  // second dead conjunct, and the whole entry disqualifies — the same move
+  // `crossFileAims` makes for a same-file identity match. The unscoped twin in
+  // "an UNSCOPED entry keeps the advice" IS this entry minus the theme key,
+  // and it stays unmatched — which is why the promise must never print here.
+
+  it("a `file` scope naming a SIBLING stylesheet keeps the generic advice byte-for-byte", () => {
+    const entry = write("filescope/a.css", PROBE);
+    write("filescope/sibling.css", ":root { --s: #101010; }\n.s { color: var(--s); }\n");
+    config("filescope", [
+      {
+        rule: "dead-token",
+        token: "--unused-accent",
+        theme: "winter",
+        file: "sibling.css",
+        reason: "sibling, winter only",
+      },
+    ]);
+    const result = run(entry);
+    expect(result.code).toBe(EXIT_FINDINGS);
+    expect(result.stdout).toContain("dead-token (1)");
+    expect(result.stdout).toContain("unmatched (1)");
+    // No clause: the row is exactly what it was before the arm existed.
+    expect(unmatchedRow(result)).toBe(
+      '  [unmatched] [dead-token] — "sibling, winter only" [token: --unused-accent]' +
+        " [theme: winter] [file: sibling.css]",
+    );
+    expect(result.stdout).not.toContain("measured stylesheet-wide and carry no theme");
+    expect(result.stdout).not.toContain(SECTION_LINE);
+    // And its own carve-out stands, alone.
+    expect(result.stdout).toContain("an entry carrying a [file: …] clause names the stylesheet");
+  });
+
+  it("a `file` scope resolving OUTSIDE the config's home earns no clause beside its fate line", () => {
+    // The sharpest form of the defect: before the gate, this section printed
+    // "one key deletion from working rather than retirable" DIRECTLY BESIDE
+    // "re-aim the entry inside the config's directory, or retire it" — two
+    // carve-out lines contradicting each other about the same single entry.
+    // The fate line is the true one; the clause must not exist beside it.
+    const entry = write("beyond/a.css", PROBE);
+    config("beyond", [
+      {
+        rule: "dead-token",
+        token: "--unused-accent",
+        theme: "winter",
+        file: "../outside.css",
+        reason: "beyond home",
+      },
+    ]);
+    const result = run(entry);
+    expect(result.stdout).toContain("unmatched (1)");
+    expect(unmatchedRow(result)).toBe(
+      '  [unmatched] [dead-token] — "beyond home" [token: --unused-accent]' +
+        " [theme: winter] [file: ../outside.css]",
+    );
+    // The fate line prints on its own terms, and the clause's section line
+    // and row sentence are both silent.
+    expect(result.stdout).toContain(
+      "an entry whose [file: …] clause resolves OUTSIDE this config's own directory",
+    );
+    expect(result.stdout).not.toContain(SECTION_LINE);
+    expect(result.stdout).not.toContain("one key deletion from working");
+    expect(result.stdout).not.toContain("measured stylesheet-wide and carry no theme");
+  });
+
+  it("even a scope naming the AUDITED sheet itself declines — the derivation cannot resolve the comparison", () => {
+    // The one sub-case where the advice WOULD hold: `fileResolved` equals the
+    // audited stylesheet, so only the theme conjunct is dead and deleting the
+    // key does suppress (probed in review). It is declined anyway, on purpose:
+    // deciding it is a comparison against `options.stylesheet`, which
+    // `themelessAims` never holds, and a missing sentence costs a reader a
+    // hint while a wrong one costs them a working judgement. The generic
+    // prose — which at least promises nothing — is what prints.
+    const entry = write("selffile/a.css", PROBE);
+    config("selffile", [
+      {
+        rule: "dead-token",
+        token: "--unused-accent",
+        theme: "winter",
+        file: "a.css",
+        reason: "this sheet, winter only",
+      },
+    ]);
+    const result = run(entry);
+    expect(result.stdout).toContain("dead-token (1)");
+    expect(result.stdout).toContain("unmatched (1)");
+    expect(unmatchedRow(result)).toBe(
+      '  [unmatched] [dead-token] — "this sheet, winter only" [token: --unused-accent]' +
+        " [theme: winter] [file: a.css]",
+    );
+    expect(result.stdout).not.toContain(SECTION_LINE);
+    expect(result.stdout).not.toContain("measured stylesheet-wide and carry no theme");
+  });
+});
+
 describe("the CROSS-FILE arm is byte-identical — the two diagnoses are structurally disjoint", () => {
   it("a directive can never earn this clause: the grammar carries no theme scope", () => {
     // The disjointness is STRUCTURAL rather than incidental: the directive
@@ -507,6 +617,32 @@ describe("--json carries the same diagnosis as data", () => {
     };
     expect(report.unmatchedSuppressions).toHaveLength(1);
     expect("themelessAim" in (report.unmatchedSuppressions[0] as object)).toBe(false);
+  });
+
+  it("carries the key on a `file`-scoped row NOT AT ALL — no machine-readable self-contradiction", () => {
+    // The review's second, sharper form: before the gate, a beyond-config-home
+    // row carried BOTH `fileBeyondConfigHome: true` (the fate annotation —
+    // this entry can never be honoured, anywhere) AND `themelessAim` ("one key
+    // deletion from working"). The two claims contradict each other, and on
+    // this channel the contradiction is machine-readable. The gate removes the
+    // second claim wherever the first stands.
+    const entry = write("json-file/a.css", PROBE);
+    config("json-file", [
+      {
+        rule: "dead-token",
+        token: "--unused-accent",
+        theme: "winter",
+        file: "../outside.css",
+        reason: "beyond home",
+      },
+    ]);
+    const report = JSON.parse(run("--json", entry).out[0] as string) as {
+      unmatchedSuppressions: Record<string, unknown>[];
+    };
+    expect(report.unmatchedSuppressions).toHaveLength(1);
+    const row = report.unmatchedSuppressions[0] as Record<string, unknown>;
+    expect(row.fileBeyondConfigHome).toBe(true);
+    expect("themelessAim" in row).toBe(false);
   });
 
   it("carries the key on a CROSS-FILE fixture's rows not at all — the two keys are disjoint", () => {
@@ -687,6 +823,48 @@ describe("the derivation reads the rule's declared stance and the matcher's own 
     // declines above are the belt firing, not the entry failing some other
     // conjunct.
     expect(themelessAims([entry], [themelessSibling])).toEqual([{ rule: "dead-token" }]);
+  });
+
+  it("declines an entry carrying a `file` scope — the theme would not be the only dead conjunct", () => {
+    // The review probe, asked of the predicate directly: a theme-scoped entry
+    // whose `file` scope names another stylesheet has a SECOND dead conjunct,
+    // so the clause's one-key promise is false for it and the whole entry
+    // disqualifies. The scope is read exactly as `matches` reads it —
+    // `fileResolved` when the CLI resolved one, the entry's own spelling
+    // otherwise — so both spellings are pinned.
+    const finding: Finding = {
+      rule: "dead-token",
+      theme: null,
+      tokens: ["--unused-accent"],
+      message: "synthetic: the theme-less finding the entry's identity matches",
+      evidence: {},
+    };
+    const resolvedSpelling = {
+      rule: "dead-token" as const,
+      token: "--unused-accent",
+      theme: "winter",
+      file: "sibling.css",
+      fileResolved: "/elsewhere/sibling.css",
+      reason: "sibling, winter only",
+    };
+    const writtenSpelling = {
+      rule: "dead-token" as const,
+      token: "--unused-accent",
+      theme: "winter",
+      file: "sibling.css",
+      reason: "sibling, winter only",
+    };
+    expect(themelessAims([resolvedSpelling], [finding])).toEqual([undefined]);
+    expect(themelessAims([writtenSpelling], [finding])).toEqual([undefined]);
+    // And the SAME entries without the scope DO earn it — so the declines
+    // above are the file gate firing, not some other conjunct failing.
+    const unscoped = {
+      rule: "dead-token" as const,
+      token: "--unused-accent",
+      theme: "winter",
+      reason: "sibling, winter only",
+    };
+    expect(themelessAims([unscoped], [finding])).toEqual([{ rule: "dead-token" }]);
   });
 
   it("the matching semantics are untouched — the same entry suppresses nothing, before and after", () => {

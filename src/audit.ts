@@ -145,7 +145,9 @@ export interface AuditReport {
    * — the defect prints above, and the entry did aim at a finding that exists
    * — and the entry is ONE KEY DELETION from working. The derivation that
    * names it is {@link themelessAims}, on the same reads-a-finished-report,
-   * suppresses-nothing footing.
+   * suppresses-nothing footing. (An entry that ALSO carries a `file` scope is
+   * outside the arm: the theme would not be its only dead conjunct, so the
+   * derivation declines it whole — see there.)
    */
   readonly unmatchedSuppressions: readonly (
     SuppressionEntry | SiteScopedSuppressionEntry | FileScopedSuppressionEntry
@@ -624,6 +626,19 @@ export interface ThemelessAim {
  * semantics are the matcher's own and never a re-derived twin — AND **every**
  * such finding carries `theme: null`.
  *
+ * An entry that ALSO carries a `file` scope declines, whatever its theme. The
+ * clause claims the theme is the ONLY reason nothing matched, and a `file`
+ * scope naming another stylesheet is a second dead conjunct — deleting the
+ * theme key would leave the entry unmatched, so the advice would be the very
+ * false-advice harm this arm exists to remove. The whole entry disqualifies,
+ * the same move {@link crossFileAims} makes for a same-file identity match,
+ * and the section's own `[file: …]` clauses still speak for the row. The
+ * decline is deliberately unconditional: whether the scope names the audited
+ * stylesheet itself — the one sub-case where the advice WOULD hold — is a
+ * comparison against `options.stylesheet`, which this derivation never holds,
+ * and the standing preference is that a missing sentence costs a reader a
+ * hint while a wrong one costs them a working judgement.
+ *
  * The declared set is what makes the claim honest, and the all-null quantifier
  * is the belt beside it. The clause asserts something about the RULE — "this
  * rule reports no theme, ever" — which no single report can evidence: a run
@@ -660,6 +675,23 @@ export function themelessAims(
 ): readonly (ThemelessAim | undefined)[] {
   return unmatched.map((entry) => {
     if (entry.theme === undefined) return undefined;
+    // The clause claims the THEME is the whole reason nothing matched. An
+    // entry whose `file` scope names another stylesheet has a SECOND dead
+    // conjunct, so deleting the theme key would not aim it — the advice would
+    // be the very false promise this arm exists to remove. The whole entry
+    // disqualifies, the same move `crossFileAims` makes for a same-file
+    // identity match. The scope is read exactly as `matches` reads it
+    // (`fileResolved` once the CLI has resolved one, the entry's own spelling
+    // otherwise), because the conjunct that would decide whether the theme is
+    // the ONLY dead one compares that scope against the audited stylesheet —
+    // `options.stylesheet` — which this derivation never holds. Declining on
+    // any file scope is therefore the conservative read: the one sub-case
+    // where the advice would hold (a scope naming the audited sheet itself)
+    // loses a hint, and a missing sentence costs a reader a hint while a
+    // wrong one costs them a working judgement.
+    if (("fileResolved" in entry ? entry.fileResolved : entry.file) !== undefined) {
+      return undefined;
+    }
     // The RULE's own stance first: the clause claims this rule never publishes
     // a theme, which is a fact about the rule and not about this run. A rule
     // outside the declared set declines here, however theme-less this run's

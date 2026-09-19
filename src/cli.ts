@@ -160,9 +160,11 @@
  * this file, any file of the closure, or any run of this config carries a
  * theme — while the finding the entry's rule and tokens DO match prints above.
  * Both readings are false again, and the row names the rule, the dead scope
- * and the one-key move that revives the judgement. DIAGNOSIS on the same
- * terms: {@link themelessAims} reads a FINISHED report, the matcher is
- * untouched, and the entry stays unmatched.
+ * and the one-key move that revives the judgement — claimed only where the
+ * THEME is the whole reason nothing matched, since an entry that also carries
+ * a `file` scope would still match nothing after the deletion. DIAGNOSIS on
+ * the same terms: {@link themelessAims} reads a FINISHED report, the matcher
+ * is untouched, and the entry stays unmatched.
  *
  * `coverage` is printed under the same precedent. It is the fact inventory rule
  * 4 is measured over — per theme, every base-theme token marked overridden or
@@ -264,6 +266,7 @@ import {
   crossFileAims,
   themelessAims,
   type CrossFileAim,
+  type FileScopedSuppressionEntry,
   type ThemelessAim,
   type SiteScopedSuppressionEntry,
 } from "./audit.js";
@@ -439,6 +442,12 @@ function crossFileClause(aim: CrossFileAim | undefined): string {
  * know: which rule, why the scope is dead, and the one-key move that revives
  * the judgement.
  *
+ * THE ONE-KEY MOVE IS IDENTITY-ONLY. An entry that also carries a `file`
+ * scope earns `""` — the theme would not be the only reason nothing matched,
+ * so deleting it would not aim the judgement, and the row's own `[file: …]`
+ * clause (or the beyond-config-home line above it) is what speaks for it.
+ * `themelessAims` declines the whole entry for exactly this reason; see there.
+ *
  * `""` for every other entry, which keeps every section this does not apply to
  * byte-identical. It joins the `tokenScope` / `scopeSuffix` / `fileClause` /
  * `sourceClause` / `crossFileClause` family and composes after them: in
@@ -447,7 +456,7 @@ function crossFileClause(aim: CrossFileAim | undefined): string {
  * composition stays honest if some shape ever carries both.
  */
 function themelessClause(
-  entry: SuppressionEntry | SiteScopedSuppressionEntry,
+  entry: SuppressionEntry | SiteScopedSuppressionEntry | FileScopedSuppressionEntry,
   aim: ThemelessAim | undefined,
 ): string {
   return aim === undefined
@@ -846,7 +855,13 @@ export function formatReport(
   // structurally DEAD scope, and the entry can never suppress anything in any
   // run. Both readings are false there too (the defect prints above, and the
   // rule and tokens DO match the finding that printed), and the row names the
-  // rule, the dead scope and the one-key move. A BOUNDARY the
+  // rule, the dead scope and the one-key move. THE ONE-KEY MOVE IS
+  // IDENTITY-ONLY: an entry that ALSO carries a `file` scope earns no clause
+  // and does not print this line — the theme would not be the only reason
+  // nothing matched there, so promising the key deletion would be the very
+  // false advice this line exists to replace, and the file clauses below are
+  // what speak for such an entry (`themelessAims` declines it whole). A
+  // BOUNDARY the
   // section also states, since config discovery reaches down a subtree: the
   // config governs its own directory and below, so an entry whose scope
   // resolves OUTSIDE that subtree can never be honoured by ANY run — and for

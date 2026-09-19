@@ -604,7 +604,11 @@ A DIAGNOSIS on exactly the same terms: the matching semantics are untouched, the
 unmatched, the finding still prints, and the counts and the exit code do not move. The clause is claimed
 only where the RULE's own stance is theme-less — a scope on a theme-BEARING rule that simply named the
 wrong theme keeps the existing advice, which may yet be true of it, since a config shared across a
-subtree can aim that entry at a sibling file where the theme exists. `cycle-reference` is deliberately
+subtree can aim that entry at a sibling file where the theme exists. It is equally withheld from an
+entry that ALSO carries a `file` scope: there the theme would not be the only reason nothing matched —
+the scope names a stylesheet this audit is not — so deleting the theme key would aim nothing, and the
+promise would repeat the very false advice the clause exists to replace; the `[file: …]` carve-outs are
+what speak for such an entry. `cycle-reference` is deliberately
 outside the set: it reports `theme: null` for a loop the base declarations author and a real theme for
 one a theme's own declarations close, so its scope stays aimable in principle even in a run whose loops
 all happen to be base-authored. [`--json`](#--json--the-report-as-data) carries the same diagnosis as
