@@ -88,12 +88,15 @@
  * resolver's coverage of its own fourth fact is finished: 0.1.20 completed it
  * resolver-side, minting `cycle` for a loop whose closing edge is embedded in
  * a compound value (`--divider: 1px solid var(--divider-color)`) rather than
- * spelled as the whole value, and 0.1.21 completed the dependent-declaration
+ * spelled as the whole value; 0.1.21 completed the dependent-declaration
  * half this file documents above — a walk that STOPS at a compound value now
  * arrives marked `cycle` too, re-marked by a pass in `resolveStylesheet`
- * that reads the walks' finished results. This rule stayed byte-identical
- * through both — the loops and their dependents simply arrive now — which is
- * the fence holding, not being relaxed.
+ * that reads the walks' finished results; and 0.1.22 made that consult
+ * complete, asking loop MEMBERSHIP rather than which member's walk happened
+ * to close the loop, and iterating to a fixed point so a dependent several
+ * hops out arrives as well. This rule stayed byte-identical through all
+ * three — the loops and their dependents simply arrive now — which is the
+ * fence holding, not being relaxed.
  */
 
 import { ROOT_THEME, type ResolvedStylesheet } from "../resolve.js";

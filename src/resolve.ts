@@ -467,9 +467,9 @@ export function resolveStylesheet(sheet: Stylesheet): ResolvedStylesheet {
   // token's walk, and a compound value is never followed), so this pass
   // re-marks it after the fact. Additive, and fenced three ways:
   //
-  //   1. The consult is over ALREADY-COMPUTED results, per theme: the cycle
-  //      tokens the walk itself minted in this theme's own view, looked up
-  //      by name. Never a nested walk, never a compound value chased.
+  //   1. The consult is over ALREADY-COMPUTED results, per theme: the loop
+  //      MEMBERSHIP this theme's own view currently carries, looked up by
+  //      name. Never a nested walk, never a compound value chased.
   //   2. Edges stay PRIMARY-position only — `primaryReferences` over the
   //      stopped value, the same scan the compound branch ran — so a name
   //      inside a var()'s fallback segment is still never consulted.
@@ -477,54 +477,121 @@ export function resolveStylesheet(sheet: Stylesheet): ResolvedStylesheet {
   //      already closed above the compound branch (kind "cycle",
   //      resolvedValue null) and never enter this pass.
   //
+  // ── MEMBERSHIP, not the walker's kind-carrying identity ──────────────────
+  // 0.1.21 consulted a SNAPSHOT of the tokens the WALK minted `cycle`, taken
+  // once before the pass ran, and the pass's own re-marks never entered it.
+  // That made the verdict depend on which member's walk happened to close
+  // the loop — a resolver-internal fact invisible in the CSS. In a
+  // compound-closed loop (`--divider: 1px solid var(--divider-color);
+  // --divider-color: var(--divider)`) only `--divider-color` is walk-minted,
+  // so `--tail: 3px solid var(--divider-color)` fired while the
+  // byte-identical `--tail: 3px solid var(--divider)` stayed silent and was
+  // classified as literal text. The consult now asks the MEMBERSHIP question
+  // instead — is the referenced name inside a var() loop in this theme's
+  // view? — and asks it of the CURRENT results rather than of a frozen copy.
+  //
+  // `cycles` is exactly that membership set: a token carries `kind: "cycle"`
+  // precisely when its own walk reaches a loop, so the theme's cycle-marked
+  // NAMES are the theme's declared loop membership — every declared name on
+  // any cycle chain is itself cycle-marked once this pass has run to its
+  // fixed point. (A chain can also carry a name NOTHING declares: the
+  // fallback-missing step of `--a: var(--nope, var(--a))` puts `--nope` on
+  // `--a`'s chain. `--nope` names no declaration, so `var(--nope)` falls back
+  // to unset/inherit — rule 5's population, not a loop — and consulting a
+  // bare chain name set would re-mark its consumers as cyclic. Reading the
+  // membership through the TOKEN table excludes it by construction: an
+  // undeclared name has no token to be a member.)
+  //
+  // ── The fixed point ──────────────────────────────────────────────────────
+  // The membership set GROWS as the pass re-marks, so one pass is not the
+  // answer: `--c1: calc(var(--loop-a) + 1px)` is re-marked from the walk's
+  // own loop, and `--c2: calc(var(--c1) + 1px)` — invalid at computed-value
+  // time for the same reason, the guarantee-invalid value propagating — can
+  // only be seen once `--c1` is. So the pass repeats until a round re-marks
+  // nothing. Each round reads a SNAPSHOT taken at its start, so the outcome
+  // never depends on the order tokens sit in; each round that changes
+  // anything marks at least one candidate, and a kind never goes back, so
+  // the round count is bounded by the theme's candidate count (the loop also
+  // carries that bound explicitly rather than trusting the argument).
+  //
   // The chain carries the stopping walk's path plus the loop it depends on,
   // spelled the way the walk WOULD have closed had the compound value been
-  // substitutable: the referenced cycle name, then that walk's own chain up
-  // to the first name the stopped walk has already visited — closing there —
-  // or the referenced walk's own closing repeat when the two share nothing.
-  // That keeps the discipline the whole-value walk follows: the chain's last
-  // element is the first revisited name, so loop-set grouping (sorted unique
-  // names) makes the dependent walk its own finding beside the loop's —
-  // exactly cycle-reference's documented two-findings semantics — while a
-  // loop member healed into the same set merely joins the loop's group as a
+  // substitutable: the referenced member's name, then that member's own walk
+  // up to the first name the stopped walk has already visited — closing
+  // there — or the member's own closing repeat when the two share nothing.
+  // The member's walk is read from its CURRENT chain, so a member the pass
+  // itself completed contributes the completed spelling and a dependent two
+  // hops out closes on the loop rather than on the hop. That keeps the
+  // discipline the whole-value walk follows: the chain's last element is the
+  // first revisited name, so loop-set grouping (sorted unique names) makes
+  // the dependent walk its own finding beside the loop's — exactly
+  // cycle-reference's documented two-findings semantics — while a loop
+  // member healed into the same set merely joins the loop's group as a
   // rotation (same set, same finding count; the deterministic representative
   // may rotate, which the landed dedupe doctrine calls equivalent).
   //
-  // The consult reads the WALK's kinds, not this pass's own re-marks: one
-  // pass, so a compound-stopped value referencing ANOTHER compound-stopped
-  // value that itself depends on a loop two hops away stays unlisted — a
-  // narrower residual of the same not-followed fence, pinned in
-  // tests/compound-cycle.test.ts.
+  // What the pass still does NOT reach, and why: a loop whose EVERY member
+  // stops at a compound value (`--m1: 1px solid var(--m2); --m2: 1px solid
+  // var(--m1)`) mints no cycle token at all — no walk closes it, so there is
+  // no membership to consult and nothing here to propagate from. That is a
+  // gap in MINTING the loop, not in completing its dependents, and it is
+  // pinned in tests/compound-cycle.test.ts rather than implied.
   for (const theme of themeNames) {
-    const cycles = new Map(
-      tokens
-        .filter((t) => t.theme === theme && t.kind === "cycle")
-        .map((t) => [t.name, t] as const),
-    );
-    if (cycles.size === 0) continue;
+    // This theme's own token rows, once: the membership view is read from
+    // them every round, and the candidates are the subset of them whose walk
+    // STOPPED at a value it could not follow (`resolvedValue !== null` — the
+    // `classifyValue` fall-through). A re-marked index leaves the candidate
+    // list; it stays in the theme's rows, where the next round reads it as
+    // membership.
+    const rows: number[] = [];
+    let candidates: number[] = [];
     for (let i = 0; i < tokens.length; i++) {
       const t = tokens[i]!;
-      if (t.theme !== theme || t.kind === "cycle" || t.resolvedValue === null) continue;
-      const referenced = primaryReferences(t.resolvedValue).find((n) => cycles.has(n));
-      if (referenced === undefined) continue;
-      const walk = cycles.get(referenced)!.chain;
-      // Where the stopped walk closes inside the referenced walk: the first
-      // name of it the stopped walk has already visited, or — when the two
-      // share nothing — the referenced walk's own closing repeat. A cycle
-      // chain always ends in a repeat, so `cut` is at least 1 either way
-      // (the referenced name itself is never on the stopped walk: the
-      // compound branch would have closed on it mid-walk).
-      const seen = new Set<string>(t.chain);
-      let cut = walk.findIndex((name) => seen.has(name));
-      if (cut === -1) cut = walk.length - 1;
-      tokens[i] = {
-        ...t,
-        resolvedValue: null,
-        kind: "cycle",
-        color: null,
-        translucent: false,
-        chain: [...t.chain, referenced, ...walk.slice(1, cut + 1)],
-      };
+      if (t.theme !== theme) continue;
+      rows.push(i);
+      if (t.kind !== "cycle" && t.resolvedValue !== null) candidates.push(i);
+    }
+    const bound = candidates.length;
+    for (let round = 0; round < bound && candidates.length > 0; round++) {
+      // This round's view of the theme's loop membership, read before any of
+      // this round's re-marks land — so the round is order-independent.
+      const cycles = new Map<string, ResolvedToken>();
+      for (const i of rows) {
+        const t = tokens[i]!;
+        if (t.kind === "cycle") cycles.set(t.name, t);
+      }
+      if (cycles.size === 0) break;
+      const remaining: number[] = [];
+      for (const i of candidates) {
+        const t = tokens[i]!;
+        const referenced = primaryReferences(t.resolvedValue as string).find((n) =>
+          cycles.has(n),
+        );
+        if (referenced === undefined) {
+          remaining.push(i);
+          continue;
+        }
+        const walk = cycles.get(referenced)!.chain;
+        // Where the stopped walk closes inside the member's walk: the first
+        // name of it the stopped walk has already visited, or — when the two
+        // share nothing — the member's own closing repeat. A cycle chain
+        // always ends in a repeat, so `cut` is at least 1 either way (the
+        // referenced name itself is never on the stopped walk: the compound
+        // branch would have closed on it mid-walk).
+        const seen = new Set<string>(t.chain);
+        let cut = walk.findIndex((name) => seen.has(name));
+        if (cut === -1) cut = walk.length - 1;
+        tokens[i] = {
+          ...t,
+          resolvedValue: null,
+          kind: "cycle",
+          color: null,
+          translucent: false,
+          chain: [...t.chain, referenced, ...walk.slice(1, cut + 1)],
+        };
+      }
+      if (remaining.length === candidates.length) break;
+      candidates = remaining;
     }
   }
 
