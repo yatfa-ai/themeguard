@@ -62,7 +62,12 @@
  *                        compound value that references a loop — the
  *                        dependent-declaration half of the same defect — is
  *                        re-marked `cycle` by a completion pass after the
- *                        walks run, reading finished results only.
+ *                        walks run, reading finished results only. And a loop
+ *                        NO walk closes — every member's walk stops at its own
+ *                        compound value before completing the circuit — is
+ *                        minted by a names-only cycle pass over the theme's
+ *                        primary-position edges, which runs before that
+ *                        completion so the loop's dependents resolve too.
  */
 
 import { parseColor, isTranslucent, toCss, type Color } from "./color.js";
@@ -218,6 +223,129 @@ function primaryReferences(value: string): string[] {
     i = j > open ? j : open;
   }
   return names;
+}
+
+/**
+ * The names-only mint (0.1.23) — the MINT half the all-compound loop needed.
+ *
+ * The walk mints `cycle` only when a back edge lands on a name ALREADY on its
+ * own path, and a compound value is never followed — so a loop whose every
+ * member stops the walk short never completes a circuit from any seed:
+ * `--m1: 1px solid var(--m2); --m2: 1px solid var(--m1)` walks `--m1` to a
+ * literal classification and `--m2` to the same, and the loop audits green
+ * although per CSS custom-property semantics every property in it is invalid
+ * at computed-value time. This pass reads the SAME edges the compound branch
+ * reads — each `var()` call's primary position, never a fallback segment — as
+ * a graph over the theme's DECLARED names (an edge naming something no scope
+ * declares has no node to reach), finds the loops no walk closed, and marks
+ * their unmarked members `cycle` with the loop chain: exactly the fact the
+ * walk mints when it closes.
+ *
+ * Each detected loop is a DFS segment closed by a back edge — a simple path
+ * of real edges plus the edge that closes it — so every member of a segment
+ * IS on a genuine loop: there is no over-marking, and the chain a member
+ * carries is that loop spelled from itself, `[member, …around the loop…,
+ * member]`, the shape the walk's own mint produces. A walk-minted chain is
+ * never rewritten (a member already `cycle` is skipped), which is what keeps
+ * every currently-minted loop byte-identical: the whole-value and mixed loops
+ * the walks close are detected here too, and passed over.
+ *
+ * Bounded the way the completion pass it feeds is: each name enters the DFS
+ * once (white → grey → black), each edge is read once, so the pass is linear
+ * in the theme's names and edges. Deterministic: names are walked in the
+ * view's insertion order and a value's references in written order, so the
+ * same stylesheet mints the same chains on every run.
+ */
+function mintNamesOnlyCycles(
+  theme: string,
+  tokens: ResolvedToken[],
+  names: ReadonlySet<string>,
+  lookup: (
+    name: string,
+    theme: string,
+  ) => { value: string; line: number; from?: string; origin: TokenOrigin } | null,
+): void {
+  // The graph: each declared name's PRIMARY-position edges, read from the
+  // value the theme's VIEW carries — its own declaration, else `:root`, else
+  // the `@theme inline` alias namespace; the same lookup the walks read. No
+  // value is substituted anywhere in this pass: the edges are names only.
+  const edges = new Map<string, string[]>();
+  for (const name of names) {
+    const found = lookup(name, theme);
+    if (found) edges.set(name, primaryReferences(found.value));
+  }
+
+  // This theme's token rows, by name — for the already-minted check and the
+  // write. Tokens are replaced, never mutated, like the completion pass does.
+  const row = new Map<string, number>();
+  for (let i = 0; i < tokens.length; i++) {
+    if (tokens[i]!.theme === theme) row.set(tokens[i]!.name, i);
+  }
+
+  const mark = (segment: readonly string[]) => {
+    for (let k = 0; k < segment.length; k++) {
+      const name = segment[k]!;
+      const i = row.get(name);
+      if (i === undefined) continue;
+      const t = tokens[i]!;
+      if (t.kind === "cycle") continue;
+      tokens[i] = {
+        ...t,
+        resolvedValue: null,
+        kind: "cycle",
+        color: null,
+        translucent: false,
+        chain: [...segment.slice(k), ...segment.slice(0, k), name],
+      };
+    }
+  };
+
+  // Iterative DFS. A name is white (absent from `state`), grey (on the path
+  // being walked), or black (finished); an edge landing on grey is a back
+  // edge, and the path from that name to the current frame is the loop.
+  const GREY = 1;
+  const BLACK = 2;
+  const state = new Map<string, number>();
+  const path: string[] = [];
+  const pathAt = new Map<string, number>();
+  const frames: { name: string; refs: readonly string[]; next: number }[] = [];
+
+  for (const start of names) {
+    if (!edges.has(start) || state.has(start)) continue;
+    state.set(start, GREY);
+    path.push(start);
+    pathAt.set(start, path.length - 1);
+    frames.push({ name: start, refs: edges.get(start)!, next: 0 });
+    while (frames.length > 0) {
+      const frame = frames[frames.length - 1]!;
+      if (frame.next >= frame.refs.length) {
+        state.set(frame.name, BLACK);
+        path.pop();
+        pathAt.delete(frame.name);
+        frames.pop();
+        continue;
+      }
+      const ref = frame.refs[frame.next]!;
+      frame.next += 1;
+      const colour = state.get(ref);
+      if (colour === undefined) {
+        // A name nothing declares has no node — no edges, no loop through
+        // it; the dead end is skipped rather than descended into.
+        if (!edges.has(ref)) continue;
+        state.set(ref, GREY);
+        path.push(ref);
+        pathAt.set(ref, path.length - 1);
+        frames.push({ name: ref, refs: edges.get(ref)!, next: 0 });
+      } else if (colour === GREY) {
+        // The loop: the real edges of the path from `ref` down to this
+        // frame, closed by this frame's own edge back to `ref`. A self-edge
+        // (`ref === frame.name`) arrives here too, as a segment of one.
+        mark(path.slice(pathAt.get(ref)!));
+      }
+      // Black is passed over: everything reachable from a finished name was
+      // explored when it finished, so an edge into it opens no new loop.
+    }
+  }
 }
 
 interface ScopeTable {
@@ -530,13 +658,31 @@ export function resolveStylesheet(sheet: Stylesheet): ResolvedStylesheet {
   // rotation (same set, same finding count; the deterministic representative
   // may rotate, which the landed dedupe doctrine calls equivalent).
   //
-  // What the pass still does NOT reach, and why: a loop whose EVERY member
-  // stops at a compound value (`--m1: 1px solid var(--m2); --m2: 1px solid
-  // var(--m1)`) mints no cycle token at all — no walk closes it, so there is
-  // no membership to consult and nothing here to propagate from. That is a
-  // gap in MINTING the loop, not in completing its dependents, and it is
-  // pinned in tests/compound-cycle.test.ts rather than implied.
+  // What the pass no longer waits for: the names-only mint above runs first,
+  // per theme, so a loop no walk closes — every member stopping at its own
+  // compound value (`--m1: 1px solid var(--m2); --m2: 1px solid var(--m1)`,
+  // the residual this pass pinned through 0.1.22) is already in the
+  // membership map by the time this pass consults it. The loop's members are
+  // minted `cycle` before the candidates are collected below, and a
+  // dependent that enters such a loop — through a whole-value edge or a
+  // compound stop of its own — resolves on this pass's fixed point with no
+  // further change. That closes the minting half the residual named; the
+  // completing half below is unchanged.
   for (const theme of themeNames) {
+    // ── The names-only mint runs BEFORE this pass collects its candidates ──
+    // The view's declared names, built the way the walk loop builds them
+    // (base table, then the theme's own, then the alias namespace), so the
+    // graph reads the same values the walks read. A loop the mint marks is
+    // membership the rounds below consult; a member it marks is never a
+    // candidate (its kind is already `cycle`), and a dependent that enters
+    // the loop completes on the fixed point with no further change.
+    const viewNames = new Set<string>([
+      ...rootTable.keys(),
+      ...(themeTables.get(theme)?.declarations.keys() ?? []),
+      ...inlineTable.keys(),
+    ]);
+    mintNamesOnlyCycles(theme, tokens, viewNames, lookup);
+
     // This theme's own token rows, once: the membership view is read from
     // them every round, and the candidates are the subset of them whose walk
     // STOPPED at a value it could not follow (`resolvedValue !== null` — the
