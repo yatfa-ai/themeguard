@@ -214,12 +214,16 @@ describe("the arms that KEEP the existing advice — the diagnosis is the cross-
     expect(result.stdout).not.toContain("a third case this report CAN tell");
   });
 
-  it("the same miss in a CLOSURE keeps the advice — a site in the directive's own file disqualifies the entry", () => {
+  it("the same miss in a CLOSURE keeps the advice — an own-file site is not a cross-file miss", () => {
     // The sharper form of the arm above: the directive sits in the entry file,
     // the collision has a site in the entry file AND a site in the import, and
     // the directive's line covers neither. `findingLinesIn` for origin
     // `undefined` is NON-empty, so the file is not the reason it missed — the
     // entry keeps the existing advice even though an imported site exists.
+    //
+    // ONE finding, so this pins the per-finding answer and NOT the whole-entry
+    // disqualification — with a single candidate the two are indistinguishable.
+    // The entry-level decision is pinned below, on a two-finding fixture.
     write("mixed/part.css", ":root { --imported-fill: #22C55E; }");
     const entry = write(
       "mixed/main.css",
@@ -242,6 +246,47 @@ describe("the arms that KEEP the existing advice — the diagnosis is the cross-
     expect(result.stdout).toContain("Declared at line 3 and part.css:1.");
     expect(result.stdout).toContain("unmatched (1)");
     expect(unmatchedRow(result)).not.toContain("matches a live");
+  });
+
+  it("ONE own-file identity-match disqualifies the WHOLE entry, not merely that finding", () => {
+    // The pin for the predicate's most-argued decision: an own-file site makes
+    // `crossFileAims` abandon the entry outright (`return undefined`) rather
+    // than skip that one finding and keep looking (`continue`). The suffix
+    // claims the FILE is the whole reason nothing matched, and for an entry
+    // that also aims at a finding in its own file that claim is simply false —
+    // following it would move the comment into `tokens.css` and leave the
+    // entry-file finding unsuppressed, the same false-retirement harm class
+    // this slice exists to delete.
+    //
+    // ⚠️ THE FIXTURE NEEDS TWO FINDINGS AND CANNOT BE SIMPLIFIED TO ONE. With a
+    // single finding, per-finding skip and whole-entry disqualification are
+    // INDISTINGUISHABLE — `continue` runs out of findings and returns the same
+    // `undefined` — which is why `mixed/` above cannot catch this and why the
+    // shape here is a RULE-ONLY directive (no `tokens`, so its identity
+    // conjuncts match every `dead-token`) against one own-file finding and one
+    // imported one. Under the `continue` mutation this row gains
+    // `— matches a live [dead-token] finding at tokens.css:1`; it must not.
+    write("wholeentry/tokens.css", ":root { --imported-dead: #111111; }");
+    const entry = write(
+      "wholeentry/main.css",
+      [
+        '@import "./tokens.css";',
+        ":root { --entry-dead: #222222; }",
+        "",
+        "/* themeguard-ignore dead-token -- blanket, and one of the two lives here */",
+        ".a { color: red; }",
+      ].join("\n"),
+    );
+    const result = run(entry);
+    expect(result.code).toBe(EXIT_FINDINGS);
+    // BOTH findings are live and BOTH match the entry's identity conjuncts —
+    // one declared in the entry file, one in the import.
+    expect(result.stdout).toContain("dead-token (2)");
+    expect(result.stdout).toContain("--entry-dead is declared at :root:2");
+    expect(result.stdout).toContain("--imported-dead is declared at tokens.css:1");
+    expect(result.stdout).toContain("unmatched (1)");
+    expect(unmatchedRow(result)).not.toContain("matches a live");
+    expect(result.stdout).not.toContain("a third case this report CAN tell");
   });
 
   it("a directive whose rule and tokens match NOTHING keeps the advice", () => {
@@ -519,9 +564,10 @@ describe("the derivation reuses the matcher's own semantics", () => {
     //
     // A mixed shape — one suppressor, one aimer — could not pin index
     // alignment at all: a suppressing directive never reaches the leg, leaving
-    // a single slot. Two leg entries are required. The same-file
+    // a single slot. Two leg entries are required. The whole-entry
     // disqualification (a site in the directive's OWN file) is pinned
-    // separately, by "the same miss in a CLOSURE keeps the advice" above.
+    // separately, by "ONE own-file identity-match disqualifies the WHOLE
+    // entry" above — that one needs two findings, which this fixture is not.
     write("slots/tokens.css", TOKENS);
     const entry = write(
       "slots/main.css",

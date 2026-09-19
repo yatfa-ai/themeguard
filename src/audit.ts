@@ -536,7 +536,10 @@ export function crossFileAims(
       if (!matchesEntryIdentity(entry, finding)) continue;
       // A site in the directive's OWN file is the same-file-wrong-line miss,
       // and it disqualifies the whole entry rather than merely this finding:
-      // the suffix claims the FILE is the only reason nothing matched.
+      // the suffix claims the FILE is the only reason nothing matched, which
+      // is false for an entry that ALSO aims at a finding in its own file.
+      // `return undefined` rather than `continue`, pinned by the two-finding
+      // fixture in "ONE own-file identity-match disqualifies the WHOLE entry".
       if (findingLinesIn(finding, origin, knownOrigins).length > 0) return undefined;
       if (aim !== undefined) continue;
       // The first site of the first identity-match, in the report's own
