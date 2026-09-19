@@ -47,13 +47,33 @@ import { CENSUS, fixtureCss, FIXTURE_PATH } from "./fixture.js";
  *
  *   4. THE DEPENDENT DECLARATION — a walk that STOPS at a compound value is
  *      re-marked `cycle` when the stopped value's primary-position references
- *      name a walk-minted cycle in the same theme view, so a tail into a
- *      compound loop and a compound tail into a loop carry the fact the
- *      whole-value shapes always carried. The consult reads the walks'
- *      finished results only (per theme, primary-position edges, no compound
- *      value chased); the healed loop member joins its own group as a
- *      rotation — the finding count never moves — and the multi-hop
- *      compound tail stays a pinned residual.
+ *      reach a loop in the same theme view, so a tail into a compound loop
+ *      and a compound tail into a loop carry the fact the whole-value shapes
+ *      always carried. The consult reads the walks' finished results only
+ *      (per theme, primary-position edges, no compound value chased); the
+ *      healed loop member joins its own group as a rotation — the finding
+ *      count never moves.
+ *
+ * 0.1.22 makes that consult COMPLETE, in the two directions 0.1.21 left open:
+ *
+ *   5. MEMBERSHIP, NOT THE WALKER'S KIND-CARRYING IDENTITY — 0.1.21 consulted
+ *      a snapshot of the tokens the WALK minted `cycle`, so in a
+ *      compound-closed loop (where only one member's walk closes it) a
+ *      byte-identical tail fired or stayed silent according to which member
+ *      it happened to name — a resolver-internal fact invisible in the CSS.
+ *      The consult now asks whether the referenced name is a loop MEMBER in
+ *      this theme's view, read from the token table (so an undeclared chain
+ *      name — rule 5's population — is never a member).
+ *   6. THE FIXED POINT — the membership set grows as the pass re-marks, so
+ *      the pass repeats until a round re-marks nothing (bounded by the
+ *      theme's candidate count, each round reading a snapshot taken at its
+ *      start so the outcome is order-independent). A dependent two or more
+ *      hops from the loop — 0.1.21's pinned residual — now resolves, and a
+ *      dependent consumed through a whole-value walk stops vanishing from
+ *      the report. Healthy compound chains that never reach a loop are
+ *      untouched, and the remaining residual (a loop whose EVERY member
+ *      stops at a compound value mints nothing to propagate from — a gap in
+ *      MINTING, not in completing) is pinned rather than implied.
  */
 
 interface Run {
@@ -211,7 +231,7 @@ describe("the canonical compound shapes all close, and each is ONE finding namin
   // fact mid-walk — a compound value is not FOLLOWED, so the walk that closes
   // is the one that started at the whole-value member. Since 0.1.21's
   // completion pass the OTHER member is re-marked after the walks run (its
-  // primary reference names the minted cycle), so both members carry
+  // primary reference names a loop member), so both members carry
   // kind "cycle" — still ONE finding: same loop set, one group. The finding's
   // `tokens` was always the loop SET, so both members were named in the one
   // finding before and after; only the kind column changed.
@@ -229,8 +249,8 @@ describe("the canonical compound shapes all close, and each is ONE finding namin
     const r = resolveCss(`:root { ${first} ${second} }`);
     // 0.1.21's completion pass heals the member asymmetry 0.1.20 shipped:
     // the whole-value member's walk mints the fact, and the compound member —
-    // whose own walk stops at its value but whose primary reference names the
-    // now-known cycle — is re-marked by the pass. Both members carry
+    // whose own walk stops at its value but whose primary reference names a
+    // now-known loop member — is re-marked by the pass. Both members carry
     // kind "cycle"; the finding count is unchanged (same loop set, one group).
     expect(r.tokens.filter((t) => t.kind === "cycle").map((t) => t.name)).toEqual([
       "--a",
@@ -264,9 +284,9 @@ describe("the canonical compound shapes all close, and each is ONE finding namin
     // stops there — a compound value is not followed — so mid-walk `--tail`
     // cannot know `--a` sits in a loop at all: the loop closes on `--b`'s
     // walk, not its own. The completion pass re-marks it once the walks have
-    // run: its stopped value's PRIMARY reference (`--b`) is a walk-minted
-    // cycle, so `--tail` carries the fact the whole-value tail has always
-    // carried. Per CSS custom-property semantics both verdicts say the same
+    // run: its stopped value's PRIMARY reference (`--b`) is a loop MEMBER in
+    // this theme's view, so `--tail` carries the fact the whole-value tail
+    // has always carried. Per CSS custom-property semantics both verdicts say the same
     // thing — the declaration is invalid at computed-value time — and the
     // same declaration shape now gets the same verdict whichever way the
     // LOOP's members spell their values.
@@ -308,7 +328,7 @@ describe("the canonical compound shapes all close, and each is ONE finding namin
   it("COMPLETION: a compound TAIL into a whole-value loop is cyclic too — same verdict, no special case", () => {
     // The mirror shape: the tail's own value is the compound one. Its walk
     // stops at itself, and the primary reference of that stopped value
-    // (`--a`) is a walk-minted cycle — re-marked, chain spelled as the
+    // (`--a`) is a loop member — re-marked, chain spelled as the
     // substitution walk would have closed it.
     const r = resolveCss(
       `:root { --pad-accent: calc(var(--a) + 2px); --a: var(--b); --b: var(--a); }`,
@@ -327,7 +347,7 @@ describe("the canonical compound shapes all close, and each is ONE finding namin
     // The asymmetry 0.1.20 left behind: `--divider`'s own walk stops at its
     // compound value and classified as literal text while `--divider-color`
     // carried kind "cycle" — two kinds inside one loop. The pass re-marks it
-    // (its primary reference names the minted cycle), its chain closes on the
+    // (its primary reference names a loop member), its chain closes on the
     // set the loop already had, and the group's deterministic representative —
     // the alphabetically first member — rotates to `--divider`. The dedupe
     // doctrine calls rotations equivalent: same set, one finding.
@@ -409,26 +429,224 @@ describe("the canonical compound shapes all close, and each is ONE finding namin
     expect(loop.message).toContain("--divider → --divider-color → --divider is a var() cycle");
   });
 
-  it("RESIDUAL, pinned: a compound value referencing ANOTHER compound-stopped value two hops from the loop stays unlisted", () => {
-    // The consult reads the WALK's kinds — one pass, no fixed point. `--c1`
-    // is re-marked (its reference names the loop directly); `--c2`'s
-    // reference names `--c1`, which was NOT a walk-minted cycle, so it stays
-    // classified as its literal text. Semantically `--c2` is invalid at
-    // computed-value time too (the guarantee-invalid value propagates), and
-    // catching it needs a second pass over the pass's own re-marks — a
-    // deliberate edge of this slice, stated here rather than implied.
+  it("COMPLETION: a compound value referencing ANOTHER compound-stopped value two hops from the loop is cyclic too", () => {
+    // Was the pinned residual of 0.1.21, whose consult read the WALK's kinds
+    // once — one pass, no fixed point — so `--c1` was re-marked (its
+    // reference names the loop directly) while `--c2`, whose reference names
+    // `--c1`, stayed classified as its literal text. Semantically `--c2` is
+    // invalid at computed-value time too: the guarantee-invalid value
+    // propagates through substitution however many hops it travels. The pass
+    // now iterates to a FIXED POINT over its own re-marks, so the whole
+    // dependent tail resolves and each hop is its own finding.
     const r = resolveCss(
       `:root {
          --loop-a: var(--loop-b);
          --loop-b: var(--loop-a);
          --c1: calc(var(--loop-a) + 1px);
          --c2: calc(var(--c1) + 1px);
+         --c3: calc(var(--c2) + 1px);
        }`,
     );
     expect(r.token("--c1", ROOT_THEME)?.kind).toBe("cycle");
-    expect(r.token("--c2", ROOT_THEME)?.kind).toBe("non-color");
+    expect(r.token("--c2", ROOT_THEME)?.kind).toBe("cycle");
+    expect(r.token("--c3", ROOT_THEME)?.kind).toBe("cycle");
+    // Each hop's chain carries its own path plus the loop it depends on, and
+    // ends on the first revisited name — so the hop it went through is on
+    // the chain, and the chain still closes on the LOOP rather than on the
+    // hop: the member's walk is read at its completed spelling.
+    expect(r.token("--c2", ROOT_THEME)?.chain).toEqual([
+      "--c2",
+      "--c1",
+      "--loop-a",
+      "--loop-b",
+      "--loop-a",
+    ]);
+    expect(r.token("--c3", ROOT_THEME)?.chain).toEqual([
+      "--c3",
+      "--c2",
+      "--c1",
+      "--loop-a",
+      "--loop-b",
+      "--loop-a",
+    ]);
+    // Four distinct loop sets: the loop and one per dependent hop.
     const findings = audit(r).findings.filter((f) => f.rule === "cycle-reference");
-    expect(findings).toHaveLength(2);
+    expect(findings).toHaveLength(4);
+    expect(findings.find((f) => f.tokens.includes("--c3"))!.message).toContain(
+      "--c3 → --c2 → --c1 → --loop-a → --loop-b → --loop-a is a var() cycle",
+    );
+  });
+
+  it("COMPLETION: the verdict follows the DECLARATION, not which member's walk closed the loop", () => {
+    // The walker-blind asymmetry 0.1.21 left behind, and the reason the
+    // consult now asks MEMBERSHIP. In a compound-closed loop only
+    // `--divider-color`'s walk closes it — `--divider` is re-marked by the
+    // pass — so a snapshot taken before the pass ran contained only the one
+    // name, and which SPELLING of a byte-identical tail fired was decided by
+    // a resolver-internal fact invisible in the CSS.
+    const r = resolveCss(
+      `:root {
+         --divider: 1px solid var(--divider-color);
+         --divider-color: var(--divider);
+         --tail-walker: 3px solid var(--divider-color);
+         --tail-member: 3px solid var(--divider);
+       }`,
+    );
+    expect(r.token("--tail-walker", ROOT_THEME)?.kind).toBe("cycle");
+    expect(r.token("--tail-member", ROOT_THEME)?.kind).toBe("cycle");
+    // Same shape, each closing on the member it names.
+    expect(r.token("--tail-walker", ROOT_THEME)?.chain).toEqual([
+      "--tail-walker",
+      "--divider-color",
+      "--divider",
+      "--divider-color",
+    ]);
+    expect(r.token("--tail-member", ROOT_THEME)?.chain).toEqual([
+      "--tail-member",
+      "--divider",
+      "--divider-color",
+      "--divider",
+    ]);
+    // Three groups: the loop, and one per tail (each tail's set carries the
+    // tail, so neither dedupes into the loop's).
+    const findings = audit(r).findings.filter((f) => f.rule === "cycle-reference");
+    expect(findings).toHaveLength(3);
+  });
+
+  it("COMPLETION: a dependent CONSUMED through a whole-value walk is reported too — it no longer vanishes", () => {
+    // `--t2` stops at its compound value; `--t1: var(--t2)` walks INTO it and
+    // stops there as well (a compound value is not followed), so before the
+    // fixed point BOTH stayed literal text and the report carried only the
+    // loop's own finding — the dependent pair vanished from the report
+    // entirely rather than merely being classified oddly.
+    const r = resolveCss(
+      `:root {
+         --divider: 1px solid var(--divider-color);
+         --divider-color: var(--divider);
+         --t2: 1px solid var(--divider);
+         --t1: var(--t2);
+       }`,
+    );
+    expect(r.token("--t2", ROOT_THEME)?.kind).toBe("cycle");
+    expect(r.token("--t1", ROOT_THEME)?.kind).toBe("cycle");
+    expect(r.token("--t1", ROOT_THEME)?.chain).toEqual([
+      "--t1",
+      "--t2",
+      "--divider",
+      "--divider-color",
+      "--divider",
+    ]);
+    const findings = audit(r).findings.filter((f) => f.rule === "cycle-reference");
+    expect(findings).toHaveLength(3);
+  });
+
+  it("NO OVER-MARKING: a healthy compound chain that never reaches a loop keeps its literal classification", () => {
+    // The fence on the other side of the fixed point: iterating propagates a
+    // re-mark only along edges that REACH a loop. A compound chain of any
+    // depth over healthy values is untouched, and so is a compound value
+    // beside a loop it does not reference.
+    const r = resolveCss(
+      `:root {
+         --loop-a: var(--loop-b);
+         --loop-b: var(--loop-a);
+         --base: #ffffff;
+         --e: 1px solid var(--base);
+         --f: calc(var(--e) + 1px);
+         --g: calc(var(--f) + 1px);
+       }`,
+    );
+    for (const name of ["--e", "--f", "--g"]) {
+      expect(r.token(name, ROOT_THEME)?.kind, name).toBe("non-color");
+      expect(r.token(name, ROOT_THEME)?.resolvedValue, name).not.toBeNull();
+    }
+    expect(r.token("--g", ROOT_THEME)?.chain).toEqual(["--g"]);
+    const findings = audit(r).findings.filter((f) => f.rule === "cycle-reference");
+    expect(findings).toHaveLength(1);
+    expect([...findings[0]!.tokens].sort()).toEqual(["--loop-a", "--loop-b"]);
+  });
+
+  it("the fixed point is ORDER-INDEPENDENT: a dependent declared BEFORE the hop it depends on resolves identically", () => {
+    // Each round reads a snapshot of the theme's membership taken before any
+    // of that round's re-marks land, so a dependent sitting earlier in the
+    // token list than the hop it needs is not decided by that position — it
+    // simply resolves on the next round.
+    const forward = resolveCss(
+      `:root { --l1: var(--l2); --l2: var(--l1); --c1: calc(var(--l1) + 1px); --c2: calc(var(--c1) + 1px); }`,
+    );
+    const reversed = resolveCss(
+      `:root { --c2: calc(var(--c1) + 1px); --c1: calc(var(--l1) + 1px); --l1: var(--l2); --l2: var(--l1); }`,
+    );
+    for (const r of [forward, reversed]) {
+      expect(r.token("--c1", ROOT_THEME)?.chain).toEqual(["--c1", "--l1", "--l2", "--l1"]);
+      expect(r.token("--c2", ROOT_THEME)?.chain).toEqual([
+        "--c2",
+        "--c1",
+        "--l1",
+        "--l2",
+        "--l1",
+      ]);
+    }
+  });
+
+  it("MEMBERSHIP is read through the TOKEN table: an undeclared chain name is not a member", () => {
+    // A cycle chain can carry a name NOTHING declares — the fallback-missing
+    // step of `--a: var(--nope, var(--a))` puts `--nope` on `--a`'s chain.
+    // `var(--nope)` falls back to unset/inherit (rule 5's population), so a
+    // consult over bare chain NAMES would re-mark its consumers as cyclic.
+    // Reading membership through the token table excludes it by
+    // construction: an undeclared name has no token to be a member.
+    const r = resolveCss(`:root { --a: var(--nope, var(--a)); --d: 1px solid var(--nope); }`);
+    expect(r.token("--a", ROOT_THEME)?.kind).toBe("cycle");
+    expect(r.token("--a", ROOT_THEME)?.chain).toEqual(["--a", "--nope", "--a"]);
+    expect(r.token("--d", ROOT_THEME)?.kind).toBe("non-color");
+    expect(r.token("--d", ROOT_THEME)?.resolvedValue).toBe("1px solid var(--nope)");
+  });
+
+  it("COMPLETION, theme view: a transitive dependent is re-marked only in the view whose loop closes", () => {
+    // The fixed point is per-theme like the pass it iterates. Root's
+    // `--divider-color` is a plain colour, so root's whole dependent tail
+    // stays healthy; dark re-points it into the loop, and BOTH hops of the
+    // tail are re-marked there and only there.
+    const css = [
+      ":root {",
+      "  --divider: 1px solid var(--divider-color);",
+      "  --divider-color: #cccccc;",
+      "  --t2: 1px solid var(--divider);",
+      "  --t1: var(--t2);",
+      "}",
+      '[data-theme="dark"] {',
+      "  --divider-color: var(--divider);",
+      "}",
+      "",
+    ].join("\n");
+    const r = resolveCss(css);
+    for (const name of ["--divider", "--t2", "--t1"]) {
+      expect(r.token(name, ROOT_THEME)?.kind, name).toBe("non-color");
+      expect(r.token(name, "dark")?.kind, name).toBe("cycle");
+    }
+    expect(r.token("--t1", "dark")?.chain).toEqual([
+      "--t1",
+      "--t2",
+      "--divider",
+      "--divider-color",
+      "--divider",
+    ]);
+  });
+
+  it("RESIDUAL, pinned: a loop whose EVERY member stops at a compound value still mints nothing to propagate from", () => {
+    // The gap the fixed point does NOT close, because it is a gap in MINTING
+    // the loop rather than in completing its dependents: no walk closes
+    // `--m1: 1px solid var(--m2); --m2: 1px solid var(--m1)` — each stops at
+    // its own compound value with the other name not yet on the walk — so
+    // there is no membership for this pass to consult and nothing to
+    // propagate. Stated here rather than implied.
+    const r = resolveCss(
+      `:root { --m1: 1px solid var(--m2); --m2: 1px solid var(--m1); --tail: var(--m1); }`,
+    );
+    expect(r.token("--m1", ROOT_THEME)?.kind).toBe("non-color");
+    expect(r.token("--m2", ROOT_THEME)?.kind).toBe("non-color");
+    expect(r.token("--tail", ROOT_THEME)?.kind).toBe("non-color");
+    expect(audit(r).countsByRule["cycle-reference"]).toBe(0);
   });
 });
 
