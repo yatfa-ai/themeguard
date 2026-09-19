@@ -58,7 +58,12 @@
  * pair rule 3 could not measure (a translucent member has no lightness until it
  * is composited, and themeguard never invents a backdrop) is silence, and
  * silence reads exactly like a clean result. The library goes to the trouble of
- * counting it; a CLI that swallowed it would undo that.
+ * counting it; a CLI that swallowed it would undo that. Each row names WHICH
+ * silence it is — `translucent`, `not-a-color`, `absent`, `unresolvable` — and
+ * an `absent` row goes one further and names the sibling theme the pair is
+ * declared in, because "not measurable in theme X" and "these names are
+ * broken" are different claims and the reader cannot tell them apart from a
+ * bare skip.
  *
  * ── The config ────────────────────────────────────────────────────────────
  * `themeguard.config.json`, OPTIONAL, is discovered by walking UP from the
@@ -260,7 +265,9 @@ import { loadStylesheet } from "./load.js";
 import { resolveStylesheet } from "./resolve.js";
 import type { TokenKind } from "./resolve.js";
 import type { Stylesheet } from "./parse.js";
-import type { RuleId } from "./rules/finding.js";
+import type { FindingSite, RuleId } from "./rules/finding.js";
+import { citeSiteList } from "./rules/finding.js";
+import type { SkippedPair } from "./rules/scale-collapse.js";
 
 /** The audit ran and reported nothing. */
 export const EXIT_OK = 0;
@@ -401,6 +408,72 @@ function crossFileClause(aim: CrossFileAim | undefined): string {
   return aim === undefined
     ? ""
     : ` — matches a live [${aim.rule}] finding at ${aim.site}; a directive governs only the file it is written in — move it there, or record it in ${CONFIG_FILENAME} to cover the whole closure.`;
+}
+
+/**
+ * The sibling-scope pointer an `absent` skipped row carries: WHERE the pair
+ * that is missing from this theme's view actually lives.
+ *
+ * The row's own sentence already says the pair could not be measured in theme
+ * X; without this clause it could not say that the tokens are perfectly
+ * healthy one block away, which is the whole difference between "these names
+ * are broken" and "these names are winter's". Scopes are cited the way every
+ * other file-aware clause cites — `line 4` in the entry file, `tokens.css:4`
+ * for a declaration spliced in over an `@import` edge — through the shared
+ * {@link citeSiteList}, so the spelling cannot drift from
+ * `positionClause`'s, which is that same list under its own frame.
+ *
+ * Both members missing from one sibling theme is the ordinary shape (a
+ * theme-local pair audited from another view), and it reads as ONE fact —
+ * `the pair is declared only in theme "winter"` — rather than as the same
+ * theme named twice. The per-member form stands for every other shape: one
+ * member missing while the other resolves, or two members living in
+ * different themes.
+ *
+ * `""` when the row carries no scopes: `absent` with nothing found anywhere
+ * (the rule says nothing rather than naming a wrong scope), and every
+ * non-absent reason, which has no sibling scope to name. That is what keeps
+ * the translucent and not-a-color rows byte-identical.
+ */
+function siblingScopeClause(pair: SkippedPair): string {
+  const scopes = pair.declaredIn;
+  if (scopes === undefined || scopes.length === 0) return "";
+
+  // Per member, in the order the rule collected them (base then state), each
+  // with the themes whose own blocks declare it and the position in each.
+  const members: { name: string; themes: string[]; sites: FindingSite[] }[] = [];
+  for (const scope of scopes) {
+    const existing = members.find((m) => m.name === scope.name);
+    const member = existing ?? { name: scope.name, themes: [], sites: [] };
+    if (existing === undefined) members.push(member);
+    member.themes.push(scope.theme);
+    member.sites.push(scope.site);
+  }
+
+  const themesOf = (m: { themes: string[] }): string => m.themes.join("\u0000");
+  const shared =
+    members.length > 1 && members.every((m) => themesOf(m) === themesOf(members[0]));
+  if (shared) {
+    const first = members[0] as { themes: string[] };
+    const where = members.map((m) => `${m.name} at ${citeSiteList(m.sites)}`).join(", ");
+    return ` — the pair is declared only in ${themeList(first.themes)} (${where})`;
+  }
+  return ` — ${joinAnd(
+    members.map(
+      (m) => `${m.name} is declared only in ${themeList(m.themes)} at ${citeSiteList(m.sites)}`,
+    ),
+  )}`;
+}
+
+/** `"a"` / `"a" and "b"` / `"a", "b" and "c"`. */
+function joinAnd(items: readonly string[]): string {
+  if (items.length === 1) return items[0] as string;
+  return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
+}
+
+/** `theme "dark"` / `themes "dark" and "winter"` — the noun agrees with the list. */
+function themeList(themes: readonly string[]): string {
+  return `${themes.length === 1 ? "theme" : "themes"} ${joinAnd(themes.map((t) => `"${t}"`))}`;
 }
 
 /**
@@ -652,7 +725,8 @@ export function formatReport(
     lines.push("  pairs rule 3 could not measure. Not findings, and not a pass either.");
     for (const pair of report.skipped) {
       lines.push(
-        `  [skipped] ${pair.state} against ${pair.base} in theme "${pair.theme}": ${pair.reason}`,
+        `  [skipped] ${pair.state} against ${pair.base} in theme "${pair.theme}": ` +
+          `${pair.reason}${siblingScopeClause(pair)}`,
       );
     }
   }

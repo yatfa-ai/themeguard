@@ -61,6 +61,8 @@ export type { SuppressionEntry } from "./config.js";
 export {
   sortFindings,
   positionClause,
+  citeSite,
+  citeSiteList,
   siteFromToken,
   type Finding,
   type FindingSite,
@@ -79,6 +81,8 @@ export {
   VISIBLE_STEP_LSTAR,
   type ScaleCollapseResult,
   type SkippedPair,
+  type SkipReason,
+  type SiblingScope,
 } from "./rules/scale-collapse.js";
 export {
   coverageReport,

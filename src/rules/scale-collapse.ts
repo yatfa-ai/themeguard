@@ -58,6 +58,19 @@
  * SKIPPED and reported in `skipped`, so the silence is visible and countable
  * rather than looking like a pass. Compositing would need to know the surface
  * the token is painted on, which the stylesheet does not state.
+ *
+ * ── The skip is COUNTED, and it also SAYS WHICH KIND OF SILENCE IT IS ──────
+ * Translucency is one of four reasons a pair goes unmeasured, and the other
+ * three come out of a SINGLE condition — `from === undefined || to ===
+ * undefined || kind !== "color"` — that already distinguishes them and used
+ * to report them under one string, `not-a-color`. Two of the three were then
+ * false: a pair living only in a sibling theme's block (`absent`) has no
+ * value in this view to be a colour or not, and a `var()` chain that found
+ * nothing (`unresolvable`) is exactly what the unresolved-reference section
+ * says about the SAME token three sections down — one report, two
+ * contradictory diagnoses. The reason is therefore split on the arms the
+ * condition itself evaluates, and an `absent` row carries the sibling scope
+ * the pair actually lives in. See {@link SkipReason}.
  */
 
 import { deltaLstar, lstar, type Color } from "../color.js";
@@ -68,18 +81,107 @@ import { TokenNames, type StatePair } from "./tokens.js";
 /** Below this, a step between two fills is not reliably visible. */
 export const VISIBLE_STEP_LSTAR = 4;
 
+/**
+ * WHY a pair could not be measured. Four values, and the split is the skip
+ * branch's OWN condition read at its own `||` boundaries rather than a second
+ * classification computed beside it:
+ *
+ *   - `translucent`   — both members resolve to colours, at least one with
+ *                       alpha < 1. `lstar` refuses it and this rule never
+ *                       invents a backdrop.
+ *   - `not-a-color`   — both members RESOLVE, at least one to a value that is
+ *                       not a colour (a length, a duration, a shadow list).
+ *                       The only population that string ever described
+ *                       truthfully.
+ *   - `absent`        — at least one member is not in this theme's view at
+ *                       all. `resolved.token` reads the theme's COMPOSED
+ *                       table (`:root` flows into every theme), so a miss
+ *                       means the name is declared in NEITHER `:root` NOR
+ *                       this theme — it lives only in a sibling theme's
+ *                       block, which the coverage section treats as ordinary
+ *                       reality. Calling that "not a colour" asserted
+ *                       something about a value that does not exist here.
+ *   - `unresolvable`  — both members are in the view and at least one is
+ *                       `kind: "unresolved"` or `"cycle"`: a `var()` chain
+ *                       that found nothing, or one that came back around.
+ *                       The report already says exactly this about the same
+ *                       token in its unresolved-reference / cycle-reference
+ *                       sections and in coverage's `N unresolved` segments —
+ *                       under the old single string those two sections
+ *                       diagnosed one token two contradictory ways.
+ *
+ * A widening, never a re-labelling: `translucent` and `not-a-color` keep the
+ * exact strings and the exact populations they had.
+ */
+export type SkipReason = "translucent" | "not-a-color" | "absent" | "unresolvable";
+
 /** A pair that could not be measured, and why. */
 export interface SkippedPair {
   readonly theme: string;
   readonly base: string;
   readonly state: string;
-  readonly reason: "translucent" | "not-a-color";
+  readonly reason: SkipReason;
+  /**
+   * For `reason: "absent"` ONLY — where the missing member(s) actually live:
+   * the themes whose own blocks declare them, with each declaration's
+   * cascade-winner position (`line 4`, or `tokens.css:4` for a declaration
+   * spliced in over an `@import` edge).
+   *
+   * ABSENT rather than `null` on every other reason, under the codebase's
+   * absence-is-a-fact discipline: a row that is not an absence has no sibling
+   * scope to name, and a `null` there would invite a reader to treat "no
+   * pointer" and "pointer we could not build" as one state. It is also absent
+   * on an `absent` row whose members are found in NO theme's block — the
+   * derivation says nothing rather than naming a wrong scope.
+   */
+  readonly declaredIn?: readonly SiblingScope[];
+}
+
+/** One place an absent pair member IS declared. */
+export interface SiblingScope {
+  /** The member this scope declares — `base` or `state`. */
+  readonly name: string;
+  /** The theme whose own block declares it. */
+  readonly theme: string;
+  /** Its cascade-winner position there: `line 4`, or `tokens.css:4`. */
+  readonly site: FindingSite;
 }
 
 export interface ScaleCollapseResult {
   readonly findings: Finding[];
   /** Pairs deliberately not judged. Never silently dropped. */
   readonly skipped: SkippedPair[];
+}
+
+/**
+ * The themes whose OWN blocks declare `name`, with the position each declares
+ * it at — the sibling-scope pointer an `absent` row carries.
+ *
+ * `origin === "declared"` is the whole test, and it is the same one
+ * `theme-partial-token` asks of the same table. For THIS population it is
+ * provably unobservable rather than discriminating, and the proof is the
+ * reason the pointer can be trusted at all: a `:root` declaration is
+ * inherited into every view and an `@theme inline` alias is
+ * theme-independent, so either one is found in EVERY theme and a pair
+ * carrying it could never have been absent from one. The only way a name is
+ * missing from a view is for a named theme's own block to be its only home —
+ * so every lookup that succeeds for an absent member already carries
+ * `declared`. Relaxing the filter therefore changes no output, which is a
+ * fact worth stating rather than a guard worth pretending covers something:
+ * it is kept for soundness and for symmetry with the sibling rule, and the
+ * PROPERTY it rests on is what `tests/skip-reason.test.ts` pins.
+ */
+function declaringScopes(
+  resolved: ResolvedStylesheet,
+  name: string,
+): SiblingScope[] {
+  const scopes: SiblingScope[] = [];
+  for (const theme of resolved.themes) {
+    const token = resolved.token(name, theme);
+    if (token === undefined || token.origin !== "declared") continue;
+    scopes.push({ name, theme, site: siteFromToken(name, token) });
+  }
+  return scopes;
 }
 
 export function scaleCollapseRule(
@@ -99,12 +201,37 @@ export function scaleCollapseRule(
     for (const { base, state, suffix } of pairs) {
       const from = resolved.token(base, theme);
       const to = resolved.token(state, theme);
+      // The three whys the one condition already evaluates, read in the order
+      // it evaluates them — absence first (there is no kind to ask about when
+      // the token is not in the view), then the kind split. Each arm is the
+      // condition's own half, never a twin predicate beside it.
+      if (from === undefined || to === undefined) {
+        // Where the missing member(s) DO live. `statePairs()` derives from
+        // DECLARED names, so each member is declared in some scope — but a
+        // scope reachable only through a lookup this pass cannot make (an
+        // alias-layer entry, say) would leave the list empty, and an empty
+        // list says nothing rather than naming a wrong scope.
+        const declaredIn = [
+          ...(from === undefined ? declaringScopes(resolved, base) : []),
+          ...(to === undefined ? declaringScopes(resolved, state) : []),
+        ];
+        skipped.push(
+          declaredIn.length === 0
+            ? { theme, base, state, reason: "absent" }
+            : { theme, base, state, reason: "absent", declaredIn },
+        );
+        continue;
+      }
       if (
-        from === undefined ||
-        to === undefined ||
-        from.kind !== "color" ||
-        to.kind !== "color"
+        from.kind === "unresolved" ||
+        from.kind === "cycle" ||
+        to.kind === "unresolved" ||
+        to.kind === "cycle"
       ) {
+        skipped.push({ theme, base, state, reason: "unresolvable" });
+        continue;
+      }
+      if (from.kind !== "color" || to.kind !== "color") {
         skipped.push({ theme, base, state, reason: "not-a-color" });
         continue;
       }

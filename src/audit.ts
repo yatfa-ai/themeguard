@@ -76,7 +76,12 @@ import { unresolvedReferenceRule } from "./rules/unresolved-reference.js";
 import { unresolvedImportRule } from "./rules/unresolved-import.js";
 import { themePartialTokenRule } from "./rules/theme-partial-token.js";
 import { scaleCollapseRule, type SkippedPair } from "./rules/scale-collapse.js";
-import { sortFindings, type Finding, type RuleId } from "./rules/finding.js";
+import {
+  citeSite as citeSiteFromFinding,
+  sortFindings,
+  type Finding,
+  type RuleId,
+} from "./rules/finding.js";
 import { TokenNames } from "./rules/tokens.js";
 
 export interface AuditReport {
@@ -85,9 +90,14 @@ export interface AuditReport {
   /** Findings per rule id. Every rule id is present, `0` included. */
   readonly countsByRule: Readonly<Record<RuleId, number>>;
   /**
-   * Pairs rule 3 could not measure — a translucent member has no lightness
-   * until it is composited, and themeguard never invents a backdrop. Reported
-   * so the silence is countable rather than looking like a pass.
+   * Pairs rule 3 could not measure, each naming WHICH silence it is:
+   * `translucent` (no lightness until it is composited, and themeguard never
+   * invents a backdrop), `not-a-color` (both members resolve, at least one to
+   * a non-colour), `absent` (a member is not in this theme's view at all —
+   * the row then names the sibling theme that declares it) or `unresolvable`
+   * (a `var()` chain found nothing, or came back around). Reported so the
+   * silence is countable rather than looking like a pass, and split so a row
+   * does not assert something about a value the view has none of.
    */
   readonly skipped: readonly SkippedPair[];
   /**
@@ -460,10 +470,15 @@ export interface CrossFileAim {
   readonly site: string;
 }
 
-/** One site, cited exactly as `positionClause` cites it within a clause. */
-function citeSite(site: SiteCoordinate): string {
-  return site.origin === undefined ? `line ${site.line}` : `${site.origin}:${site.line}`;
-}
+/**
+ * One site, cited exactly as `positionClause` cites it within a clause.
+ *
+ * DELEGATED rather than re-spelled: this was a local copy of the same
+ * two-branch read, and a second copy is a second place for the origin
+ * spelling to drift from the clause it claims to match. `citeSite` is that
+ * read, hoisted; `SiteCoordinate` satisfies its structural parameter.
+ */
+const citeSite = citeSiteFromFinding;
 
 /**
  * For each unmatched entry, the live finding it would govern IN ANOTHER FILE —

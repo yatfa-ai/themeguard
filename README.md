@@ -174,10 +174,12 @@ npx themeguard --json src/*.css
 The object is the **same report the library returns**, verbatim, with the audited `path` in front of it:
 `findings` (each with its `rule`, `theme`, `tokens`, `message`, `evidence` and — where the rule has a
 position to give — its `sites`, each naming a token, a line and the imported file it was spliced from),
-`countsByRule`, `suppressed`, `unmatchedSuppressions`, `skipped` and `coverage`. Nothing is renamed,
-summarized or dropped. The prose renderer is a lossy projection of that object — sites become clause
-text, evidence becomes sentence fragments, scopes become bracket suffixes — so a caller that wanted
-*which file, which token, which line* had to scrape sentences shaped for people.
+`countsByRule`, `suppressed`, `unmatchedSuppressions`, `skipped` (each row's `reason` one of
+`translucent` / `not-a-color` / `absent` / `unresolvable`, and an `absent` row carrying the additive
+`declaredIn` pointer — **absent**, never `null`, on every other reason) and `coverage`. Nothing is
+renamed, summarized or dropped. The prose renderer is a lossy projection of that object — sites become
+clause text, evidence becomes sentence fragments, scopes become bracket suffixes — so a caller that
+wanted *which file, which token, which line* had to scrape sentences shaped for people.
 
 One key is the CLI's own rather than the library's, and it is additive: an `unmatchedSuppressions` row
 whose judgement names a live finding in another file of the closure carries `crossFileAim`, `{rule,
@@ -266,10 +268,21 @@ Four things in that output are deliberate and worth reading.
 **All nine rule headings print even at zero.** A rule that reports nothing and a rule that did not run
 look identical if the heading is omitted, and "nothing here" reads as a pass.
 
-**`skipped` is a section, not a silence.** A pair rule 3 could not measure — a translucent member has no
-lightness until it is composited, and themeguard never invents a backdrop — is *unmeasured*, which is not
-the same claim as *clean*. Those pairs are counted and named, and they do **not** change the exit code:
-they are not findings.
+**`skipped` is a section, not a silence — and each row says WHICH silence.** A pair rule 3 could not
+measure is *unmeasured*, which is not the same claim as *clean*. Those pairs are counted and named, and
+they do **not** change the exit code: they are not findings. Four reasons, split on the arms the skip
+branch's own condition already evaluates rather than on a second classification beside it:
+
+| `reason` | What it says |
+|---|---|
+| `translucent` | Both members are colours, at least one with alpha < 1. A translucent colour has no lightness until it is composited, and themeguard never invents a backdrop. |
+| `not-a-color` | Both members **resolve**, at least one to a value that is not a colour — a length, a duration, a shadow list. |
+| `absent` | At least one member is not in this theme's view at all: a `:root` declaration flows into every theme, so a miss means the name lives **only in a sibling theme's block**. The row then names that scope and each member's line — `absent — the pair is declared only in theme "winter" (--card-bg at line 10, --card-bg-hover at line 11)`. Under `--json` the same pointer rides an additive `declaredIn` key, **absent** (never `null`) on every other reason. |
+| `unresolvable` | Both members are in the view and at least one `var()` chain found nothing, or came back around. The report's own `unresolved-reference` / `cycle-reference` sections — and coverage's `N unresolved` segments — already say what broke; this row now agrees with them instead of contradicting them. |
+
+The last two used to be reported as `not-a-color`, which asserted something about a value the view did
+not have. Splitting them changes no count, no finding and no exit code: the rows already existed, and
+only the words they say about themselves changed.
 
 **`coverage` is facts, not findings.** Inheriting a token is normal — focus geometry, control sizing and
 transitions are theme-independent on purpose — so the inventory never moves the exit code. It is printed
@@ -701,7 +714,7 @@ facts and passes no judgement, the upper one judges those facts and nothing else
 | `src/color.ts` | Colour parsing (hex 3/4/6/8, `rgb()`/`rgba()`, `hsl()`/`hsla()`, alpha throughout), WCAG relative luminance, CIE L\*, contrast ratio, source-over compositing. |
 | `src/audit.ts` | `audit(resolved)` — the nine rules in one pass, returning findings tagged `collision`, `dead-token`, `scale-collapse`, `family-consistency`, `unresolved-reference`, `cycle-reference`, `duplicate-declaration`, `unresolved-import` or `theme-partial-token`, plus the per-theme coverage inventory. Passing `suppressions` moves caller-declared findings out of `findings` and the counts into a `suppressed` leg, and the entries that matched nothing onto `unmatchedSuppressions`. Also publishes the suppression matcher's own halves — `matchesEntryIdentity`, `findingSiteCoordinates`, `findingLinesIn`, `siteLineCovers`, `closureOrigins` — and `crossFileAims`, the read over a finished report that says which unmatched site-scoped judgement would govern a live finding one `@import` edge away. |
 | `src/config.ts` | `themeguard.config.json` — optional, discovered at or above the stylesheet (nearest ancestor wins; a config beside the stylesheet is the first hop). Parses and validates the `suppress` entries (strictly: an unhonourable config is an error naming the entry, never a silent skip) into the structured declarations `audit()` filters a finished report by. |
-| `src/rules/` | One module per question. Each docstring carries its judgement heuristics and, more usefully, what it deliberately does **not** report. `rules/coverage.ts` also carries the coverage inventory itself — the facts rule 4 is measured over, printed by the CLI as an informational section and never an exit code. |
+| `src/rules/` | One module per question. Each docstring carries its judgement heuristics and, more usefully, what it deliberately does **not** report. `rules/coverage.ts` also carries the coverage inventory itself — the facts rule 4 is measured over, printed by the CLI as an informational section and never an exit code. `rules/finding.ts` carries the shared citation the clauses are built from — `citeSite` for one site and `citeSiteList` for a list, which `positionClause` is now the `Declared at …` frame around, so a sibling clause needing the same file-aware spelling reads it rather than re-deriving it. |
 | `src/cli.ts` | The command. I/O and presentation over `audit()` — no rule, no heuristic and no judgement of its own. Two renderers over the same report: the default prose, and `--json`'s NDJSON projection, which serializes the report verbatim for a pipeline caller. |
 
 ```ts
@@ -742,8 +755,9 @@ Three properties are worth stating because they are what the tests defend:
   assumed black once produced a 1.82:1 reading where the truth was 9.25:1.
 * **A rule reports what it measured.** Every finding carries the numbers behind it — the shared value, the
   declaration sites, the ΔL\* and both endpoints — so a verdict can be checked rather than taken. A pair
-  rule 3 cannot measure (a translucent member has no lightness until it is composited) is reported as
-  *skipped*, because silence reads exactly like a pass.
+  rule 3 cannot measure is reported as *skipped*, because silence reads exactly like a pass — and the row
+  says WHICH silence it is, because "this value is not a colour" and "this name is a sibling theme's"
+  are different facts and only one of them is ever true of a given pair.
 * **The maths is calibrated against an independent implementation**, and against a real stylesheet that
   records its own measurements in comments: `tests/math.test.ts` reproduces its documented ΔL\* steps
   (`+6.07`, `−11.49`) to the hundredth. See `tests/fixtures/README.md`.

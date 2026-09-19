@@ -463,8 +463,9 @@ describe("rule 3 — scale collapse, over the vendored fixture", () => {
     const names = new TokenNames(resolved);
     const pairs = names.statePairs().filter((p) => !names.isAlias(p.base) && !names.isAlias(p.state));
     expect(pairs).toHaveLength(10);
-    // No fixture pair is translucent or non-colour, so nothing is skipped here —
-    // asserted rather than assumed, since a silent skip reads exactly like a pass.
+    // No fixture pair is translucent, non-colour, absent from a theme's view
+    // or unresolvable, so nothing is skipped here — asserted rather than
+    // assumed, since a silent skip reads exactly like a pass.
     expect(report.skipped).toEqual([]);
   });
 });

@@ -153,6 +153,49 @@ export interface Finding {
 }
 
 /**
+ * ONE site cited the way every file-aware clause cites: a bare `line 41` for
+ * an entry-file declaration, `tokens.css:2` for one spliced in over an
+ * `@import` edge.
+ *
+ * Hoisted out of {@link positionClause}'s mixed-origin branch rather than
+ * re-spelled: a second copy of the same two-branch citation is a second place
+ * for the origin spelling to drift, and callers that cite a SINGLE site
+ * (`scale-collapse`'s sibling-scope pointer) need exactly this and none of the
+ * clause's list grammar.
+ */
+export function citeSite(site: { readonly line: number; readonly origin?: string }): string {
+  return site.origin === undefined ? `line ${site.line}` : `${site.origin}:${site.line}`;
+}
+
+/**
+ * SEVERAL sites cited as one list, in {@link positionClause}'s exact
+ * grammar — the clause's body, without its `Declared at …` frame, so a
+ * caller that needs the same citation discipline under different words
+ * (`scale-collapse`'s sibling-scope pointer) reads it from here instead of
+ * re-deriving the two branches.
+ *
+ * `line 41` / `lines 41 and 33` while every site is entry-file; the moment
+ * ONE carries an origin, every site is cited independently — `line 2 and
+ * tokens.css:3` — because the collective `lines 2 and 3` wording is the
+ * riddle a per-file number poses and a bare number beside a file-cited one
+ * would quietly claim they share a file. `""` for no sites at all.
+ */
+export function citeSiteList(sites: readonly FindingSite[]): string {
+  if (sites.length === 0) return "";
+  if (sites.every((s) => s.origin === undefined)) {
+    if (sites.length === 1) return `line ${sites[0].line}`;
+    const last = sites[sites.length - 1] as FindingSite;
+    return `lines ${sites
+      .slice(0, -1)
+      .map((s) => String(s.line))
+      .join(", ")} and ${last.line}`;
+  }
+  const cited = sites.map(citeSite);
+  if (cited.length === 1) return cited[0] as string;
+  return `${cited.slice(0, -1).join(", ")} and ${cited[cited.length - 1]}`;
+}
+
+/**
  * The position clause a rule appends to its message, in `dead-token`'s voice
  * minus the selector it alone can supply: `Declared at line 41.`, or
  * `Declared at lines 41 and 33.` for a pair.
@@ -180,20 +223,14 @@ export interface Finding {
  * entry-file findings, and keep the exact wording this clause has always
  * rendered (`line 41`, `lines 41 and 33`), which is what keeps every existing
  * report byte-identical.
+ *
+ * The citation itself is {@link citeSiteList}'s — this is that list under the
+ * `Declared at …` frame, so a sibling clause needing the same discipline
+ * under different words cannot drift from it.
  */
 export function positionClause(sites: readonly FindingSite[]): string {
   if (sites.length === 0) return "";
-  if (sites.every((s) => s.origin === undefined)) {
-    if (sites.length === 1) return `Declared at line ${sites[0].line}.`;
-    const last = sites[sites.length - 1] as FindingSite;
-    return `Declared at lines ${sites
-      .slice(0, -1)
-      .map((s) => String(s.line))
-      .join(", ")} and ${last.line}.`;
-  }
-  const cited = sites.map((s) => (s.origin === undefined ? `line ${s.line}` : `${s.origin}:${s.line}`));
-  if (cited.length === 1) return `Declared at ${cited[0]}.`;
-  return `Declared at ${cited.slice(0, -1).join(", ")} and ${cited[cited.length - 1]}.`;
+  return `Declared at ${citeSiteList(sites)}.`;
 }
 
 /**
