@@ -43,6 +43,7 @@
 export {
   audit,
   crossFileAims,
+  themelessAims,
   closureOrigins,
   findingLinesIn,
   findingSiteCoordinates,
@@ -51,6 +52,7 @@ export {
   type AuditReport,
   type AuditOptions,
   type CrossFileAim,
+  type ThemelessAim,
   type SiteCoordinate,
   type SuppressedFinding,
   type SiteScopedSuppressionEntry,
@@ -64,6 +66,7 @@ export {
   citeSite,
   citeSiteList,
   siteFromToken,
+  THEMELESS_RULES,
   type Finding,
   type FindingSite,
   type RuleId,

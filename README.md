@@ -185,7 +185,9 @@ One key is the CLI's own rather than the library's, and it is additive: an `unma
 whose judgement names a live finding in another file of the closure carries `crossFileAim`, `{rule,
 site}` — the machine form of the prose's `— matches a live …` clause, so the pointer is read as data
 instead of regexed out of a sentence. The key is **absent** (never `null`) on every row without one, the
-same absence-is-a-fact discipline `sites` carries. See
+same absence-is-a-fact discipline `sites` carries. A second such key rides the same discipline:
+`themelessAim`, `{rule}` — the machine form of the dead-theme-scope clause, on a row whose `theme` scope
+names a rule that reports no theme at all. See
 [When a judgement matches nothing](#when-a-judgement-matches-nothing--unmatched-n).
 
 It composes with `jq` the way a per-line stream should:
@@ -423,7 +425,11 @@ every finding that happens to carry one of its members. An entry may also carry 
 findings measured in that one theme — so a deliberate equality in your base palette never silences the
 same question in a `prefers-color-scheme` or `[data-theme=…]` theme, where the equality may be a real
 defect. A theme-scoped entry never matches a finding that is not about a theme at all (a dead token is
-measured stylesheet-wide). And it may carry `file` — the stylesheet the judgement was recorded against,
+measured stylesheet-wide) — and since that is true of five of the nine rules by construction, a `theme`
+scope on one of them is a scope that can never match anything, which the report now says on the entry's
+own line rather than advising retirement; see
+[When a judgement matches nothing](#when-a-judgement-matches-nothing--unmatched-n).
+And it may carry `file` — the stylesheet the judgement was recorded against,
 relative to the config's own directory — narrowing it to findings reported for that ONE stylesheet. This
 is what makes a shared-config directory honest: when `styles/` keeps one `themeguard.config.json` beside
 `tokens.css` and `buttons.css`, an entry with `"file": "tokens.css"` suppresses the brand collision it
@@ -575,6 +581,39 @@ a config entry's matching is already closure-wide, so "matched nothing" is hones
 move to suggest. [`--json`](#--json--the-report-as-data) carries the same pointer as data, as an additive
 `crossFileAim` key on the unmatched row.
 
+**And one more the prose was flatly wrong about — a judgement one KEY DELETION from working.** An
+entry's optional `theme` scope narrows it to findings measured in that one theme (the [config
+fields](#the-config-file) above). But five of the nine rules report no theme at all: `dead-token`,
+`duplicate-declaration`, `theme-partial-token`, `unresolved-import` and `unresolved-reference` each
+report `theme: null`, because what they measure is a fact about the STYLESHEET rather than about one
+theme's view of it — a token is dead in the stylesheet, not in a theme. So a `theme` scope on one of
+those rules is not a near-miss a different file or a different run might satisfy. It is a
+**structurally dead scope**: nothing that rule ever reports, anywhere, carries a theme for the scope to
+equal. The entry lands here, where BOTH readings are false again — the defect prints above in the same
+report, and the entry's rule and tokens DO match it — and a reader following the retirement advice
+retires a judgement that works the moment the `theme` key is deleted:
+
+```
+unmatched (1)
+  declared suppressions no finding matched. Either the defect was fixed and the judgement can be retired, or the entry never aimed at a finding that exists — the report cannot tell which.
+  an entry whose [theme: …] scope names a rule measured STYLESHEET-WIDE is a further case this report CAN tell: five of the nine rules report no theme at all, so such a scope matches nothing in this file, in any file of the closure, or in any run of this config. Neither reading above holds for it — the defect is not fixed, and the entry did aim at a finding that exists — so it is one key deletion from working rather than retirable, and its line names which key.
+  [unmatched] [dead-token] — "reviewed winter only" [token: --unused-accent] [theme: winter] — [dead-token] findings are measured stylesheet-wide and carry no theme, so the [theme: winter] scope can never match; drop the theme key to aim the judgement.
+```
+
+A DIAGNOSIS on exactly the same terms: the matching semantics are untouched, the entry is still
+unmatched, the finding still prints, and the counts and the exit code do not move. The clause is claimed
+only where the RULE's own stance is theme-less — a scope on a theme-BEARING rule that simply named the
+wrong theme keeps the existing advice, which may yet be true of it, since a config shared across a
+subtree can aim that entry at a sibling file where the theme exists. It is equally withheld from an
+entry that ALSO carries a `file` scope: there the theme would not be the only reason nothing matched —
+the scope names a stylesheet this audit is not — so deleting the theme key would aim nothing, and the
+promise would repeat the very false advice the clause exists to replace; the `[file: …]` carve-outs are
+what speak for such an entry. `cycle-reference` is deliberately
+outside the set: it reports `theme: null` for a loop the base declarations author and a real theme for
+one a theme's own declarations close, so its scope stays aimable in principle even in a run whose loops
+all happen to be base-authored. [`--json`](#--json--the-report-as-data) carries the same diagnosis as
+data, as an additive `themelessAim` key on the unmatched row.
+
 **The section prints even at zero.** An empty section is the proof that every recorded judgement is
 still doing work, and a section that vanished at zero would reproduce exactly the silence this exists to
 remove:
@@ -587,10 +626,11 @@ unmatched (0)
 **It never moves the exit code.** A stale entry is hygiene, not a defect in the stylesheet — the same
 posture `skipped` and `coverage` take. In general the report cannot tell the two causes apart, and its
 prose says so rather than pretending to: either the defect was fixed and the entry should be retired, or
-the entry never aimed at a finding that exists. The two cases it CAN tell — a `file`-scoped entry aimed
-at a sibling, and a site-scoped judgement whose finding lives one `@import` edge away — get their own
-lines beside that prose, and neither moves the code either: the misfiled judgement's finding was already
-live and already counted, so naming its aim adds a pointer and nothing else. What it will not do is stay
+the entry never aimed at a finding that exists. The three cases it CAN tell — a `file`-scoped entry
+aimed at a sibling, a site-scoped judgement whose finding lives one `@import` edge away, and a `theme`
+scope on a rule that reports no theme — get their own lines beside that prose, and none moves the code
+either: the misfiled judgement's finding was already live and already counted, so naming its aim adds a
+pointer and nothing else. What it will not do is stay
 silent, and what it will never do is
 fail your pipeline over a judgement you wrote — the exit stays exactly the question it has always been,
 were there unsuppressed findings.
@@ -683,9 +723,13 @@ matched nothing — in declaration order, entries whole — under the same count
 the CLI prints as its `unmatched (N)` section. The diagnosis the CLI prints beside those rows is
 available to a library caller as well: `crossFileAims(report.unmatchedSuppressions, report.findings,
 resolved)` returns one `{rule, site}` (or `undefined`) per entry, aligned BY INDEX — the leg reports
-slots, so two structurally identical judgements are two answers. It reads a FINISHED report and
-suppresses nothing. The suppression matcher's own halves are exported for the same reason the
-diagnosis reuses them rather than re-deriving a twin that could drift: `matchesEntryIdentity`,
+slots, so two structurally identical judgements are two answers. Its sibling
+`themelessAims(report.unmatchedSuppressions, report.findings)` returns one `{rule}` (or `undefined`)
+per entry on the same index alignment, naming a `theme` scope that can never match because the rule it
+names reports no theme at all; it needs no resolved sheet, since the theme-lessness it reads is the
+rule's own declared stance (`THEMELESS_RULES`) plus the findings' own `theme: null`. Both read a
+FINISHED report and suppress nothing. The suppression matcher's own halves are exported for the same
+reason the diagnoses reuse them rather than re-deriving a twin that could drift: `matchesEntryIdentity`,
 `findingSiteCoordinates`, `findingLinesIn`, `siteLineCovers` and `closureOrigins`.
 
 Omit the second argument and the report is exactly the nine-rule audit it has always been.
@@ -712,9 +756,9 @@ facts and passes no judgement, the upper one judges those facts and nothing else
 | `src/parse.ts` | Which blocks declare custom properties, in which of the four shapes — `:root`, `[data-theme=…]`, `@theme inline`, and a `prefers-color-scheme` `:root` block as its own theme — at which line, and every `var()` **use**, from every declaration rather than only the custom-property ones. |
 | `src/resolve.ts` | What each property resolves to **per theme**, following `var()` chains — through embedded primary-position references (`1px solid var(--c)`) as well as whole-value ones, re-marking a walk that stopped at a compound value `cycle` when the value it stopped at references a loop MEMBER in that theme's view — iterated to a fixed point, so a dependent several hops out is reached too — and minting, names-only, the loops no walk closes (an all-compound loop never completes a circuit from any seed), so their members carry the same fact and rule 6 judges them beside every other loop. Theme absence, translucency, unresolved references and cycles are each represented explicitly — none of them is an error and none is guessed at. |
 | `src/color.ts` | Colour parsing (hex 3/4/6/8, `rgb()`/`rgba()`, `hsl()`/`hsla()`, alpha throughout), WCAG relative luminance, CIE L\*, contrast ratio, source-over compositing. |
-| `src/audit.ts` | `audit(resolved)` — the nine rules in one pass, returning findings tagged `collision`, `dead-token`, `scale-collapse`, `family-consistency`, `unresolved-reference`, `cycle-reference`, `duplicate-declaration`, `unresolved-import` or `theme-partial-token`, plus the per-theme coverage inventory. Passing `suppressions` moves caller-declared findings out of `findings` and the counts into a `suppressed` leg, and the entries that matched nothing onto `unmatchedSuppressions`. Also publishes the suppression matcher's own halves — `matchesEntryIdentity`, `findingSiteCoordinates`, `findingLinesIn`, `siteLineCovers`, `closureOrigins` — and `crossFileAims`, the read over a finished report that says which unmatched site-scoped judgement would govern a live finding one `@import` edge away. |
+| `src/audit.ts` | `audit(resolved)` — the nine rules in one pass, returning findings tagged `collision`, `dead-token`, `scale-collapse`, `family-consistency`, `unresolved-reference`, `cycle-reference`, `duplicate-declaration`, `unresolved-import` or `theme-partial-token`, plus the per-theme coverage inventory. Passing `suppressions` moves caller-declared findings out of `findings` and the counts into a `suppressed` leg, and the entries that matched nothing onto `unmatchedSuppressions`. Also publishes the suppression matcher's own halves — `matchesEntryIdentity`, `findingSiteCoordinates`, `findingLinesIn`, `siteLineCovers`, `closureOrigins` — and the two reads over a FINISHED report that diagnose an unmatched judgement without suppressing anything: `crossFileAims`, which says which site-scoped judgement would govern a live finding one `@import` edge away, and `themelessAims`, which says which `theme`-scoped judgement names a rule that reports no theme at all. |
 | `src/config.ts` | `themeguard.config.json` — optional, discovered at or above the stylesheet (nearest ancestor wins; a config beside the stylesheet is the first hop). Parses and validates the `suppress` entries (strictly: an unhonourable config is an error naming the entry, never a silent skip) into the structured declarations `audit()` filters a finished report by. |
-| `src/rules/` | One module per question. Each docstring carries its judgement heuristics and, more usefully, what it deliberately does **not** report. `rules/coverage.ts` also carries the coverage inventory itself — the facts rule 4 is measured over, printed by the CLI as an informational section and never an exit code. `rules/finding.ts` carries the shared citation the clauses are built from — `citeSite` for one site and `citeSiteList` for a list, which `positionClause` is now the `Declared at …` frame around, so a sibling clause needing the same file-aware spelling reads it rather than re-deriving it. |
+| `src/rules/` | One module per question. Each docstring carries its judgement heuristics and, more usefully, what it deliberately does **not** report. `rules/coverage.ts` also carries the coverage inventory itself — the facts rule 4 is measured over, printed by the CLI as an informational section and never an exit code. `rules/finding.ts` carries the shared citation the clauses are built from — `citeSite` for one site and `citeSiteList` for a list, which `positionClause` is now the `Declared at …` frame around, so a sibling clause needing the same file-aware spelling reads it rather than re-deriving it. It also declares `THEMELESS_RULES` — the five rules that report `theme: null` by construction, the stance the unmatched section's dead-theme-scope diagnosis reads rather than inferring from one run's findings. |
 | `src/cli.ts` | The command. I/O and presentation over `audit()` — no rule, no heuristic and no judgement of its own. Two renderers over the same report: the default prose, and `--json`'s NDJSON projection, which serializes the report verbatim for a pipeline caller. |
 
 ```ts
