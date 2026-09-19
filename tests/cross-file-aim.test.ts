@@ -509,11 +509,19 @@ describe("the renderers are byte-identical without the diagnosis — the argumen
 describe("the derivation reuses the matcher's own semantics", () => {
   it("crossFileAims aligns BY INDEX, so two identical judgements are two answers", () => {
     // The leg reports SLOTS — two structurally identical directives are two
-    // ledger lines — so a keyed lookup would fold them into one. Here the two
-    // directives sit at DIFFERENT lines of the entry file and only one of them
-    // is the cross-file miss: the other has an entry-file site in range, so it
-    // suppresses and never reaches the leg at all. The remaining slot's aim
-    // must land on its own index.
+    // ledger lines — so a keyed lookup would fold them into one. Here BOTH
+    // directives are the same cross-file miss: the collision's only sites are
+    // the two DECLARATION sites in tokens.css (a `var()` use line is never a
+    // site), so neither directive has an entry-file site at all, both reach
+    // the leg, and both earn the same aim. The risk this pins is therefore
+    // DEDUPE, not misalignment: two identical aims must survive as two
+    // answers, each at its own index, and a shape-keyed fold would return one.
+    //
+    // A mixed shape — one suppressor, one aimer — could not pin index
+    // alignment at all: a suppressing directive never reaches the leg, leaving
+    // a single slot. Two leg entries are required. The same-file
+    // disqualification (a site in the directive's OWN file) is pinned
+    // separately, by "the same miss in a CLOSURE keeps the advice" above.
     write("slots/tokens.css", TOKENS);
     const entry = write(
       "slots/main.css",
