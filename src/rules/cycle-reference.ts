@@ -88,9 +88,12 @@
  * resolver's coverage of its own fourth fact is finished: 0.1.20 completed it
  * resolver-side, minting `cycle` for a loop whose closing edge is embedded in
  * a compound value (`--divider: 1px solid var(--divider-color)`) rather than
- * spelled as the whole value. This rule stayed byte-identical through that
- * work — the loops simply arrive now — which is the fence holding, not being
- * relaxed.
+ * spelled as the whole value, and 0.1.21 completed the dependent-declaration
+ * half this file documents above — a walk that STOPS at a compound value now
+ * arrives marked `cycle` too, re-marked by a pass in `resolveStylesheet`
+ * that reads the walks' finished results. This rule stayed byte-identical
+ * through both — the loops and their dependents simply arrive now — which is
+ * the fence holding, not being relaxed.
  */
 
 import { ROOT_THEME, type ResolvedStylesheet } from "../resolve.js";

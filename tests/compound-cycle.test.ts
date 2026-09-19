@@ -42,6 +42,18 @@ import { CENSUS, fixtureCss, FIXTURE_PATH } from "./fixture.js";
  *      `--a → --a`. The scan is therefore narrower than the whole-value walk on
  *      one shape — an UNDECLARED primary whose fallback self-references — and
  *      that residual is pinned rather than implied.
+ *
+ * 0.1.21 adds the fourth population, the designed one:
+ *
+ *   4. THE DEPENDENT DECLARATION — a walk that STOPS at a compound value is
+ *      re-marked `cycle` when the stopped value's primary-position references
+ *      name a walk-minted cycle in the same theme view, so a tail into a
+ *      compound loop and a compound tail into a loop carry the fact the
+ *      whole-value shapes always carried. The consult reads the walks'
+ *      finished results only (per theme, primary-position edges, no compound
+ *      value chased); the healed loop member joins its own group as a
+ *      rotation — the finding count never moves — and the multi-hop
+ *      compound tail stays a pinned residual.
  */
 
 interface Run {
@@ -97,17 +109,21 @@ describe("U1 — a two-member loop whose closing edge is embedded in a compound 
     expect(findings).toHaveLength(1);
     const finding = findings[0]!;
     expect(finding.theme).toBeNull();
-    expect(finding.tokens).toEqual(["--divider-color", "--divider"]);
+    // 0.1.21: both members carry kind "cycle" now, and the representative —
+    // the alphabetically first — rotated from `--divider-color` to
+    // `--divider`. Same loop set, one finding, printed as written.
+    expect(finding.tokens).toEqual(["--divider", "--divider-color"]);
     expect(finding.evidence?.["chain"]).toEqual([
-      "--divider-color",
       "--divider",
       "--divider-color",
+      "--divider",
     ]);
+    expect(finding.evidence?.["loop"]).toEqual(["--divider", "--divider-color"]);
     expect(finding.message).toContain(
-      "--divider-color → --divider → --divider-color is a var() cycle",
+      "--divider → --divider-color → --divider is a var() cycle",
     );
     expect(finding.message).toContain("invalid at computed-value time");
-    expect(finding.sites?.map((s) => s.line)).toEqual([3, 2]);
+    expect(finding.sites?.map((s) => s.line)).toEqual([2, 3]);
   });
 
   it("the report the user reads flips from `No findings.` to the cycle section, exit 0 → 1", () => {
@@ -116,7 +132,7 @@ describe("U1 — a two-member loop whose closing edge is embedded in a compound 
     expect(result.stdout).not.toContain("No findings.");
     expect(result.stdout).toContain("cycle-reference (1)");
     expect(result.stdout).toContain(
-      "  [cycle-reference] --divider-color → --divider → --divider-color is a var() cycle: every property in the loop, and every var() consuming a member, is invalid at computed-value time. Declared at lines 3 and 2.",
+      "  [cycle-reference] --divider → --divider-color → --divider is a var() cycle: every property in the loop, and every var() consuming a member, is invalid at computed-value time. Declared at lines 2 and 3.",
     );
   });
 });
@@ -182,20 +198,23 @@ describe("U4 — a theme that closes the compound loop with its OWN declaration"
     const result = run(cssFixture("u4.css", css));
     expect(result.code).toBe(EXIT_FINDINGS);
     expect(result.stdout).toContain("cycle-reference (1)");
+    // The representative rotated with 0.1.21: dark's view heals the inherited
+    // `--divider` too, and the alphabetically first member is now `--divider`.
     expect(result.stdout).toContain(
-      "--divider-color → --divider → --divider-color is a var() cycle in theme \"dark\"",
+      '--divider → --divider-color → --divider is a var() cycle in theme "dark"',
     );
   });
 });
 
 describe("the canonical compound shapes all close, and each is ONE finding naming both members", () => {
-  // The member that carries `kind: "cycle"` is the one whose OWN walk re-enters
-  // the loop, and a compound value is not FOLLOWED — the walk has no
-  // substituted value to continue with, the rest of the value being literal
-  // text — so the walk that reaches the back edge is the one that STARTED at
-  // the whole-value member. That is not a reporting gap: the finding's `tokens`
-  // is the loop SET (the unique names in the chain), so both members are named
-  // in the one finding either way, which is the shape U1 pins above.
+  // The member whose OWN walk reaches the back edge is the one that mints the
+  // fact mid-walk — a compound value is not FOLLOWED, so the walk that closes
+  // is the one that started at the whole-value member. Since 0.1.21's
+  // completion pass the OTHER member is re-marked after the walks run (its
+  // primary reference names the minted cycle), so both members carry
+  // kind "cycle" — still ONE finding: same loop set, one group. The finding's
+  // `tokens` was always the loop SET, so both members were named in the one
+  // finding before and after; only the kind column changed.
   it.each([
     ["shorthand", "--a: 1px solid var(--b);", "--b: var(--a);", "--b"],
     ["calc", "--a: calc(var(--b) + 2px);", "--b: var(--a);", "--b"],
@@ -206,10 +225,16 @@ describe("the canonical compound shapes all close, and each is ONE finding namin
       "--b: color-mix(in srgb, var(--a) 50%, #000);",
       "--a",
     ],
-  ])("%s", (_name, first, second, cyclicMember) => {
+  ])("%s", (_name, first, second, _cyclicMember) => {
     const r = resolveCss(`:root { ${first} ${second} }`);
+    // 0.1.21's completion pass heals the member asymmetry 0.1.20 shipped:
+    // the whole-value member's walk mints the fact, and the compound member —
+    // whose own walk stops at its value but whose primary reference names the
+    // now-known cycle — is re-marked by the pass. Both members carry
+    // kind "cycle"; the finding count is unchanged (same loop set, one group).
     expect(r.tokens.filter((t) => t.kind === "cycle").map((t) => t.name)).toEqual([
-      cyclicMember,
+      "--a",
+      "--b",
     ]);
 
     const findings = audit(r).findings.filter((f) => f.rule === "cycle-reference");
@@ -234,31 +259,176 @@ describe("the canonical compound shapes all close, and each is ONE finding namin
     expect([...findings[0]!.tokens].sort()).toEqual(["--a", "--b", "--c"]);
   });
 
-  it("RESIDUAL, pinned: a tail whose walk ENTERS the loop through a compound value is not itself cyclic", () => {
+  it("COMPLETION: a tail whose walk ENTERS the loop through a compound value is itself cyclic", () => {
     // `--tail: var(--a)` walks into `--a`, whose value is compound. The walk
-    // stops there — a compound value is not followed — so `--tail` classifies
-    // as the literal text it holds and is NOT marked cyclic, where a tail into
-    // a WHOLE-VALUE loop is (`--a: var(--b); --b: var(--c); --c: var(--b)`
-    // marks `--a` cycle with chain `--a → --b → --c → --b`). This is the
-    // deliberate edge of the slice — the back-edge scan mints the loop's own
-    // fact, it does not make compound values traversable — and the loop ITSELF
-    // is still reported, so the defect is named and only the dependent
-    // declaration goes unlisted.
+    // stops there — a compound value is not followed — so mid-walk `--tail`
+    // cannot know `--a` sits in a loop at all: the loop closes on `--b`'s
+    // walk, not its own. The completion pass re-marks it once the walks have
+    // run: its stopped value's PRIMARY reference (`--b`) is a walk-minted
+    // cycle, so `--tail` carries the fact the whole-value tail has always
+    // carried. Per CSS custom-property semantics both verdicts say the same
+    // thing — the declaration is invalid at computed-value time — and the
+    // same declaration shape now gets the same verdict whichever way the
+    // LOOP's members spell their values.
     const r = resolveCss(
       `:root { --tail: var(--a); --a: 1px solid var(--b); --b: var(--a); }`,
     );
-    expect(r.token("--tail", ROOT_THEME)?.kind).toBe("non-color");
-    expect(r.token("--tail", ROOT_THEME)?.chain).toEqual(["--tail", "--a"]);
+    const t = r.token("--tail", ROOT_THEME);
+    expect(t?.kind).toBe("cycle");
+    expect(t?.resolvedValue).toBeNull();
+    expect(t?.missingReference).toBeNull();
+    // The stopping walk's path, the referenced cycle name, then its walk up to
+    // the first name the tail had already visited — `--a` — so the chain
+    // closes there, exactly as the walk would have had the compound value
+    // been substitutable.
+    expect(t?.chain).toEqual(["--tail", "--a", "--b", "--a"]);
 
-    // The loop is reported all the same, naming both of its members.
+    // Loop-set grouping: the tail's set gains the tail, so it is its OWN
+    // finding beside the loop's — cycle-reference's documented two-findings
+    // semantics — while the healed `--a` joins the loop's group as a
+    // rotation, keeping that group's finding count at one.
     const findings = audit(r).findings.filter((f) => f.rule === "cycle-reference");
-    expect(findings).toHaveLength(1);
-    expect([...findings[0]!.tokens].sort()).toEqual(["--a", "--b"]);
+    expect(findings).toHaveLength(2);
+    const loop = findings.find((f) => !f.tokens.includes("--tail"))!;
+    const dependent = findings.find((f) => f.tokens.includes("--tail"))!;
+    expect([...loop.tokens].sort()).toEqual(["--a", "--b"]);
+    expect(dependent.tokens).toEqual(["--tail", "--a", "--b"]);
+    expect(dependent.theme).toBeNull();
+    expect(dependent.message).toContain(
+      "--tail → --a → --b → --a is a var() cycle",
+    );
 
-    // The whole-value tail, for contrast — unchanged by this slice.
+    // The whole-value tail, for contrast — unchanged by this slice; the walk
+    // has always closed it mid-walk.
     const whole = resolveCss(`:root { --a: var(--b); --b: var(--c); --c: var(--b); }`);
     expect(whole.token("--a", ROOT_THEME)?.kind).toBe("cycle");
     expect(whole.token("--a", ROOT_THEME)?.chain).toEqual(["--a", "--b", "--c", "--b"]);
+  });
+
+  it("COMPLETION: a compound TAIL into a whole-value loop is cyclic too — same verdict, no special case", () => {
+    // The mirror shape: the tail's own value is the compound one. Its walk
+    // stops at itself, and the primary reference of that stopped value
+    // (`--a`) is a walk-minted cycle — re-marked, chain spelled as the
+    // substitution walk would have closed it.
+    const r = resolveCss(
+      `:root { --pad-accent: calc(var(--a) + 2px); --a: var(--b); --b: var(--a); }`,
+    );
+    const t = r.token("--pad-accent", ROOT_THEME);
+    expect(t?.kind).toBe("cycle");
+    expect(t?.chain).toEqual(["--pad-accent", "--a", "--b", "--a"]);
+    const findings = audit(r).findings.filter((f) => f.rule === "cycle-reference");
+    expect(findings).toHaveLength(2);
+    expect(findings.find((f) => f.tokens.includes("--pad-accent"))!.message).toContain(
+      "--pad-accent → --a → --b → --a is a var() cycle",
+    );
+  });
+
+  it("COMPLETION: the healed loop member joins the loop's group as a rotation — one finding, representative rotated", () => {
+    // The asymmetry 0.1.20 left behind: `--divider`'s own walk stops at its
+    // compound value and classified as literal text while `--divider-color`
+    // carried kind "cycle" — two kinds inside one loop. The pass re-marks it
+    // (its primary reference names the minted cycle), its chain closes on the
+    // set the loop already had, and the group's deterministic representative —
+    // the alphabetically first member — rotates to `--divider`. The dedupe
+    // doctrine calls rotations equivalent: same set, one finding.
+    const r = resolveCss(
+      `:root { --divider: 1px solid var(--divider-color); --divider-color: var(--divider); }`,
+    );
+    expect(r.token("--divider", ROOT_THEME)?.kind).toBe("cycle");
+    expect(r.token("--divider", ROOT_THEME)?.chain).toEqual([
+      "--divider",
+      "--divider-color",
+      "--divider",
+    ]);
+    expect(r.token("--divider-color", ROOT_THEME)?.chain).toEqual([
+      "--divider-color",
+      "--divider",
+      "--divider-color",
+    ]);
+
+    const findings = audit(r).findings.filter((f) => f.rule === "cycle-reference");
+    expect(findings).toHaveLength(1);
+    expect(findings[0]!.tokens).toEqual(["--divider", "--divider-color"]);
+    expect(findings[0]!.message).toContain(
+      "--divider → --divider-color → --divider is a var() cycle",
+    );
+  });
+
+  it("COMPLETION, theme view: a theme that closes the loop sees its inherited member healed there and only there", () => {
+    // The walk is per-theme and so is the pass. Root's `--divider-color` is
+    // a plain colour, so root's `--divider` stays a healthy non-color; dark
+    // re-points it into the loop, so in dark's view `--divider-color` mints
+    // the cycle and the inherited `--divider` is re-marked THERE.
+    const css = [
+      ":root {",
+      "  --divider: 1px solid var(--divider-color);",
+      "  --divider-color: #cccccc;",
+      "}",
+      '[data-theme="dark"] {',
+      "  --divider-color: var(--divider);",
+      "}",
+      "",
+    ].join("\n");
+    const r = resolveCss(css);
+    expect(r.token("--divider", ROOT_THEME)?.kind).toBe("non-color");
+    expect(r.token("--divider", "dark")?.kind).toBe("cycle");
+    expect(r.token("--divider", "dark")?.chain).toEqual([
+      "--divider",
+      "--divider-color",
+      "--divider",
+    ]);
+  });
+
+  it("COMPLETION: a tail that inherits a root-authored loop is theme-scoped for its OWN half and deduped for the loop's", () => {
+    // Root authors the compound loop; dark authors only the tail. Dark's
+    // tail group contains a token dark declared, so the rule reports the
+    // dependent declaration as dark's own defect; the loop's group holds no
+    // dark-declared member, so it stays deduped under root's theme:null
+    // finding — a tail behaves exactly like the loop's own members do.
+    const css = [
+      ":root {",
+      "  --divider: 1px solid var(--divider-color);",
+      "  --divider-color: var(--divider);",
+      "}",
+      '[data-theme="dark"] {',
+      "  --card-border: var(--divider);",
+      "}",
+      "",
+    ].join("\n");
+    const findings = audit(resolveCss(css)).findings.filter(
+      (f) => f.rule === "cycle-reference",
+    );
+    expect(findings).toHaveLength(2);
+    const loop = findings.find((f) => f.theme === null)!;
+    const dependent = findings.find((f) => f.theme === "dark")!;
+    expect([...loop.tokens].sort()).toEqual(["--divider", "--divider-color"]);
+    expect(dependent.tokens).toEqual(["--card-border", "--divider", "--divider-color"]);
+    expect(dependent.message).toContain('is a var() cycle in theme "dark"');
+    // And root's view never saw the tail (it is dark's own name), so the
+    // theme:null finding is the loop's alone.
+    expect(loop.message).toContain("--divider → --divider-color → --divider is a var() cycle");
+  });
+
+  it("RESIDUAL, pinned: a compound value referencing ANOTHER compound-stopped value two hops from the loop stays unlisted", () => {
+    // The consult reads the WALK's kinds — one pass, no fixed point. `--c1`
+    // is re-marked (its reference names the loop directly); `--c2`'s
+    // reference names `--c1`, which was NOT a walk-minted cycle, so it stays
+    // classified as its literal text. Semantically `--c2` is invalid at
+    // computed-value time too (the guarantee-invalid value propagates), and
+    // catching it needs a second pass over the pass's own re-marks — a
+    // deliberate edge of this slice, stated here rather than implied.
+    const r = resolveCss(
+      `:root {
+         --loop-a: var(--loop-b);
+         --loop-b: var(--loop-a);
+         --c1: calc(var(--loop-a) + 1px);
+         --c2: calc(var(--c1) + 1px);
+       }`,
+    );
+    expect(r.token("--c1", ROOT_THEME)?.kind).toBe("cycle");
+    expect(r.token("--c2", ROOT_THEME)?.kind).toBe("non-color");
+    const findings = audit(r).findings.filter((f) => f.rule === "cycle-reference");
+    expect(findings).toHaveLength(2);
   });
 });
 
@@ -395,6 +565,69 @@ describe("BYTE-IDENTITY — every whole-value shape is handled above the scan an
     expect(result.code).toBe(EXIT_OK);
     expect(result.stdout).toContain("No findings.");
     expect(result.stdout).toContain("cycle-reference (0)");
+  });
+});
+
+describe("THE PROBE — the ticket's own fixture, both loop shapes plus tails, end to end", () => {
+  // The live probe the ticket verified the residual on: same declaration
+  // shape (`--x: var(--member)`), two verdicts before this slice — the
+  // whole-value loop's tail fired, the compound loop's tail surfaced only
+  // under dead-token. After it, both tails carry the designed finding.
+  const css = [
+    ":root {",
+    "  --a: var(--b);",
+    "  --b: var(--a);",
+    "  --tail-whole: var(--a);",
+    "  --divider: 1px solid var(--divider-color);",
+    "  --divider-color: var(--divider);",
+    "  --card-border: var(--divider);",
+    "  --pad-accent: calc(var(--a) + 2px);",
+    "}",
+    "",
+  ].join("\n");
+
+  it("every stopped walk that reaches a loop is kind cycle — both tails and all healed members", () => {
+    const r = resolveCss(css);
+    for (const name of [
+      "--tail-whole",
+      "--card-border",
+      "--pad-accent",
+      "--divider",
+    ]) {
+      expect(r.token(name, ROOT_THEME)?.kind, name).toBe("cycle");
+    }
+    expect(r.token("--card-border", ROOT_THEME)?.chain).toEqual([
+      "--card-border",
+      "--divider",
+      "--divider-color",
+      "--divider",
+    ]);
+    expect(r.token("--pad-accent", ROOT_THEME)?.chain).toEqual([
+      "--pad-accent",
+      "--a",
+      "--b",
+      "--a",
+    ]);
+  });
+
+  it("the report prints each dependent walk as its own group beside its loop's, and the exit code is unchanged", () => {
+    const result = run(cssFixture("probe.css", css));
+    expect(result.code).toBe(EXIT_FINDINGS);
+    // Five loop-set groups: the two loops, the two tails, and the compound
+    // tail into the whole-value loop. Each tail's set carries the tail, so
+    // none dedupes into its loop's finding.
+    expect(result.stdout).toContain("cycle-reference (5)");
+    expect(result.stdout).toContain(
+      "--card-border → --divider → --divider-color → --divider is a var() cycle",
+    );
+    expect(result.stdout).toContain("--pad-accent → --a → --b → --a is a var() cycle");
+    expect(result.stdout).toContain("--tail-whole → --a → --b → --a is a var() cycle");
+    expect(result.stdout).toContain("--divider → --divider-color → --divider is a var() cycle");
+    expect(result.stdout).toContain("--a → --b → --a is a var() cycle");
+    // Dead-token is untouched: it reads the parser's references, not kinds,
+    // so the three unreferenced tails it already reported it still reports —
+    // the cycle lines appear BESIDE them, never instead of them.
+    expect(result.stdout).toContain("3 dead-token");
   });
 });
 
