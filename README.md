@@ -179,6 +179,13 @@ summarized or dropped. The prose renderer is a lossy projection of that object �
 text, evidence becomes sentence fragments, scopes become bracket suffixes — so a caller that wanted
 *which file, which token, which line* had to scrape sentences shaped for people.
 
+One key is the CLI's own rather than the library's, and it is additive: an `unmatchedSuppressions` row
+whose judgement names a live finding in another file of the closure carries `crossFileAim`, `{rule,
+site}` — the machine form of the prose's `— matches a live …` clause, so the pointer is read as data
+instead of regexed out of a sentence. The key is **absent** (never `null`) on every row without one, the
+same absence-is-a-fact discipline `sites` carries. See
+[When a judgement matches nothing](#when-a-judgement-matches-nothing--unmatched-n).
+
 It composes with `jq` the way a per-line stream should:
 
 ```bash
@@ -529,6 +536,32 @@ states it too: a config governs its own directory and below, so a scope naming a
 subtree can never be honoured by any run — for such an entry the report says exactly that, and that
 report is the fate-statement: re-aim the entry inside the config's directory, or retire it.
 
+**And one the prose used to be flatly wrong about — a judgement one file move from working.** A
+directive governs only the file it is written in (the fence above). So an entry-file
+`themeguard-ignore` whose rule and tokens match a collision living in an imported member of the closure
+suppresses nothing — correctly — and lands here, where BOTH readings are false: the defect is not fixed
+(the finding prints in the same report, above) and the entry did aim at a finding that exists, one
+`@import` edge away. A reader following the retirement advice would retire a judgement one file move
+from working, with nothing saying where. So the row names the finding and WHERE it sits, and the two
+moves that reach it:
+
+```
+unmatched (1)
+  declared suppressions no finding matched. Either the defect was fixed and the judgement can be retired, or the entry never aimed at a finding that exists — the report cannot tell which.
+  an entry naming a live finding in another file is a third case this report CAN tell: its rule and tokens match a finding printed above, whose declaration lives in another file of the import closure. Neither reading above holds for it — the defect is not fixed, and the entry did aim at a finding that exists — so it is one move from working rather than retirable, and its line names where.
+  [unmatched] [collision] — "deliberate: brand tracks success" [tokens: --accent, --success] [main.css:4] — matches a live [collision] finding at tokens.css:2; a directive governs only the file it is written in — move it there, or record it in themeguard.config.json to cover the whole closure.
+```
+
+It is a DIAGNOSIS and never a suppression: the entry is still unmatched, the finding still prints, the
+counts and the exit code do not move, and a directive still never reaches across an `@import` edge. The
+clause is claimed only where the FILE is the whole reason nothing matched — no site of the finding lives
+in the directive's own file at all. A directive that missed on its LINE while its own file does hold a
+site keeps the existing advice, whose clauses are closer to true there (the defect did move, and the
+entry is about this file), and so does an entry that matches nothing, and so does every config entry:
+a config entry's matching is already closure-wide, so "matched nothing" is honest for it and there is no
+move to suggest. [`--json`](#--json--the-report-as-data) carries the same pointer as data, as an additive
+`crossFileAim` key on the unmatched row.
+
 **The section prints even at zero.** An empty section is the proof that every recorded judgement is
 still doing work, and a section that vanished at zero would reproduce exactly the silence this exists to
 remove:
@@ -539,9 +572,13 @@ unmatched (0)
 ```
 
 **It never moves the exit code.** A stale entry is hygiene, not a defect in the stylesheet — the same
-posture `skipped` and `coverage` take. The report cannot tell the two causes apart, and its prose says
-so rather than pretending to: either the defect was fixed and the entry should be retired, or the entry
-never aimed at a finding that exists. What it will not do is stay silent, and what it will never do is
+posture `skipped` and `coverage` take. In general the report cannot tell the two causes apart, and its
+prose says so rather than pretending to: either the defect was fixed and the entry should be retired, or
+the entry never aimed at a finding that exists. The two cases it CAN tell — a `file`-scoped entry aimed
+at a sibling, and a site-scoped judgement whose finding lives one `@import` edge away — get their own
+lines beside that prose, and neither moves the code either: the misfiled judgement's finding was already
+live and already counted, so naming its aim adds a pointer and nothing else. What it will not do is stay
+silent, and what it will never do is
 fail your pipeline over a judgement you wrote — the exit stays exactly the question it has always been,
 were there unsuppressed findings.
 
@@ -630,7 +667,13 @@ for (const { finding, reason } of report.suppressed) {
 
 The complement is on the report too: `report.unmatchedSuppressions` carries the declared entries that
 matched nothing — in declaration order, entries whole — under the same counted-not-silent discipline
-the CLI prints as its `unmatched (N)` section.
+the CLI prints as its `unmatched (N)` section. The diagnosis the CLI prints beside those rows is
+available to a library caller as well: `crossFileAims(report.unmatchedSuppressions, report.findings,
+resolved)` returns one `{rule, site}` (or `undefined`) per entry, aligned BY INDEX — the leg reports
+slots, so two structurally identical judgements are two answers. It reads a FINISHED report and
+suppresses nothing. The suppression matcher's own halves are exported for the same reason the
+diagnosis reuses them rather than re-deriving a twin that could drift: `matchesEntryIdentity`,
+`findingSiteCoordinates`, `findingLinesIn`, `siteLineCovers` and `closureOrigins`.
 
 Omit the second argument and the report is exactly the nine-rule audit it has always been.
 
@@ -656,7 +699,7 @@ facts and passes no judgement, the upper one judges those facts and nothing else
 | `src/parse.ts` | Which blocks declare custom properties, in which of the four shapes — `:root`, `[data-theme=…]`, `@theme inline`, and a `prefers-color-scheme` `:root` block as its own theme — at which line, and every `var()` **use**, from every declaration rather than only the custom-property ones. |
 | `src/resolve.ts` | What each property resolves to **per theme**, following `var()` chains — through embedded primary-position references (`1px solid var(--c)`) as well as whole-value ones, re-marking a walk that stopped at a compound value `cycle` when the value it stopped at references a loop MEMBER in that theme's view — iterated to a fixed point, so a dependent several hops out is reached too — and minting, names-only, the loops no walk closes (an all-compound loop never completes a circuit from any seed), so their members carry the same fact and rule 6 judges them beside every other loop. Theme absence, translucency, unresolved references and cycles are each represented explicitly — none of them is an error and none is guessed at. |
 | `src/color.ts` | Colour parsing (hex 3/4/6/8, `rgb()`/`rgba()`, `hsl()`/`hsla()`, alpha throughout), WCAG relative luminance, CIE L\*, contrast ratio, source-over compositing. |
-| `src/audit.ts` | `audit(resolved)` — the nine rules in one pass, returning findings tagged `collision`, `dead-token`, `scale-collapse`, `family-consistency`, `unresolved-reference`, `cycle-reference`, `duplicate-declaration`, `unresolved-import` or `theme-partial-token`, plus the per-theme coverage inventory. Passing `suppressions` moves caller-declared findings out of `findings` and the counts into a `suppressed` leg. |
+| `src/audit.ts` | `audit(resolved)` — the nine rules in one pass, returning findings tagged `collision`, `dead-token`, `scale-collapse`, `family-consistency`, `unresolved-reference`, `cycle-reference`, `duplicate-declaration`, `unresolved-import` or `theme-partial-token`, plus the per-theme coverage inventory. Passing `suppressions` moves caller-declared findings out of `findings` and the counts into a `suppressed` leg, and the entries that matched nothing onto `unmatchedSuppressions`. Also publishes the suppression matcher's own halves — `matchesEntryIdentity`, `findingSiteCoordinates`, `findingLinesIn`, `siteLineCovers`, `closureOrigins` — and `crossFileAims`, the read over a finished report that says which unmatched site-scoped judgement would govern a live finding one `@import` edge away. |
 | `src/config.ts` | `themeguard.config.json` — optional, discovered at or above the stylesheet (nearest ancestor wins; a config beside the stylesheet is the first hop). Parses and validates the `suppress` entries (strictly: an unhonourable config is an error naming the entry, never a silent skip) into the structured declarations `audit()` filters a finished report by. |
 | `src/rules/` | One module per question. Each docstring carries its judgement heuristics and, more usefully, what it deliberately does **not** report. `rules/coverage.ts` also carries the coverage inventory itself — the facts rule 4 is measured over, printed by the CLI as an informational section and never an exit code. |
 | `src/cli.ts` | The command. I/O and presentation over `audit()` — no rule, no heuristic and no judgement of its own. Two renderers over the same report: the default prose, and `--json`'s NDJSON projection, which serializes the report verbatim for a pipeline caller. |

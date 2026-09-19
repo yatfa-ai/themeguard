@@ -491,7 +491,7 @@ describe("the import closure — a duplicate inside an imported file is cited BY
 
   /**
    * The suppression doors, read across the import edge — the question the
-   * `origin` fence in `audit.ts`'s `findingLines` exists to answer, pinned
+   * `origin` fence in `audit.ts`'s `findingLinesIn` exists to answer, pinned
    * here because this rule reaches that fence by a path no other rule takes.
    *
    * `duplicate-declaration` carries no `sites` (dead-token's stance: the rule

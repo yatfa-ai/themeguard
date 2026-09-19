@@ -118,7 +118,15 @@ export interface AuditReport {
    * aims at another stylesheet, and the entry itself says which — so this
    * leg carries the judgement whole, with its `file` spelling, and the CLI's
    * prose carves that case out of the retirement advice instead of pretending
-   * the dichotomy still covers it.
+   * the dichotomy still covers it. A FOURTH knowable case, since 0.1.24: an
+   * entry carrying a SITE whose rule and tokens match a live finding every one
+   * of whose sites lives in ANOTHER file of the closure. There too both
+   * readings are false — the defect prints in the same report, and the entry
+   * did aim at a finding that exists, one `@import` edge away — and the entry
+   * is one file move from working. This leg carries the judgement whole,
+   * exactly as before; the derivation that names the aim is
+   * {@link crossFileAims}, which reads a FINISHED report and is consulted by
+   * nothing that suppresses.
    */
   readonly unmatchedSuppressions: readonly (
     SuppressionEntry | SiteScopedSuppressionEntry | FileScopedSuppressionEntry
@@ -287,6 +295,263 @@ export interface SuppressedFinding {
 }
 
 /**
+ * WHERE a finding sits, in the one coordinate suppression matching reads: a
+ * line plus the closure file it belongs to (`origin` absent for an entry-file
+ * site, exactly as {@link import("./rules/finding").FindingSite} spells it).
+ *
+ * A structural subset of `FindingSite` rather than an alias of it: the sites a
+ * rule PUBLISHES carry the token name too, and the sites
+ * {@link findingSiteCoordinates} recovers from an `evidence` citation string
+ * cannot — the string spells a position, never a name. Matching reads only the
+ * position, so this is the widest type that is honest about both sources.
+ */
+export interface SiteCoordinate {
+  readonly line: number;
+  readonly origin?: string;
+}
+
+/**
+ * Every position a finding can be judged AT, across the whole closure — the
+ * union {@link findingLinesIn} then filters down to one file.
+ *
+ * Two sources, because two kinds of rule report a position two ways. A rule
+ * that carries `sites` (collision, scale-collapse, family-consistency,
+ * cycle-reference, unresolved-import, theme-partial-token) publishes them as
+ * data and they are returned as they stand. A rule that carries none
+ * (dead-token, unresolved-reference, duplicate-declaration) still publishes
+ * its lines — as `evidence.declaredIn` strings in `":root:4"` shape, or
+ * `evidence.usedIn` for the rule whose positions are USE sites and which names
+ * them honestly. That is public, honestly named data the finding already
+ * reports; reading it here adds a location dimension to suppression without
+ * asking any rule to change, and a directive annotating the declaration that
+ * holds a dangling `var()` is a judgement at the site the finding lives at,
+ * exactly as it is for a declaration site.
+ *
+ * Both citation spellings put the line last and differ only in what precedes
+ * it — an imported site cites its file (`tokens.css:4`), an entry site its
+ * selector (`:root:4`) — so ONE read serves both: the prefix is an ORIGIN when
+ * `knownOrigins` holds it and a selector otherwise, in which case the site is
+ * an entry-file one and carries no origin. The classification is exact rather
+ * than a shape guess, because the origins come from the sheet the finding was
+ * measured over.
+ *
+ * @param finding the finding whose positions to recover.
+ * @param knownOrigins every closure file the audited sheet spliced content
+ *   from — the set that tells an origin prefix from a selector prefix.
+ */
+export function findingSiteCoordinates(
+  finding: Finding,
+  knownOrigins: ReadonlySet<string>,
+): readonly SiteCoordinate[] {
+  if (finding.sites !== undefined) return finding.sites;
+  const declared: unknown = finding.evidence["declaredIn"] ?? finding.evidence["usedIn"];
+  if (!Array.isArray(declared)) return [];
+  const sites: SiteCoordinate[] = [];
+  for (const entry of declared as readonly unknown[]) {
+    const text = String(entry);
+    const at = /:(\d+)$/.exec(text);
+    if (at === null) continue;
+    const prefix = text.slice(0, text.length - at[0].length);
+    sites.push(
+      knownOrigins.has(prefix) ? { line: Number(at[1]), origin: prefix } : { line: Number(at[1]) },
+    );
+  }
+  return sites;
+}
+
+/**
+ * Every closure file the resolved sheet spliced content from — the set
+ * {@link findingSiteCoordinates} reads an `origin:line` citation against.
+ *
+ * Derived from the sheet rather than guessed from the citation's shape: a
+ * selector prefix and a file prefix are both "text before the last colon", and
+ * only the sheet knows which spellings are files.
+ */
+export function closureOrigins(resolved: ResolvedStylesheet): ReadonlySet<string> {
+  const origins = new Set<string>();
+  for (const s of resolved.stylesheet.scopes) if (s.origin !== undefined) origins.add(s.origin);
+  for (const r of resolved.stylesheet.references) if (r.origin !== undefined) origins.add(r.origin);
+  return origins;
+}
+
+/**
+ * The finding's position lines in the coordinate ONE directive can match:
+ * `origin` is the directive's own file, and the answer is that file's lines —
+ * no-origin sites for an entry-file directive, the named file's sites for a
+ * closure member's directive. Line numbers restart per file, so the ORIGIN is
+ * the coordinate that makes the two readings disjoint: an entry-file directive
+ * cannot reach a site spliced in from a member, and a member's directive cannot
+ * reach the entry or another member — the fence that keeps a coinciding line
+ * from silencing a splice is equality here, never a blanket skip.
+ *
+ * EMPTY has a precise meaning, and it is the one the CLI's cross-file
+ * diagnosis reads: this finding has NO site in the named file at all, which is
+ * a different miss from a site in that file at a line the directive does not
+ * cover. Hoisted to module level and exported for exactly that reader — the
+ * diagnosis must ask this function, never re-derive a twin of it that could
+ * drift out of agreement with what actually suppresses.
+ *
+ * @param finding the finding whose positions to read.
+ * @param origin the directive's own file; `undefined` for an entry-file one.
+ * @param knownOrigins see {@link findingSiteCoordinates}.
+ */
+export function findingLinesIn(
+  finding: Finding,
+  origin: string | undefined,
+  knownOrigins: ReadonlySet<string>,
+): readonly number[] {
+  return findingSiteCoordinates(finding, knownOrigins)
+    .filter((s) => s.origin === origin)
+    .map((s) => s.line);
+}
+
+/**
+ * Whether a site-scoped entry's SITE conjunct covers a given line — the two
+ * industry placements, and the direction is load-bearing: a directive sits ON
+ * the judged declaration (a trailing comment) or ONE LINE ABOVE it (a
+ * standalone comment on the preceding line), never below.
+ *
+ * Exported beside {@link findingLinesIn} for the same reason: the CLI's
+ * cross-file diagnosis distinguishes "no site in your file" from "a site in
+ * your file your line does not cover", and it must decide the second half with
+ * the predicate that actually suppresses.
+ */
+export function siteLineCovers(entryLine: number, line: number): boolean {
+  return line === entryLine || line === entryLine + 1;
+}
+
+/**
+ * Whether an entry's IDENTITY conjuncts — everything except its site — match a
+ * finding: the rule, the theme scope when it names one, and the token
+ * dimension (the scalar `token` when the finding carries that ONE name, or the
+ * `tokens` set when the finding carries EVERY name listed, the precision a
+ * collision PAIR needs).
+ *
+ * Split out of {@link matchesEntry} so the CLI's cross-file diagnosis can ask
+ * the identity question ALONE — "is this judgement about a finding that
+ * exists?" — with the same includes-semantics that suppresses, rather than a
+ * re-derived twin. Asking it alone is a DIAGNOSIS and never a suppression: the
+ * site conjunct is what suppresses, and it is not in here.
+ */
+export function matchesEntryIdentity(
+  entry: SuppressionEntry | SiteScopedSuppressionEntry | FileScopedSuppressionEntry,
+  finding: Finding,
+): boolean {
+  if (entry.rule !== finding.rule) return false;
+  if (entry.theme !== undefined && entry.theme !== finding.theme) return false;
+  const named = entry.tokens ?? (entry.token !== undefined ? [entry.token] : undefined);
+  return named === undefined || named.every((name) => finding.tokens.includes(name));
+}
+
+/**
+ * WHAT an unmatched site-scoped judgement would have governed one `@import`
+ * edge away — the cross-file aim, and the one reading the `unmatched`
+ * section's retirement dichotomy gets FLATLY WRONG.
+ *
+ * `rule` and `site` name the live finding the entry's own conjuncts match,
+ * `site` in the finding's own citation voice (`tokens.css:2` for an imported
+ * declaration, `line 3` for an entry-file one — the per-site spelling
+ * {@link import("./rules/finding").positionClause} uses).
+ */
+export interface CrossFileAim {
+  /** The rule of the live finding the entry's conjuncts match. */
+  readonly rule: RuleId;
+  /** WHERE that finding sits, cited the way the finding's own message cites it. */
+  readonly site: string;
+}
+
+/** One site, cited exactly as `positionClause` cites it within a clause. */
+function citeSite(site: SiteCoordinate): string {
+  return site.origin === undefined ? `line ${site.line}` : `${site.origin}:${site.line}`;
+}
+
+/**
+ * For each unmatched entry, the live finding it would govern IN ANOTHER FILE —
+ * or `undefined`, which is every other entry.
+ *
+ * ── Why this exists ────────────────────────────────────────────────────────
+ * The `unmatched` section offers a reader two readings ("the defect was fixed
+ * and the judgement can be retired" / "the entry never aimed at a finding that
+ * exists"), and for ONE shape both are false in the natural sense: an
+ * entry-file `themeguard-ignore` directive whose rule and tokens match a
+ * collision living in an imported closure file. The defect is not fixed — the
+ * finding PRINTS in the same report, above — and the entry did aim at a
+ * finding that exists, one `@import` edge away. A reader following the advice
+ * retires a judgement that is one file-move from working, with nothing saying
+ * where it would work. That is the same false-retirement harm the every-match
+ * booking deleted for the overlap arm, on a different arm of the same section.
+ *
+ * ── The predicate ─────────────────────────────────────────────────────────
+ * Only a `line`-carrying entry qualifies — a directive. A config entry's
+ * identity matching is already closure-wide, so "matched nothing" is honest
+ * for it and it is returned `undefined` here, which keeps its advice
+ * byte-for-byte.
+ *
+ * For a directive: some kept finding matches its IDENTITY conjuncts (rule,
+ * theme where named, the token dimension — asked through
+ * {@link matchesEntryIdentity}, the same predicate that suppresses, never a
+ * re-derived twin), AND EVERY such finding fails the site conjunct on FILE
+ * grounds — {@link findingLinesIn} empty for the entry's own origin, meaning
+ * no site of it lives in the directive's file at all.
+ *
+ * That last clause is what keeps the two misses DISJOINT, and it is the
+ * narrower of the two readings on purpose. A finding with a site in the
+ * directive's own file at a line the directive does not cover is the
+ * SAME-FILE-WRONG-LINE miss, whose existing advice is closer to true (the
+ * defect did move, and the entry is about this file); such an entry gets
+ * `undefined` here, so the existing prose stands. The suffix is claimed only
+ * when the file, not the line, is the whole reason nothing matched.
+ *
+ * ── What it is NOT ────────────────────────────────────────────────────────
+ * DIAGNOSIS, never suppression. Nothing here is consulted by {@link matches}:
+ * a directive still governs only the file it is written in, the site conjunct
+ * is untouched, the counts are untouched, and the `unmatched` leg still sits
+ * outside the exit code. This function reads a finished report and says where
+ * a judgement WOULD work; moving it is the reader's to do.
+ *
+ * @param unmatched the report's `unmatchedSuppressions`, in its own order.
+ * @param kept the report's `findings` — the LIVE ones. A finding some other
+ *   entry already suppressed is not live, and pointing an author at it would
+ *   trade one false claim for another.
+ * @param resolved the sheet the findings were measured over — the origin set
+ *   the citation reader classifies against.
+ * @returns one slot per unmatched entry, ALIGNED BY INDEX with `unmatched`.
+ *   Index alignment rather than a keyed lookup because the leg itself reports
+ *   SLOTS: two structurally identical judgements are two answers, and a map
+ *   keyed on shape would fold them.
+ */
+export function crossFileAims(
+  unmatched: readonly (
+    SuppressionEntry | SiteScopedSuppressionEntry | FileScopedSuppressionEntry
+  )[],
+  kept: readonly Finding[],
+  resolved: ResolvedStylesheet,
+): readonly (CrossFileAim | undefined)[] {
+  const knownOrigins = closureOrigins(resolved);
+  return unmatched.map((entry) => {
+    if (!("line" in entry)) return undefined;
+    const origin = entry.origin;
+    let aim: CrossFileAim | undefined;
+    for (const finding of kept) {
+      if (!matchesEntryIdentity(entry, finding)) continue;
+      // A site in the directive's OWN file is the same-file-wrong-line miss,
+      // and it disqualifies the whole entry rather than merely this finding:
+      // the suffix claims the FILE is the only reason nothing matched.
+      if (findingLinesIn(finding, origin, knownOrigins).length > 0) return undefined;
+      if (aim !== undefined) continue;
+      // The first site of the first identity-match, in the report's own
+      // sorted order — a pointer to move the judgement to, not a census. A
+      // finding publishing no site at all can be named nowhere, so it cannot
+      // supply the aim (and cannot be a same-file miss either: it has no
+      // lines in any file, which is why the disqualification above passes).
+      const first = findingSiteCoordinates(finding, knownOrigins)[0];
+      if (first !== undefined) aim = { rule: finding.rule, site: citeSite(first) };
+    }
+    return aim;
+  });
+}
+
+/**
  * Run all nine rules over a resolved stylesheet.
  *
  * @param resolved the resolver's output — the facts to judge.
@@ -361,79 +626,18 @@ export function audit(
   //     the entry now can SAY which file it does aim at. A caller that omits
   //     `stylesheet` gets the same honest no-match for a scoped entry: an
   //     entry cannot claim a file the audit was never told about.
-  // The finding's position lines in the coordinate ONE directive can match:
-  // `origin` is the directive's own file, and the answer is that file's
-  // lines — no-origin sites for an entry-file directive (origin undefined,
-  // today's reading byte for byte), the named file's sites for a closure
-  // member's directive. Line numbers restart per file, so the ORIGIN is the
-  // coordinate that makes the two readings disjoint: an entry-file directive
-  // still cannot reach a site spliced in from a member, and a member's
-  // directive cannot reach the entry or another member — the fence that kept
-  // a coinciding line from silencing a splice survives as equality instead
-  // of a blanket skip.
-  const findingLines = (finding: Finding, origin?: string): readonly number[] => {
-    if (finding.sites !== undefined)
-      return finding.sites
-        .filter((s) => s.origin === origin)
-        .map((s) => s.line);
-    // A rule that carries no `sites` (dead-token) still publishes its lines —
-    // as `evidence.declaredIn` strings in `":root:4"` shape. That is public,
-    // honestly named data the finding already reports; reading it here adds a
-    // location dimension to suppression without asking any rule to change.
-    // `unresolved-reference` publishes its USE sites the same way, under the
-    // key that names them honestly (`usedIn`) — a directive annotating the
-    // declaration that holds the dangling `var()` is a judgement at the site
-    // the finding lives at, exactly as it is for a declaration site.
-    //
-    // Both spellings cite an imported site as `origin:line`
-    // (`tokens.css:4`) and an entry site as `selector:line`, so the two
-    // branches below read the SAME strings with the directive's own origin
-    // as the split: an entry-file directive (origin undefined) keeps only
-    // the bare citations — a judgement written in the entry cannot govern a
-    // site living in another file, and since line numbers restart per file,
-    // matching on the bare number would let it silence a finding spliced in
-    // from a closure file whose line happened to coincide (the skip is exact
-    // rather than a shape guess: the known origins come from the sheet). A
-    // member's directive (origin set) keeps only the citations of ITS OWN
-    // file — the exact inverse, the same fence.
-    const declared: unknown =
-      finding.evidence["declaredIn"] ?? finding.evidence["usedIn"];
-    if (!Array.isArray(declared)) return [];
-    const lines: number[] = [];
-    if (origin === undefined) {
-      const origins = new Set<string>();
-      for (const s of resolved.stylesheet.scopes) if (s.origin !== undefined) origins.add(s.origin);
-      for (const r of resolved.stylesheet.references)
-        if (r.origin !== undefined) origins.add(r.origin);
-      for (const entry of declared as readonly unknown[]) {
-        const text = String(entry);
-        const at = /:(\d+)$/.exec(text);
-        if (at === null) continue;
-        if (origins.has(text.slice(0, text.length - at[0].length))) continue;
-        lines.push(Number(at[1]));
-      }
-    } else {
-      const prefix = `${origin}:`;
-      for (const entry of declared as readonly unknown[]) {
-        const text = String(entry);
-        if (!text.startsWith(prefix)) continue;
-        const at = /:(\d+)$/.exec(text);
-        if (at === null) continue;
-        lines.push(Number(at[1]));
-      }
-    }
-    return lines;
-  };
+  // The origin set the site conjunct's citation reader classifies prefixes
+  // against, derived once per audit from the sheet the findings were measured
+  // over — the same set the CLI's cross-file diagnosis reads, from the same
+  // exported helper.
+  const knownOrigins = closureOrigins(resolved);
   const matches = (
     entry: SuppressionEntry | SiteScopedSuppressionEntry | FileScopedSuppressionEntry,
     finding: Finding,
   ): boolean => {
-    if (entry.rule !== finding.rule) return false;
-    if (entry.theme !== undefined && entry.theme !== finding.theme) return false;
-    const named = entry.tokens ?? (entry.token !== undefined ? [entry.token] : undefined);
-    if (named !== undefined && !named.every((name) => finding.tokens.includes(name))) {
-      return false;
-    }
+    // Everything except the site, in one exported predicate — the half the
+    // CLI's cross-file diagnosis asks alone, so the two readings cannot drift.
+    if (!matchesEntryIdentity(entry, finding)) return false;
     if ("file" in entry) {
       // The resolved scope when the CLI supplied one, the entry's own
       // spelling otherwise — a library caller passing a scope hands the
@@ -445,12 +649,12 @@ export function audit(
     }
     if ("line" in entry) {
       // The site conjunct is ORIGIN-AWARE since 0.1.19: the directive's own
-      // file narrows `findingLines` to that file's sites. An entry-file
+      // file narrows `findingLinesIn` to that file's sites. An entry-file
       // directive carries no origin and gets today's no-origin reading,
       // byte-identical; an imported member's directive gets its own file's
       // sites and can never reach across an edge.
-      const at = findingLines(finding, entry.origin);
-      if (!at.some((line) => line === entry.line || line === entry.line + 1)) return false;
+      const at = findingLinesIn(finding, entry.origin, knownOrigins);
+      if (!at.some((line) => siteLineCovers(entry.line, line))) return false;
     }
     return true;
   };
