@@ -166,9 +166,11 @@ export interface AuditReport {
    * — the defect prints above, and the entry did aim at a finding that exists
    * — and the entry is ONE KEY DELETION from working. The derivation that
    * names it is {@link themelessAims}, on the same reads-a-finished-report,
-   * suppresses-nothing footing. (An entry that ALSO carries a `file` scope is
-   * outside the arm: the theme would not be its only dead conjunct, so the
-   * derivation declines it whole — see there.)
+   * suppresses-nothing footing. (An entry whose `file` scope names ANOTHER
+   * stylesheet is outside the arm: the theme would not be its only dead
+   * conjunct, so the derivation declines it whole — see there. A scope naming
+   * the audited stylesheet itself is not a second dead conjunct and earns the
+   * clause.)
    */
   readonly unmatchedSuppressions: readonly (
     SuppressionEntry | SiteScopedSuppressionEntry | FileScopedSuppressionEntry
@@ -765,18 +767,22 @@ export interface ThemelessAim {
  * semantics are the matcher's own and never a re-derived twin — AND **every**
  * such finding carries `theme: null`.
  *
- * An entry that ALSO carries a `file` scope declines, whatever its theme. The
- * clause claims the theme is the ONLY reason nothing matched, and a `file`
- * scope naming another stylesheet is a second dead conjunct — deleting the
- * theme key would leave the entry unmatched, so the advice would be the very
+ * An entry whose `file` scope names ANOTHER stylesheet declines. The clause
+ * claims the theme is the ONLY reason nothing matched, and a scope naming a
+ * sibling stylesheet is a second dead conjunct — deleting the theme key
+ * would leave the entry unmatched, so the advice would be the very
  * false-advice harm this arm exists to remove. The whole entry disqualifies,
  * the same move {@link crossFileAims} makes for a same-file identity match,
- * and the section's own `[file: …]` clauses still speak for the row. The
- * decline is deliberately unconditional: whether the scope names the audited
- * stylesheet itself — the one sub-case where the advice WOULD hold — is a
- * comparison against `options.stylesheet`, which this derivation never holds,
- * and the standing preference is that a missing sentence costs a reader a
- * hint while a wrong one costs them a working judgement.
+ * and the section's own `[file: …]` clauses still speak for the row. A scope
+ * naming the AUDITED stylesheet itself is NOT a second dead conjunct — the
+ * file conjunct PASSES there, so deleting the theme key does aim the entry —
+ * and the derivation now holds the path that decides it: `auditedStylesheet`,
+ * the same resolved value `audit()`'s own file conjunct compares, threaded
+ * from the caller that already holds it. A caller that omits the parameter
+ * cannot resolve the comparison and keeps the blanket decline — the
+ * `options.stylesheet` precedent, and the same standing preference that
+ * decided the original shape: a missing sentence costs a reader a hint while
+ * a wrong one costs them a working judgement.
  *
  * The declared set is what makes the claim honest, and the all-null quantifier
  * is the belt beside it. The clause asserts something about the RULE — "this
@@ -802,6 +808,10 @@ export interface ThemelessAim {
  * @param kept the report's `findings` — the LIVE ones. A finding some other
  *   entry already suppressed is not live, and pointing an author at it would
  *   trade one false claim for another.
+ * @param auditedStylesheet the audited ENTRY stylesheet, path-resolved — the
+ *   same value `audit()` was given as `options.stylesheet`. Omitting it keeps
+ *   the blanket decline: a caller that cannot name the audited sheet cannot
+ *   resolve the comparison, so a scoped entry still declines there.
  * @returns one slot per unmatched entry, ALIGNED BY INDEX with `unmatched`,
  *   for the same reason {@link crossFileAims} aligns that way: the leg reports
  *   SLOTS, and a map keyed on shape would fold two identical judgements.
@@ -811,24 +821,24 @@ export function themelessAims(
     SuppressionEntry | SiteScopedSuppressionEntry | FileScopedSuppressionEntry
   )[],
   kept: readonly Finding[],
+  auditedStylesheet?: string,
 ): readonly (ThemelessAim | undefined)[] {
   return unmatched.map((entry) => {
     if (entry.theme === undefined) return undefined;
     // The clause claims the THEME is the whole reason nothing matched. An
-    // entry whose `file` scope names another stylesheet has a SECOND dead
+    // entry whose `file` scope names ANOTHER stylesheet has a SECOND dead
     // conjunct, so deleting the theme key would not aim it — the advice would
     // be the very false promise this arm exists to remove. The whole entry
-    // disqualifies, the same move `crossFileAims` makes for a same-file
-    // identity match. The scope is read exactly as `matches` reads it
-    // (`fileResolved` once the CLI has resolved one, the entry's own spelling
-    // otherwise), because the conjunct that would decide whether the theme is
-    // the ONLY dead one compares that scope against the audited stylesheet —
-    // `options.stylesheet` — which this derivation never holds. Declining on
-    // any file scope is therefore the conservative read: the one sub-case
-    // where the advice would hold (a scope naming the audited sheet itself)
-    // loses a hint, and a missing sentence costs a reader a hint while a
-    // wrong one costs them a working judgement.
-    if (("fileResolved" in entry ? entry.fileResolved : entry.file) !== undefined) {
+    // disqualifies there, the same move `crossFileAims` makes for a same-file
+    // identity match; a scope naming the audited stylesheet itself is not a
+    // second dead conjunct and earns the clause. The scope is read exactly as
+    // `matches` reads it (`fileResolved` once the CLI has resolved one, the
+    // entry's own spelling otherwise) and compared against the same resolved
+    // path the file conjunct compares; with the audited stylesheet unknown
+    // the comparison cannot resolve and the entry declines — the
+    // `options.stylesheet` precedent.
+    const scope = "fileResolved" in entry ? entry.fileResolved : entry.file;
+    if (scope !== undefined && scope !== auditedStylesheet) {
       return undefined;
     }
     // The RULE's own stance first: the clause claims this rule never publishes
@@ -908,17 +918,24 @@ export interface SkippedAim {
  * leg reports SLOTS, and a map keyed on shape would fold two identical
  * judgements.
  *
- * An entry that ALSO carries a `file` scope declines whole — the themeless
- * arm's own discipline. The clause's moves (make the pair measurable, accept
- * the silence by policy, retire) are aimed at THIS report's pair, but a
- * file-scoped entry was recorded against ANOTHER stylesheet, whose own
- * skipped rows this report holds none of: the aim here proves the identity
- * conjuncts match, not that the entry's author meant this sheet's pair, and
- * the `[file: …]` clauses are what speak for such an entry. Declining on any
- * file scope is the conservative read — the one sub-case where the advice
- * would hold (a scope naming the audited sheet itself) loses a hint, and a
- * missing sentence costs a reader a hint while a wrong one costs them a
- * working judgement.
+ * ── The file scope: the decline is OTHER-FILE only ────────────────────────
+ * An entry whose `file` scope names ANOTHER stylesheet declines whole — the
+ * themeless arm's own discipline, narrowed to the population it was built
+ * for. The clause's moves (make the pair measurable, accept the silence by
+ * policy, retire) are aimed at THIS report's pair, but a file-scoped entry
+ * recorded against a sibling was recorded against a sheet whose own skipped
+ * rows this report holds none of: the aim here proves the identity conjuncts
+ * match, not that the entry's author meant this sheet's pair, and the
+ * `[file: …]` clauses are what speak for such an entry. A scope naming the
+ * AUDITED stylesheet itself names a pair this report does hold — one section
+ * up — so it is NOT a second dead conjunct: the entry earns the clause, and
+ * the derivation compares the scope against `auditedStylesheet` — the same
+ * resolved path `audit()`'s own file conjunct compares, threaded from the
+ * caller that holds it. A caller that omits the parameter cannot resolve the
+ * comparison, so a scoped entry still declines there — an entry cannot claim
+ * a file the derivation was never told about (the `options.stylesheet`
+ * precedent), which keeps every two-argument call byte-identical to the
+ * blanket decline.
  *
  * No kept-findings filter is needed here, unlike both siblings:
  * `report.skipped` is ALREADY the kept set — pairs are never suppressed (the
@@ -946,6 +963,10 @@ export interface SkippedAim {
  * @param kept the report's `skipped` — the KEPT pairs. A pair the policy set
  *   aside is on `skippedDisabled`, and the policy carve-out speaks for the
  *   entries aimed there.
+ * @param auditedStylesheet the audited ENTRY stylesheet, path-resolved — the
+ *   same value `audit()` was given as `options.stylesheet`. Omitting it keeps
+ *   the blanket decline: a caller that cannot name the audited sheet cannot
+ *   resolve the comparison, so a scoped entry still declines there.
  * @returns one slot per unmatched entry, ALIGNED BY INDEX with `unmatched`,
  *   for the same reason {@link crossFileAims} aligns that way: the leg reports
  *   SLOTS, and a map keyed on shape would fold two identical judgements.
@@ -955,16 +976,21 @@ export function skippedAims(
     SuppressionEntry | SiteScopedSuppressionEntry | FileScopedSuppressionEntry
   )[],
   kept: readonly SkippedPair[],
+  auditedStylesheet?: string,
 ): readonly (SkippedAim | undefined)[] {
   return unmatched.map((entry) => {
     // The clause's moves are aimed at THIS report's pair. A `file` scope
-    // naming another stylesheet makes the entry's own target that sheet's
+    // naming ANOTHER stylesheet makes the entry's own target that sheet's
     // pairs, which this report holds none of — the aim here proves the
     // identity conjuncts match, not that the entry's author meant this pair.
-    // Read exactly as `matches` reads it (`fileResolved` once the CLI has
-    // resolved one, the entry's own spelling otherwise); declining on any
-    // file scope is the themeless arm's own conservative read.
-    if (("fileResolved" in entry ? entry.fileResolved : entry.file) !== undefined) {
+    // A scope naming the audited stylesheet itself names a pair one section
+    // up, so it earns the clause. Read exactly as `matches` reads it
+    // (`fileResolved` once the CLI has resolved one, the entry's own spelling
+    // otherwise), compared against the same resolved path the file conjunct
+    // compares; with the audited stylesheet unknown the comparison cannot
+    // resolve and the entry declines — the `options.stylesheet` precedent.
+    const scope = "fileResolved" in entry ? entry.fileResolved : entry.file;
+    if (scope !== undefined && scope !== auditedStylesheet) {
       return undefined;
     }
     let aim: SkippedAim | undefined;

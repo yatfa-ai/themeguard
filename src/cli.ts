@@ -153,10 +153,14 @@
  * expired judgement (defect fixed, retire the entry) from a mis-aimed one, and
  * must not pretend to. Two causes it CAN tell, each with its own line beside
  * that prose. Since 0.1.11: an entry carrying a ` [file: …]` clause names the
- * stylesheet it was recorded against, so its presence on this report is neither
- * expiry nor mis-aim — it aims at a sibling file this config governs, and that
- * file's report is the one that states its fate. A clause-carrying entry is
- * never advised retired on this report's word. And since 0.1.24: a SITE-scoped
+ * stylesheet it was recorded against — where that stylesheet is ANOTHER one
+ * this config governs, its presence on this report is neither expiry nor
+ * mis-aim: it aims at that sibling, and that file's report is the one that
+ * states its fate, so a sibling-aiming entry is never advised retired on this
+ * report's word. A scope naming the audited stylesheet itself aims nowhere
+ * else — the report in the reader's hands is that file's report — so such an
+ * entry is left to the generic prose or to whichever carve-out does hold for
+ * it. And since 0.1.24: a SITE-scoped
  * judgement whose rule and tokens match a live finding every one of whose sites
  * lives in ANOTHER file of the closure. There both readings are outright false
  * — the defect is not fixed (the finding prints above, in this same report) and
@@ -177,8 +181,10 @@
  * theme — while the finding the entry's rule and tokens DO match prints above.
  * Both readings are false again, and the row names the rule, the dead scope
  * and the one-key move that revives the judgement — claimed only where the
- * THEME is the whole reason nothing matched, since an entry that also carries
- * a `file` scope would still match nothing after the deletion. DIAGNOSIS on
+ * THEME is the whole reason nothing matched, since an entry whose `file`
+ * scope names ANOTHER stylesheet would still match nothing after the
+ * deletion (a scope naming the audited sheet itself loses that conjunct with
+ * the key, so the sub-case earns the clause). DIAGNOSIS on
  * the same terms: {@link themelessAims} reads a FINISHED report, the matcher
  * is untouched, and the entry stays unmatched.
  *
@@ -469,11 +475,13 @@ function crossFileClause(aim: CrossFileAim | undefined): string {
  * know: which rule, why the scope is dead, and the one-key move that revives
  * the judgement.
  *
- * THE ONE-KEY MOVE IS IDENTITY-ONLY. An entry that also carries a `file`
- * scope earns `""` — the theme would not be the only reason nothing matched,
- * so deleting it would not aim the judgement, and the row's own `[file: …]`
- * clause (or the beyond-config-home line above it) is what speaks for it.
- * `themelessAims` declines the whole entry for exactly this reason; see there.
+ * THE ONE-KEY MOVE IS IDENTITY-ONLY. An entry whose `file` scope names
+ * ANOTHER stylesheet earns `""` — the theme would not be the only reason
+ * nothing matched, so deleting it would not aim the judgement, and the row's
+ * own `[file: …]` clause (or the beyond-config-home line above it) is what
+ * speaks for it. `themelessAims` declines exactly that population; see there.
+ * A scope naming the audited stylesheet itself is NOT a second dead conjunct
+ * (the file conjunct passes there), so the sub-case earns the clause.
  *
  * `""` for every other entry, which keeps every section this does not apply to
  * byte-identical. It joins the `tokenScope` / `scopeSuffix` / `fileClause` /
@@ -840,6 +848,7 @@ function auditStylesheet(path: string, io: CliIo, json = false): number {
     };
   });
   const resolved = resolveStylesheet(sheet);
+  const auditedStylesheet = resolve(path);
   const report = audit(resolved, {
     suppressions: [...scoped, ...(sheet.directives ?? [])],
     // The policy rides to the audit beside the entries: a disabled rule's
@@ -847,7 +856,7 @@ function auditStylesheet(path: string, io: CliIo, json = false): number {
     // rule lands on `unmatchedSuppressions` — where the report can say WHY it
     // matched nothing — instead of suppressing by accident of ordering.
     disabledRules,
-    stylesheet: resolve(path),
+    stylesheet: auditedStylesheet,
   });
   // The cross-file aim of each unmatched site-scoped judgement — DIAGNOSIS
   // only, derived from the finished report and consulted by nothing that
@@ -856,18 +865,25 @@ function auditStylesheet(path: string, io: CliIo, json = false): number {
   // imported citation from an entry-file one.
   const aims = crossFileAims(report.unmatchedSuppressions, report.findings, resolved);
   // The dead-theme-scope diagnosis, on the same footing: derived from the
-  // finished report, consulted by nothing that suppresses. It needs only the
-  // report — the rule's theme-lessness is DECLARED beside the rule ids
-  // (`THEMELESS_RULES`) and the findings carry their own `theme`, so no
-  // resolved sheet enters it.
-  const themeless = themelessAims(report.unmatchedSuppressions, report.findings);
+  // finished report, consulted by nothing that suppresses. It needs the report
+  // and the audited stylesheet — the rule's theme-lessness is DECLARED beside
+  // the rule ids (`THEMELESS_RULES`) and the findings carry their own `theme`,
+  // and the audited path decides the one file-scope sub-case the decline
+  // still honors (a scope naming this very sheet is NOT a second dead
+  // conjunct, so the sub-case earns the clause).
+  const themeless = themelessAims(report.unmatchedSuppressions, report.findings, auditedStylesheet);
   // The kept-skipped diagnosis, on the same footing: derived from the finished
-  // report, consulted by nothing that suppresses. It needs only the report —
-  // the adapter literal (`skippedAims`) carries the channel's one rule id, and
-  // the pairs carry their own theme and token names.
-  const skipped = skippedAims(report.unmatchedSuppressions, report.skipped);
+  // report, consulted by nothing that suppresses. It needs the report and the
+  // audited stylesheet — the adapter literal (`skippedAims`) carries the
+  // channel's one rule id, the pairs carry their own theme and token names,
+  // and the audited path narrows the file-scope decline to OTHER-file scopes:
+  // a scope naming this very sheet aims at a pair this report holds, one
+  // section up.
+  const skipped = skippedAims(report.unmatchedSuppressions, report.skipped, auditedStylesheet);
   if (json) io.out(formatReportJson(path, report, aims, themeless, skipped));
-  else for (const line of formatReport(path, report, aims, themeless, skipped)) io.out(line);
+  else
+    for (const line of formatReport(path, report, aims, themeless, skipped, auditedStylesheet))
+      io.out(line);
 
   // Findings here are the UNSUPPRESSED ones — a finding the user has recorded
   // as deliberate no longer holds the exit code hostage, which is the whole
@@ -895,6 +911,15 @@ function auditStylesheet(path: string, io: CliIo, json = false): number {
  * index the same way and additive on the same terms: an entry whose identity
  * conjuncts match a pair rule 3 could not measure earns a clause naming that
  * pair, and every other row is untouched.
+ *
+ * `auditedStylesheet` is the audited ENTRY stylesheet, path-resolved — the
+ * same value `audit()` was given as `options.stylesheet`, which this renderer
+ * never derived. It narrows the `[file: …]` carve-out's gate: a scope naming
+ * THIS sheet is not an aim elsewhere (the report in the reader's hands is that
+ * file's report), so such an entry no longer vouches the fate line into
+ * printing. Omitting it keeps the gate byte-identical — a caller that cannot
+ * name the audited sheet cannot resolve the comparison, and every entry with
+ * a `file` scope keeps the carve-out.
  */
 export function formatReport(
   path: string,
@@ -902,6 +927,7 @@ export function formatReport(
   aims: readonly (CrossFileAim | undefined)[] = [],
   themeless: readonly (ThemelessAim | undefined)[] = [],
   skipped: readonly (SkippedAim | undefined)[] = [],
+  auditedStylesheet?: string,
 ): string[] {
   const lines: string[] = [`themeguard — ${path}`, ""];
 
@@ -1023,10 +1049,13 @@ export function formatReport(
   // one, and must not pretend to. SIX cases it CAN tell, each with its own
   // carve-out line below, each printing only when this section actually
   // carries such an entry — so every section they do not apply to stays
-  // byte-identical. FIRST, an entry with a
-  // `file` scope names the stylesheet it was recorded against, so its
-  // unmatchedness HERE is neither expiry nor mis-aim — it aims at a sibling
-  // this config governs, and that file's report states its fate. SECOND, an
+  // byte-identical. FIRST, an entry whose
+  // `file` scope names ANOTHER stylesheet this config governs: its
+  // unmatchedness HERE is neither expiry nor mis-aim — it aims at that
+  // sibling, and that file's report states its fate. A scope naming the
+  // audited stylesheet itself aims nowhere else — the fate line's advice is
+  // circular there — so such an entry does not vouch this line in and keeps
+  // the generic prose or whichever carve-out does hold for it. SECOND, an
   // entry carrying a SITE whose rule and tokens match a live finding every one
   // of whose sites lives in ANOTHER file of the closure: there BOTH readings
   // are false — the defect prints above in this same report, and the entry did
@@ -1041,11 +1070,11 @@ export function formatReport(
   // run. Both readings are false there too (the defect prints above, and the
   // rule and tokens DO match the finding that printed), and the row names the
   // rule, the dead scope and the one-key move. THE ONE-KEY MOVE IS
-  // IDENTITY-ONLY: an entry that ALSO carries a `file` scope earns no clause
-  // and does not print this line — the theme would not be the only reason
-  // nothing matched there, so promising the key deletion would be the very
-  // false advice this line exists to replace, and the file clauses below are
-  // what speak for such an entry (`themelessAims` declines it whole). FOURTH,
+  // IDENTITY-ONLY: an entry whose `file` scope names ANOTHER stylesheet earns
+  // no clause and does not print this line — the theme would not be the only
+  // reason nothing matched there, so promising the key deletion would be the
+  // very false advice this line exists to replace, and the file clauses below
+  // are what speak for such an entry (`themelessAims` declines it). FOURTH,
   // since the `suppress-rule` policy: an entry whose rule the project turned
   // OFF can never match while the rule is off, and when that rule actually
   // REPORTED into either counted policy leg the row says so — one policy
@@ -1057,8 +1086,10 @@ export function formatReport(
   // names the pair and its silence, states that entries govern findings only
   // (this judgement never silenced a skipped row and never will), and gives
   // the real moves — make the pair measurable, accept the silence with
-  // `suppress-rule`, or retire. A `file`-scoped entry declines it whole
-  // (`skippedAims`, the themeless arm's own discipline), and the disabled arm
+  // `suppress-rule`, or retire. A `file` scope naming ANOTHER stylesheet
+  // declines it whole (`skippedAims` — the decline is other-file only; a scope
+  // naming the audited sheet itself aims at a pair this report holds, one
+  // section up, and earns the clause), and the disabled arm
   // never fires beside it: a disabled rule's pairs sit on `skippedDisabled`,
   // not kept `skipped`, so the two carve-outs are disjoint by construction. A
   // BOUNDARY the
@@ -1095,9 +1126,20 @@ export function formatReport(
       );
     }
     if (
-      report.unmatchedSuppressions.some(
-        (entry) => entry.file !== undefined && !beyondConfigHome(entry),
-      )
+      report.unmatchedSuppressions.some((entry) => {
+        if (entry.file === undefined || beyondConfigHome(entry)) return false;
+        // A scope naming the AUDITED stylesheet itself does not aim elsewhere:
+        // "that file's report" is the report in the reader's hands, so the
+        // advice is circular there and such an entry stops vouching the line
+        // into existence. Read exactly as `matches` reads the scope
+        // (`fileResolved` once the CLI has resolved one, the entry's own
+        // spelling otherwise), compared against the same resolved path the
+        // file conjunct compares; a caller that passed no audited stylesheet
+        // cannot resolve the comparison and keeps the carve-out for every
+        // scoped entry — the gate is byte-identical there.
+        const scope = "fileResolved" in entry ? entry.fileResolved : entry.file;
+        return scope !== auditedStylesheet;
+      })
     ) {
       lines.push(
         "  an entry carrying a [file: …] clause names the stylesheet it was recorded against — for it, this report can tell: the judgement aims at that file, which this config governs too, and it neither expired here nor mis-aimed here. That file's report is the one that states its fate.",

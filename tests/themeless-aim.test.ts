@@ -41,13 +41,18 @@ import { resolveStylesheet } from "../src/resolve.js";
  * that was already printing.
  *
  * ⚠️ THE ONE-KEY MOVE IS IDENTITY-ONLY. The clause promises that deleting the
- * theme key aims the judgement — a promise that is FALSE for an entry that
- * ALSO carries a `file` scope, where a second dead conjunct would leave the
- * entry unmatched after the deletion (the exact defect a review probe caught:
- * the advice was executed and suppressed nothing). `themelessAims` therefore
- * declines any entry carrying a `file` scope, and this spec pins all three
- * sub-cases — sibling file, beyond-config-home, and the audited sheet itself —
- * each keeping the generic prose byte-identical and the `--json` key absent.
+ * theme key aims the judgement — a promise that is FALSE for an entry whose
+ * `file` scope names ANOTHER stylesheet, where a second dead conjunct would
+ * leave the entry unmatched after the deletion (the exact defect a review
+ * probe caught: the advice was executed and suppressed nothing).
+ * `themelessAims` declines exactly that population, and this spec pins its two
+ * sub-cases — sibling file, and beyond-config-home — each keeping the generic
+ * prose byte-identical and the `--json` key absent. The ONE sub-case where the
+ * promise holds — a scope naming the audited stylesheet itself, which the
+ * original blanket decline knowingly lost (its deciding comparison was against
+ * `options.stylesheet`, which the derivation never held) — now EARNS the
+ * clause: the derivation holds the audited path, and the file conjunct PASSES
+ * there.
  */
 
 const tmp = mkdtempSync(join(tmpdir(), "themeguard-themeless-aim-"));
@@ -426,17 +431,20 @@ describe("the arms that KEEP the existing advice — the diagnosis is the dead-s
   });
 });
 
-describe("an entry that ALSO carries a `file` scope DECLINES — the theme is not the only dead conjunct", () => {
+describe("an entry whose `file` scope names ANOTHER stylesheet DECLINES — the theme is not the only dead conjunct", () => {
   // The review probe that forced this gate: a theme-scoped entry whose `file`
   // scope names ANOTHER stylesheet matched every gate the derivation asked
   // (identity minus theme is exactly its match), so its row earned "drop the
   // theme key to aim the judgement" — and executing that advice suppressed
   // NOTHING, because the `file` scope is what kept the entry out. The clause
-  // claims the theme is the WHOLE reason nothing matched; a `file` scope is a
-  // second dead conjunct, and the whole entry disqualifies — the same move
-  // `crossFileAims` makes for a same-file identity match. The unscoped twin in
-  // "an UNSCOPED entry keeps the advice" IS this entry minus the theme key,
-  // and it stays unmatched — which is why the promise must never print here.
+  // claims the theme is the WHOLE reason nothing matched; a foreign-file
+  // scope is a second dead conjunct, and the whole entry disqualifies — the
+  // same move `crossFileAims` makes for a same-file identity match. The
+  // unscoped twin in "an UNSCOPED entry keeps the advice" IS this entry minus
+  // the theme key, and it stays unmatched — which is why the promise must
+  // never print here. A scope naming the audited sheet itself is the ONE
+  // sub-case where the promise holds, and it earns the clause in its own
+  // describe below.
 
   it("a `file` scope naming a SIBLING stylesheet keeps the generic advice byte-for-byte", () => {
     const entry = write("filescope/a.css", PROBE);
@@ -497,14 +505,17 @@ describe("an entry that ALSO carries a `file` scope DECLINES — the theme is no
     expect(result.stdout).not.toContain("measured stylesheet-wide and carry no theme");
   });
 
-  it("even a scope naming the AUDITED sheet itself declines — the derivation cannot resolve the comparison", () => {
-    // The one sub-case where the advice WOULD hold: `fileResolved` equals the
-    // audited stylesheet, so only the theme conjunct is dead and deleting the
-    // key does suppress (probed in review). It is declined anyway, on purpose:
-    // deciding it is a comparison against `options.stylesheet`, which
-    // `themelessAims` never holds, and a missing sentence costs a reader a
-    // hint while a wrong one costs them a working judgement. The generic
-    // prose — which at least promises nothing — is what prints.
+  it("a scope naming the AUDITED sheet itself EARNS the clause — the file conjunct passes there", () => {
+    // The one sub-case the blanket decline knowingly lost, now claimed. The
+    // deciding comparison — scope against the audited stylesheet — is one the
+    // derivation could not resolve when it was written (`options.stylesheet`
+    // was never in its frame), so it declined every file scope. The CLI holds
+    // the resolved path at the call site and threads it now, and for this
+    // entry the file conjunct PASSES: `fileResolved` names the very sheet the
+    // report is about, only the theme conjunct is dead, and deleting the key
+    // does aim the judgement (probed in review). Printing the generic advice
+    // here — "either fixed or mis-aimed, the report cannot tell" — is the
+    // false dichotomy the arm exists to delete, one population late.
     const entry = write("selffile/a.css", PROBE);
     config("selffile", [
       {
@@ -518,12 +529,56 @@ describe("an entry that ALSO carries a `file` scope DECLINES — the theme is no
     const result = run(entry);
     expect(result.stdout).toContain("dead-token (1)");
     expect(result.stdout).toContain("unmatched (1)");
+    // The clause rides the row, which keeps the entry's own `[file: …]`
+    // spelling — the ledger is quoted back exactly as written.
     expect(unmatchedRow(result)).toBe(
       '  [unmatched] [dead-token] — "this sheet, winter only" [token: --unused-accent]' +
-        " [theme: winter] [file: a.css]",
+        " [theme: winter] [file: a.css]" +
+        DEAD_TOKEN_CLAUSE,
     );
-    expect(result.stdout).not.toContain(SECTION_LINE);
-    expect(result.stdout).not.toContain("measured stylesheet-wide and carry no theme");
+    expect(result.stdout).toContain(SECTION_LINE);
+    // The fate line must NOT fire beside the clause: "that file's report is
+    // the one that states its fate" is circular when the file is the one
+    // being read. Every entry in this section is same-file, so the line is
+    // silent whole.
+    expect(result.stdout).not.toContain(
+      "an entry carrying a [file: …] clause names the stylesheet",
+    );
+  });
+
+  it("the same aim at the LIBRARY level — the parameter carries the audited sheet, its absence keeps the decline", () => {
+    // The rider is an OPTIONAL third parameter, additive exactly like
+    // `options.stylesheet` was: a caller that passes it claims the sub-case,
+    // a caller that omits it keeps the blanket decline (an entry cannot claim
+    // a file the derivation was never told about). Both spellings of the
+    // scope, both calls, one synthetic theme-less finding — the same shape the
+    // spellings test below uses.
+    const finding: Finding = {
+      rule: "dead-token",
+      theme: null,
+      tokens: ["--unused-accent"],
+      message: "synthetic: the theme-less finding the entry's identity matches",
+      evidence: {},
+    };
+    const entry = {
+      rule: "dead-token" as const,
+      token: "--unused-accent",
+      theme: "winter",
+      file: "a.css",
+      fileResolved: "/proj/self/a.css",
+      reason: "this sheet, winter only",
+    };
+    // The scope naming the AUDITED sheet (the parameter's value) earns it…
+    expect(themelessAims([entry], [finding], "/proj/self/a.css")).toEqual([
+      { rule: "dead-token" },
+    ]);
+    // …the same scope with NO parameter still declines…
+    expect(themelessAims([entry], [finding])).toEqual([undefined]);
+    // …and an entry whose scope names a DIFFERENT sheet declines even with
+    // the parameter — the decline is other-file only, not parameter-on.
+    expect(
+      themelessAims([entry], [finding], "/proj/self/other.css"),
+    ).toEqual([undefined]);
   });
 });
 
