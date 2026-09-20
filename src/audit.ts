@@ -75,7 +75,7 @@ import { duplicateDeclarationRule } from "./rules/duplicate-declaration.js";
 import { unresolvedReferenceRule } from "./rules/unresolved-reference.js";
 import { unresolvedImportRule } from "./rules/unresolved-import.js";
 import { themePartialTokenRule } from "./rules/theme-partial-token.js";
-import { scaleCollapseRule, type SkippedPair } from "./rules/scale-collapse.js";
+import { scaleCollapseRule, type SkippedPair, type SkipReason } from "./rules/scale-collapse.js";
 import {
   citeSite as citeSiteFromFinding,
   sortFindings,
@@ -548,6 +548,26 @@ export function siteLineCovers(entryLine: number, line: number): boolean {
 }
 
 /**
+ * The three finding dimensions the identity conjuncts read — a structural
+ * subset of `Finding` rather than the full shape, the same move
+ * {@link SiteCoordinate} made for the site reader.
+ *
+ * The skipped channel is the parameter's second caller: a `SkippedPair` is not
+ * a finding — it carries no `message` and no `evidence` — but its identity
+ * halves are exactly these three dimensions, and the kept-skipped diagnosis
+ * must ask the SAME predicate through a one-line adapter literal, never a
+ * re-derived twin. Matching reads only these three, so this is the widest type
+ * that is honest about both callers. Widening the parameter is a TYPE change
+ * only: the body below is byte-identical, every `Finding` satisfies the subset
+ * structurally, and no call site moves.
+ */
+export interface IdentityTarget {
+  readonly rule: RuleId;
+  readonly theme: string | null;
+  readonly tokens: readonly string[];
+}
+
+/**
  * Whether an entry's IDENTITY conjuncts — everything except its site — match a
  * finding: the rule, the theme scope when it names one, and the token
  * dimension (the scalar `token` when the finding carries that ONE name, or the
@@ -559,10 +579,14 @@ export function siteLineCovers(entryLine: number, line: number): boolean {
  * exists?" — with the same includes-semantics that suppresses, rather than a
  * re-derived twin. Asking it alone is a DIAGNOSIS and never a suppression: the
  * site conjunct is what suppresses, and it is not in here.
+ *
+ * The finding parameter is {@link IdentityTarget}, the structural subset the
+ * conjuncts read — so the skipped-pair adapter ({@link skippedAims}) feeds the
+ * SAME predicate the findings do, and the two answers cannot drift.
  */
 export function matchesEntryIdentity(
   entry: SuppressionEntry | SiteScopedSuppressionEntry | FileScopedSuppressionEntry,
-  finding: Finding,
+  finding: IdentityTarget,
 ): boolean {
   if (entry.rule !== finding.rule) return false;
   if (entry.theme !== undefined && entry.theme !== finding.theme) return false;
@@ -826,6 +850,142 @@ export function themelessAims(
       matched = true;
     }
     return matched ? { rule: entry.rule } : undefined;
+  });
+}
+
+/**
+ * WHICH KEPT SKIPPED PAIR an unmatched judgement's identity conjuncts match —
+ * the row the `unmatched` section's kept-skipped arm names, and the sixth
+ * case that section can tell.
+ *
+ * `theme`, `base` and `state` name the pair in the skipped section's own
+ * vocabulary (`--card-bg-hover against --card-bg in theme "root"`), and
+ * `reason` is the pair's own skip reason — WHICH silence it is, the same four
+ * values the skipped row prints.
+ */
+export interface SkippedAim {
+  /** The theme the unmeasurable pair was reported in. */
+  readonly theme: string;
+  /** The pair's resting token name. */
+  readonly base: string;
+  /** The pair's state token name. */
+  readonly state: string;
+  /** The pair's own skip reason — which silence it is. */
+  readonly reason: SkipReason;
+}
+
+/**
+ * For each unmatched entry, the FIRST kept skipped pair its identity conjuncts
+ * match — or `undefined`, which is every other entry.
+ *
+ * ── Why this exists ────────────────────────────────────────────────────────
+ * The `unmatched` section offers a reader two readings ("the defect was fixed
+ * and the judgement can be retired" / "the entry never aimed at a finding that
+ * exists"), and for ONE more shape both are false in the natural sense: an
+ * entry whose identity conjuncts match a pair rule 3 could not MEASURE. The
+ * pair is not a finding, so the entry matched nothing and landed here — and
+ * the pair PRINTS, one section up, in the skipped section's own doctrine "not
+ * findings, and not a pass either". Both offered readings fail: the target was
+ * not fixed (it prints, skipped), and the entry DID aim at a row that exists —
+ * same rule id, same token names. A reader following the advice retires a
+ * judgement aimed squarely at a row the same report is showing them. The
+ * report's verdict on this aim already flips on an unrelated config key —
+ * turn the rule off and the SAME entry earns the disabled-rule carve-out
+ * ("one policy decision away from working") — so the kept leg cannot honestly
+ * claim ignorance the machinery does not have.
+ *
+ * ── The predicate ─────────────────────────────────────────────────────────
+ * The entry's identity conjuncts are asked of the pair through
+ * {@link matchesEntryIdentity} — the SAME predicate that suppresses, fed a
+ * one-line adapter literal (`{rule: "scale-collapse", theme: pair.theme,
+ * tokens: [pair.base, pair.state]}`), never a re-derived twin. The rule id in
+ * the adapter is the skipped channel's only producer's — `scale-collapse` is
+ * the one rule that returns a `{findings, skipped}` pair, so the channel
+ * itself names it and a second producer extends this loop rather than
+ * inventing a second channel read. One pointer, not a census: the FIRST
+ * matching pair in the report's own order, the same discipline
+ * {@link crossFileAims} keeps. Index-aligned by slot like both siblings: the
+ * leg reports SLOTS, and a map keyed on shape would fold two identical
+ * judgements.
+ *
+ * An entry that ALSO carries a `file` scope declines whole — the themeless
+ * arm's own discipline. The clause's moves (make the pair measurable, accept
+ * the silence by policy, retire) are aimed at THIS report's pair, but a
+ * file-scoped entry was recorded against ANOTHER stylesheet, whose own
+ * skipped rows this report holds none of: the aim here proves the identity
+ * conjuncts match, not that the entry's author meant this sheet's pair, and
+ * the `[file: …]` clauses are what speak for such an entry. Declining on any
+ * file scope is the conservative read — the one sub-case where the advice
+ * would hold (a scope naming the audited sheet itself) loses a hint, and a
+ * missing sentence costs a reader a hint while a wrong one costs them a
+ * working judgement.
+ *
+ * No kept-findings filter is needed here, unlike both siblings:
+ * `report.skipped` is ALREADY the kept set — pairs are never suppressed (the
+ * findings loop books matches against FINDINGS only), so every entry on the
+ * unmatched leg matched nothing, findings or pairs alike, and there is no
+ * second population to keep the pointer honest about.
+ *
+ * ── What it is NOT ────────────────────────────────────────────────────────
+ * DIAGNOSIS, never suppression. Nothing here is consulted by the matcher:
+ * {@link matchesEntryIdentity} is untouched, the entry stays unmatched — a
+ * skip is not a finding and entries govern findings only, so no entry can
+ * ever claim a skipped row — the counts are untouched, and the `unmatched`
+ * leg still sits outside the exit code. This function reads a finished report
+ * and names the row the judgement was aimed at; making the pair measurable,
+ * turning the rule off, or retiring the entry is the reader's to do.
+ *
+ * ── Disjoint from the policy carve-out, by construction ───────────────────
+ * When the rule is off, its pairs sit on `skippedDisabled`, not kept
+ * `skipped` — the policy partitions both channels — so this derivation finds
+ * nothing on the disabled arm and the disabled-rule carve-out speaks there
+ * byte-identically. An entry aimed at a kept pair and an entry aimed at a
+ * disabled rule's pairs can never be the same entry in the same report.
+ *
+ * @param unmatched the report's `unmatchedSuppressions`, in its own order.
+ * @param kept the report's `skipped` — the KEPT pairs. A pair the policy set
+ *   aside is on `skippedDisabled`, and the policy carve-out speaks for the
+ *   entries aimed there.
+ * @returns one slot per unmatched entry, ALIGNED BY INDEX with `unmatched`,
+ *   for the same reason {@link crossFileAims} aligns that way: the leg reports
+ *   SLOTS, and a map keyed on shape would fold two identical judgements.
+ */
+export function skippedAims(
+  unmatched: readonly (
+    SuppressionEntry | SiteScopedSuppressionEntry | FileScopedSuppressionEntry
+  )[],
+  kept: readonly SkippedPair[],
+): readonly (SkippedAim | undefined)[] {
+  return unmatched.map((entry) => {
+    // The clause's moves are aimed at THIS report's pair. A `file` scope
+    // naming another stylesheet makes the entry's own target that sheet's
+    // pairs, which this report holds none of — the aim here proves the
+    // identity conjuncts match, not that the entry's author meant this pair.
+    // Read exactly as `matches` reads it (`fileResolved` once the CLI has
+    // resolved one, the entry's own spelling otherwise); declining on any
+    // file scope is the themeless arm's own conservative read.
+    if (("fileResolved" in entry ? entry.fileResolved : entry.file) !== undefined) {
+      return undefined;
+    }
+    let aim: SkippedAim | undefined;
+    for (const pair of kept) {
+      // The adapter literal is the whole point: the SAME predicate the
+      // findings are asked through, fed the pair's three identity halves, so
+      // the includes semantics (scalar `token` ⊆ the pair, every `tokens`
+      // name carried) are the matcher's own and cannot drift from what
+      // suppression would do if the pair ever became a finding.
+      const target: IdentityTarget = {
+        rule: "scale-collapse",
+        theme: pair.theme,
+        tokens: [pair.base, pair.state],
+      };
+      if (!matchesEntryIdentity(entry, target)) continue;
+      // One pointer, not a census — the first match in the report's own order.
+      if (aim === undefined) {
+        aim = { theme: pair.theme, base: pair.base, state: pair.state, reason: pair.reason };
+      }
+    }
+    return aim;
   });
 }
 

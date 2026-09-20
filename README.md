@@ -192,7 +192,9 @@ site}` — the machine form of the prose's `— matches a live …` clause, so t
 instead of regexed out of a sentence. The key is **absent** (never `null`) on every row without one, the
 same absence-is-a-fact discipline `sites` carries. A second such key rides the same discipline:
 `themelessAim`, `{rule}` — the machine form of the dead-theme-scope clause, on a row whose `theme` scope
-names a rule that reports no theme at all. See
+names a rule that reports no theme at all. A third rides it too: `skippedAim`,
+`{theme, base, state, reason}` — the machine form of the kept-skipped clause, the unmeasurable pair an
+entry's conjuncts match spelled exactly as the skipped section prints it. See
 [When a judgement matches nothing](#when-a-judgement-matches-nothing--unmatched-n).
 
 It composes with `jq` the way a per-line stream should:
@@ -292,7 +294,10 @@ branch's own condition already evaluates rather than on a second classification 
 
 The last two used to be reported as `not-a-color`, which asserted something about a value the view did
 not have. Splitting them changes no count, no finding and no exit code: the rows already existed, and
-only the words they say about themselves changed.
+only the words they say about themselves changed. The rows are also the one place a
+[judgement that matched nothing](#when-a-judgement-matches-nothing--unmatched-n) can aim at something
+real: an entry whose identity conjuncts match one of these pairs is not retirable against it, and its
+row says so.
 
 **`coverage` is facts, not findings.** Inheriting a token is normal — focus geometry, control sizing and
 transitions are theme-independent on purpose — so the inventory never moves the exit code. It is printed
@@ -741,6 +746,43 @@ and silent on both leaves its entries' ordinary advice standing, because there t
 be gone. See
 [Turning a rule off for the project](#turning-a-rule-off-for-the-project--suppress-rule).
 
+**And one aimed at a pair the rule never measured.** One more shape both readings are false about: the
+entry aimed not at a finding but at a pair rule 3 could not measure — the rows the
+[skipped section](#the-report) prints "not findings, and not a pass either". A pair is not a finding,
+so an entry whose identity conjuncts match one matched nothing and lands here — and BOTH stock readings
+are false in the natural sense: the target was not fixed (the pair prints one section up, under the
+same rule id and token names the entry names), and the entry DID aim at a row that exists. Before this
+case the report's verdict on an identical aim flipped on an unrelated config key: turn the rule off and
+the SAME entry earned the disabled-rule carve-out above, because a disabled rule's pairs move to
+`skipped-disabled` — a channel the policy partitions. The kept leg can claim the same knowledge the
+policy leg always had. So the row names the pair in the skipped row's own vocabulary, names WHICH
+silence it is (translucent / not-a-color / absent / unresolvable), and states the one fact that makes
+the retirement advice false — a skip is not a finding, and entries govern findings only, so this
+judgement never silenced that row and never will — beside the real moves: make the pair measurable
+(fix the value), accept the silence by turning the rule off with `suppress-rule`, or retire the entry.
+
+```
+unmatched (1)
+  declared suppressions no finding matched. Either the defect was fixed and the judgement can be retired, or the entry never aimed at a finding that exists — the report cannot tell which.
+  an entry aimed at a pair rule 3 could not measure is a further case this report CAN tell: the skipped section above holds that pair — not findings, and not a pass either — and the entry's identity conjuncts match it. Neither reading above holds for it — the pair prints, so the judgement is not retirable against it, and a skip is not a finding: entries govern findings only, so this judgement never silenced that row and never will. The real moves are in its line: make the pair measurable (fix the value), accept the silence by turning the rule off with "suppress-rule", or retire the entry.
+  [unmatched] [scale-collapse] — "reviewed, translucent by design" [tokens: --card-bg, --card-bg-hover] — its conjuncts match the pair rule 3 could not measure, --card-bg-hover against --card-bg in theme "root" (translucent), printed one section up in skipped; entries govern findings only, so this judgement can never silence a skipped row — make the pair measurable (fix the value), accept the silence by turning the rule off with "suppress-rule", or retire the entry.
+```
+
+A DIAGNOSIS on exactly the same terms, and never a suppression: the matching semantics are untouched,
+the entry is still unmatched — an entry can never claim a skipped row, which is the point — the counts
+and the exit code do not move. The aim is asked of the matcher's OWN identity predicate, fed the pair's
+three identity halves (rule `scale-collapse`, the pair's theme, the pair's two names), so the scalar
+`token` and the `tokens` set fire exactly as they would against a finding, and the theme scope fires
+only on the pair's own theme. One pointer, not a census: the first matching pair in report order. The
+clause is withheld from an entry that ALSO carries a `file` scope (the themeless arm's own discipline —
+the `[file: …]` carve-outs speak for such an entry) and from a scope naming the view where the pair
+MEASURED fine (there the pair never printed as skipped, and the generic advice may genuinely be true).
+The disabled arm never fires beside it: a disabled rule's pairs sit on `skippedDisabled`, never kept
+`skipped`, so the two carve-outs are disjoint by construction — the same fixture under `suppress-rule`
+flips the row to the policy carve-out byte-for-byte.
+[`--json`](#--json--the-report-as-data) carries the same aim as data, as an additive `skippedAim` key
+on the unmatched row.
+
 **The section prints even at zero.** An empty section is the proof that every recorded judgement is
 still doing work, and a section that vanished at zero would reproduce exactly the silence this exists to
 remove:
@@ -753,9 +795,10 @@ unmatched (0)
 **It never moves the exit code.** A stale entry is hygiene, not a defect in the stylesheet — the same
 posture `skipped` and `coverage` take. In general the report cannot tell the two causes apart, and its
 prose says so rather than pretending to: either the defect was fixed and the entry should be retired, or
-the entry never aimed at a finding that exists. The four cases it CAN tell — a `file`-scoped entry
+the entry never aimed at a finding that exists. The five cases it CAN tell — a `file`-scoped entry
 aimed at a sibling, a site-scoped judgement whose finding lives one `@import` edge away, a `theme`
-scope on a rule that reports no theme, and a rule the project's own `suppress-rule` policy turned off —
+scope on a rule that reports no theme, a rule the project's own `suppress-rule` policy turned off, and
+an entry aimed at a pair the rule could not measure —
 get their own lines beside that prose, and none moves the code
 either: the misfiled judgement's finding was already live and already counted, so naming its aim adds a
 pointer and nothing else. What it will not do is stay

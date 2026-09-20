@@ -43,6 +43,7 @@
 export {
   audit,
   crossFileAims,
+  skippedAims,
   themelessAims,
   closureOrigins,
   findingLinesIn,
@@ -53,6 +54,8 @@ export {
   type AuditOptions,
   type CrossFileAim,
   type ThemelessAim,
+  type SkippedAim,
+  type IdentityTarget,
   type SiteCoordinate,
   type SuppressedFinding,
   type SiteScopedSuppressionEntry,

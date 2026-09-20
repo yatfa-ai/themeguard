@@ -289,9 +289,11 @@ import { fileURLToPath } from "node:url";
 import {
   audit,
   crossFileAims,
+  skippedAims,
   themelessAims,
   type CrossFileAim,
   type FileScopedSuppressionEntry,
+  type SkippedAim,
   type ThemelessAim,
   type SiteScopedSuppressionEntry,
 } from "./audit.js";
@@ -487,6 +489,41 @@ function themelessClause(
   return aim === undefined
     ? ""
     : ` — [${aim.rule}] findings are measured stylesheet-wide and carry no theme, so the [theme: ${entry.theme}] scope can never match; drop the theme key to aim the judgement.`;
+}
+
+/**
+ * The kept-skipped clause an unmatched judgement earns when its identity
+ * conjuncts match a pair rule 3 could not measure — the additive sentence that
+ * keeps the section's retirement advice from being flatly wrong about it, the
+ * same harm class the cross-file, dead-theme-scope and disabled-rule clauses
+ * removed before it.
+ *
+ * The section's two readings are "the defect was fixed, retire the entry" and
+ * "the entry never aimed at a finding that exists". For this shape BOTH are
+ * false: the pair is not a finding, so the entry matched nothing and landed
+ * here — but the pair PRINTS, one section up, in the skipped section's own
+ * doctrine "not findings, and not a pass either", under the same rule id and
+ * token names the entry names. So this clause says what the report DOES know:
+ * WHICH pair (in the skipped row's own vocabulary), which silence it is, that
+ * the judgement never governed it and never can (a skip is not a finding, and
+ * entries govern findings only), and the real moves — make the pair
+ * measurable, accept the silence by turning the rule off with `suppress-rule`
+ * (where the disabled-rule carve-out takes the row over), or retire the entry.
+ *
+ * `""` for every other entry, which keeps every row this does not apply to
+ * byte-identical. It joins the tokenScope / scopeSuffix / fileClause /
+ * sourceClause / crossFileClause / themelessClause family and composes after
+ * `themelessClause`, before the disabled-rule clause: in practice disjoint
+ * from both neighbours (a kept-skipped row's rule is `scale-collapse` ENABLED,
+ * so the policy never partitions its pairs and the disabled clause is empty
+ * for it; a themeless row's rule is in `THEMELESS_RULES`, which
+ * `scale-collapse` is not), and the composition stays honest if some shape
+ * ever carried both.
+ */
+function skippedClause(aim: SkippedAim | undefined): string {
+  return aim === undefined
+    ? ""
+    : ` — its conjuncts match the pair rule 3 could not measure, ${aim.state} against ${aim.base} in theme "${aim.theme}" (${aim.reason}), printed one section up in skipped; entries govern findings only, so this judgement can never silence a skipped row — make the pair measurable (fix the value), accept the silence by turning the rule off with "suppress-rule", or retire the entry.`;
 }
 
 /**
@@ -824,8 +861,13 @@ function auditStylesheet(path: string, io: CliIo, json = false): number {
   // (`THEMELESS_RULES`) and the findings carry their own `theme`, so no
   // resolved sheet enters it.
   const themeless = themelessAims(report.unmatchedSuppressions, report.findings);
-  if (json) io.out(formatReportJson(path, report, aims, themeless));
-  else for (const line of formatReport(path, report, aims, themeless)) io.out(line);
+  // The kept-skipped diagnosis, on the same footing: derived from the finished
+  // report, consulted by nothing that suppresses. It needs only the report —
+  // the adapter literal (`skippedAims`) carries the channel's one rule id, and
+  // the pairs carry their own theme and token names.
+  const skipped = skippedAims(report.unmatchedSuppressions, report.skipped);
+  if (json) io.out(formatReportJson(path, report, aims, themeless, skipped));
+  else for (const line of formatReport(path, report, aims, themeless, skipped)) io.out(line);
 
   // Findings here are the UNSUPPRESSED ones — a finding the user has recorded
   // as deliberate no longer holds the exit code hostage, which is the whole
@@ -848,12 +890,18 @@ function auditStylesheet(path: string, io: CliIo, json = false): number {
  * index the same way and additive on the same terms: a theme-scoped entry
  * aimed at a rule that measures stylesheet-wide earns a clause naming the dead
  * scope, and every other row is untouched.
+ *
+ * `skipped` is the kept-skipped diagnosis ({@link skippedAims}), aligned by
+ * index the same way and additive on the same terms: an entry whose identity
+ * conjuncts match a pair rule 3 could not measure earns a clause naming that
+ * pair, and every other row is untouched.
  */
 export function formatReport(
   path: string,
   report: ReturnType<typeof audit>,
   aims: readonly (CrossFileAim | undefined)[] = [],
   themeless: readonly (ThemelessAim | undefined)[] = [],
+  skipped: readonly (SkippedAim | undefined)[] = [],
 ): string[] {
   const lines: string[] = [`themeguard — ${path}`, ""];
 
@@ -972,7 +1020,7 @@ export function formatReport(
   // is an entry like any other, only without a finding behind it. The prose
   // names the two causes honestly and stops: IN GENERAL the tool cannot tell
   // an expired judgement (defect fixed, retire the entry) from a mis-aimed
-  // one, and must not pretend to. THREE cases it CAN tell, each with its own
+  // one, and must not pretend to. SIX cases it CAN tell, each with its own
   // carve-out line below, each printing only when this section actually
   // carries such an entry — so every section they do not apply to stays
   // byte-identical. FIRST, an entry with a
@@ -997,7 +1045,22 @@ export function formatReport(
   // and does not print this line — the theme would not be the only reason
   // nothing matched there, so promising the key deletion would be the very
   // false advice this line exists to replace, and the file clauses below are
-  // what speak for such an entry (`themelessAims` declines it whole). A
+  // what speak for such an entry (`themelessAims` declines it whole). FOURTH,
+  // since the `suppress-rule` policy: an entry whose rule the project turned
+  // OFF can never match while the rule is off, and when that rule actually
+  // REPORTED into either counted policy leg the row says so — one policy
+  // decision from working — while a rule off AND silent keeps the ordinary
+  // advice, there the defect may genuinely be gone. FIFTH, the kept-skipped
+  // arm: an entry whose identity conjuncts match a pair rule 3 could not
+  // measure — the pair is not a finding, so the entry matched nothing, yet the
+  // pair prints one section up under the same rule id and token names. The row
+  // names the pair and its silence, states that entries govern findings only
+  // (this judgement never silenced a skipped row and never will), and gives
+  // the real moves — make the pair measurable, accept the silence with
+  // `suppress-rule`, or retire. A `file`-scoped entry declines it whole
+  // (`skippedAims`, the themeless arm's own discipline), and the disabled arm
+  // never fires beside it: a disabled rule's pairs sit on `skippedDisabled`,
+  // not kept `skipped`, so the two carve-outs are disjoint by construction. A
   // BOUNDARY the
   // section also states, since config discovery reaches down a subtree: the
   // config governs its own directory and below, so an entry whose scope
@@ -1045,9 +1108,14 @@ export function formatReport(
         "  an entry whose [file: …] clause resolves OUTSIDE this config's own directory can never be honoured — a config governs its own directory and below, and no run of this config audits a stylesheet beyond its reach, so this report is that entry's fate-statement: re-aim the entry inside the config's directory, or retire it.",
       );
     }
+    if (skipped.some((aim) => aim !== undefined)) {
+      lines.push(
+        "  an entry aimed at a pair rule 3 could not measure is a further case this report CAN tell: the skipped section above holds that pair — not findings, and not a pass either — and the entry's identity conjuncts match it. Neither reading above holds for it — the pair prints, so the judgement is not retirable against it, and a skip is not a finding: entries govern findings only, so this judgement never silenced that row and never will. The real moves are in its line: make the pair measurable (fix the value), accept the silence by turning the rule off with \"suppress-rule\", or retire the entry.",
+      );
+    }
     for (const [index, entry] of report.unmatchedSuppressions.entries()) {
       lines.push(
-        `  [unmatched] [${entry.rule}] — "${entry.reason}"${tokenScope(entry)}${scopeSuffix(entry)}${fileClause(entry)}${sourceClause(entry)}${crossFileClause(aims[index])}${themelessClause(entry, themeless[index])}${disabledRuleClause(entry, policyReportingRules)}`,
+        `  [unmatched] [${entry.rule}] — "${entry.reason}"${tokenScope(entry)}${scopeSuffix(entry)}${fileClause(entry)}${sourceClause(entry)}${crossFileClause(aims[index])}${themelessClause(entry, themeless[index])}${skippedClause(skipped[index])}${disabledRuleClause(entry, policyReportingRules)}`,
       );
     }
   }
@@ -1203,12 +1271,21 @@ export function formatReport(
  * stylesheet-wide …` clause. ABSENT (not `null`) on every row without one, and
  * `themeless` ({@link themelessAims}) is that diagnosis, aligned by index the
  * same way and optional on the same terms.
+ *
+ * ⚠️ A THIRD additive key rides the same discipline: `skippedAim`,
+ * `{theme, base, state, reason}` naming the kept pair rule 3 could not measure
+ * that an entry's identity conjuncts match — the machine form of the prose's
+ * `— its conjuncts match the pair rule 3 could not measure …` clause, the
+ * pair spelled exactly as the skipped section prints it. ABSENT (not `null`)
+ * on every row without one, and `skipped` ({@link skippedAims}) is that
+ * diagnosis, aligned by index the same way and optional on the same terms.
  */
 export function formatReportJson(
   path: string,
   report: ReturnType<typeof audit>,
   aims: readonly (CrossFileAim | undefined)[] = [],
   themeless: readonly (ThemelessAim | undefined)[] = [],
+  skipped: readonly (SkippedAim | undefined)[] = [],
 ): string {
   // The rows are rebuilt only where an aim exists, and the entry's own keys are
   // spread FIRST so the added one lands last and no existing key order moves. A
@@ -1218,11 +1295,13 @@ export function formatReportJson(
   const unmatchedSuppressions = report.unmatchedSuppressions.map((entry, index) => {
     const aim = aims[index];
     const themelessAim = themeless[index];
-    if (aim === undefined && themelessAim === undefined) return entry;
+    const skippedAim = skipped[index];
+    if (aim === undefined && themelessAim === undefined && skippedAim === undefined) return entry;
     return {
       ...entry,
       ...(aim === undefined ? {} : { crossFileAim: aim }),
       ...(themelessAim === undefined ? {} : { themelessAim }),
+      ...(skippedAim === undefined ? {} : { skippedAim }),
     };
   });
   return JSON.stringify({ path, ...report, unmatchedSuppressions });
