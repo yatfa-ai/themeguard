@@ -918,10 +918,14 @@ the CLI prints as its `unmatched (N)` section. The diagnosis the CLI prints besi
 available to a library caller as well: `crossFileAims(report.unmatchedSuppressions, report.findings,
 resolved)` returns one `{rule, site}` (or `undefined`) per entry, aligned BY INDEX — the leg reports
 slots, so two structurally identical judgements are two answers. Its sibling
-`themelessAims(report.unmatchedSuppressions, report.findings)` returns one `{rule}` (or `undefined`)
-per entry on the same index alignment, naming a `theme` scope that can never match because the rule it
-names reports no theme at all; it needs no resolved sheet, since the theme-lessness it reads is the
-rule's own declared stance (`THEMELESS_RULES`) plus the findings' own `theme: null`. Both read a
+`themelessAims(report.unmatchedSuppressions, report.findings, auditedStylesheet)` returns one
+`{rule}` (or `undefined`) per entry on the same index alignment, naming a `theme` scope that can never
+match because the rule it names reports no theme at all. The theme-lessness read needs no
+`ResolvedStylesheet` — the stance it reads is the rule's own declared one (`THEMELESS_RULES`) plus the
+findings' own `theme: null` — but the third argument is still load-bearing: it is the audited ENTRY
+stylesheet, path-resolved — the same value `audit()` was given as `options.stylesheet` — because a
+`file` scope naming the audited stylesheet itself is not a second dead conjunct, so a same-file
+entry earns the clause; omitting the argument keeps the blanket file-scope decline. Both read a
 FINISHED report and suppress nothing. The suppression matcher's own halves are exported for the same
 reason the diagnoses reuse them rather than re-deriving a twin that could drift: `matchesEntryIdentity`,
 `findingSiteCoordinates`, `findingLinesIn`, `siteLineCovers` and `closureOrigins`.
