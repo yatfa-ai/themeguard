@@ -41,6 +41,29 @@
  * the CLI as its `unmatched` section — exists for: the entry is named there,
  * in declaration order with its reason quoted, still without becoming an
  * error.
+ *
+ * ── The policy axis: `suppress-rule` ──────────────────────────────────────
+ * An entry judges ONE finding. Some judgements are about a RULE — "we have
+ * looked at what `dead-token` says about THIS PROJECT and judged it
+ * not-a-defect" — and no ledger of per-finding entries can say that: the
+ * answer is wholesale, and writing it one entry at a time is one entry per
+ * regeneration of every generated sheet the rule fires on. The optional
+ * top-level `suppress-rule` key is that judgement: an array of rule ids, each
+ * of which stops reporting into the findings and the counts for every
+ * stylesheet this config governs, its findings moving instead to the report's
+ * counted `suppressedDisabled` leg — printed by the CLI as its
+ * `suppressed-disabled` section — under the same counted-not-silent
+ * discipline as every other set-aside population. The key is the POLICY, not
+ * a bigger entry: it names rules and nothing else, so it carries no reason
+ * prose and no scope — a rule is on or off for the project, and the report
+ * says which findings the policy took out. Validation is the same strict
+ * discipline as `suppress`: the key must be an array, and every element must
+ * be a rule id this package knows (the same {@link RULE_IDS} list an entry's
+ * `rule` field validates against) — an unknown id is an ERROR naming the
+ * element, because a policy the tool silently ignored is a user who believes
+ * a rule was off when its findings were reported after all. An empty array is
+ * legal and disables nothing; an absent key is byte-identical to the
+ * one-key config this file has always parsed.
  */
 
 import { readFileSync, statSync } from "node:fs";
@@ -50,7 +73,12 @@ import type { RuleId } from "./rules/finding.js";
 /** The file name, discovered at or above the stylesheet — nearest ancestor wins. */
 export const CONFIG_FILENAME = "themeguard.config.json";
 
-/** Every rule id a suppression entry may name. */
+/**
+ * Every rule id a suppression entry may name — and every rule id the
+ * `suppress-rule` policy may turn off. ONE list is the single source of truth
+ * for both spellings of "a rule this package knows", so a rule the entries
+ * accept and a rule the policy accepts can never disagree.
+ */
 const RULE_IDS: readonly RuleId[] = [
   "collision",
   "dead-token",
@@ -178,16 +206,36 @@ export function configPathFor(cssPath: string): string | null {
 }
 
 /**
+ * The whole document a config file declares: the suppression entries under
+ * `suppress`, and the project-level rule policy under `suppress-rule`. ONE
+ * read hands back both halves because the CLI needs them from one walk —
+ * the entries to merge into the suppression list, the policy to hand the
+ * audit alongside them — and a second read of the same file would be a
+ * second place to disagree about what the file says.
+ */
+export interface ConfigDocument {
+  /** The per-finding judgements, exactly as {@link parseConfig} returns them. */
+  readonly suppress: readonly SuppressionEntry[];
+  /**
+   * The rule ids the project policy turned off — the `suppress-rule` key,
+   * validated against the same rule-id list an entry's `rule` field names.
+   * Empty when the key is absent or an empty array; the audit treats it as
+   * the set of rules whose findings never reach the findings or the counts.
+   */
+  readonly disabledRules: readonly RuleId[];
+}
+
+/**
  * Read and parse the config at a path {@link configPathFor} already found —
  * the half {@link loadConfig} composes with the walk. Separated because the
- * CLI needs the discovery home and the entries from ONE walk, not two: it
+ * CLI needs the discovery home and the document from ONE walk, not two: it
  * resolves `file` scopes against the found config's directory, so it asks for
- * the path and the entries as one answer. A file deleted between discovery
- * and read is `null`, the same answer discovery would have given; any other
- * read failure, and any malformed content, throw exactly as in
+ * the path and the whole document as one answer. A file deleted between
+ * discovery and read is `null`, the same answer discovery would have given;
+ * any other read failure, and any malformed content, throw exactly as in
  * {@link loadConfig} — things the user wrote and must hear about.
  */
-export function readConfig(path: string): readonly SuppressionEntry[] | null {
+export function readConfigDocument(path: string): ConfigDocument | null {
   let raw: string;
   try {
     raw = readFileSync(path, "utf8");
@@ -200,7 +248,18 @@ export function readConfig(path: string): readonly SuppressionEntry[] | null {
     );
   }
 
-  return parseConfig(raw, path);
+  return parseConfigDocument(raw, path);
+}
+
+/**
+ * The config's suppression entries alone — the read the directive scanner and
+ * entries-only callers use, projected from {@link readConfigDocument} so both
+ * spellings parse the file exactly once, through the same validator, with the
+ * same error contract. A file deleted between discovery and read is `null`,
+ * the same answer discovery would have given.
+ */
+export function readConfig(path: string): readonly SuppressionEntry[] | null {
+  return readConfigDocument(path)?.suppress ?? null;
 }
 
 /**
@@ -217,10 +276,24 @@ export function loadConfig(cssPath: string): readonly SuppressionEntry[] | null 
 }
 
 /**
- * Parse and validate config text into entries. Pure — the file read lives in
- * {@link loadConfig} — so the validation rules are testable as data.
+ * Parse and validate config text into the whole document — both top-level
+ * keys, each with the strict never-silently-ignored discipline. Pure — the
+ * file read lives in {@link loadConfig} / {@link readConfigDocument} — so the
+ * validation rules are testable as data.
+ *
+ * `suppress` validates exactly as it always has ({@link parseEntry}, per
+ * entry). `suppress-rule` is the policy half: the key must be an array, and
+ * every element must be one of the {@link RULE_IDS} — the SAME list an
+ * entry's `rule` field validates against, so the two spellings of "a rule
+ * this package knows" cannot drift apart. An unknown element is an ERROR
+ * naming it, reusing the entry sentence's shape: a policy the tool silently
+ * ignored is a user who believes a rule was off while its findings were
+ * reported after all. An empty array is legal and disables nothing; a
+ * duplicated id is harmless (the audit reads the policy as a set) and is not
+ * an error, because it changes no meaning. Neither key is required: `{}` is
+ * the config that governs nothing, byte-identical to no config at all.
  */
-export function parseConfig(raw: string, path: string): readonly SuppressionEntry[] {
+export function parseConfigDocument(raw: string, path: string): ConfigDocument {
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
@@ -235,27 +308,73 @@ export function parseConfig(raw: string, path: string): readonly SuppressionEntr
     throw new ConfigError(path, `expected a JSON object with a "suppress" key`);
   }
 
-  const allowed = ["suppress"];
+  const allowed = ["suppress", "suppress-rule"];
   for (const key of Object.keys(parsed)) {
     if (!allowed.includes(key)) {
       throw new ConfigError(
         path,
-        `unknown key "${key}" — expected "suppress". A key this package does not know would otherwise do nothing, silently.`,
+        `unknown key "${key}" — expected "suppress" or "suppress-rule". A key this package does not know would otherwise do nothing, silently.`,
       );
     }
   }
 
-  if (parsed["suppress"] === undefined) return [];
+  const suppress =
+    parsed["suppress"] === undefined ? [] : parseSuppressList(parsed["suppress"], path);
+  const disabledRules =
+    parsed["suppress-rule"] === undefined
+      ? []
+      : parseDisabledRules(parsed["suppress-rule"], path);
 
-  const list = parsed["suppress"];
-  if (!Array.isArray(list)) {
+  return { suppress, disabledRules };
+}
+
+/**
+ * The config's suppression entries alone — the view the directive scanner
+ * round-trips through (its rule-id validation is THIS file's, unexported, and
+ * this function is its door) and entries-only callers use. The full document
+ * parser is {@link parseConfigDocument}; this is its `suppress` half, with an
+ * unchanged signature so every config written before the policy key existed
+ * parses byte-identically.
+ */
+export function parseConfig(raw: string, path: string): readonly SuppressionEntry[] {
+  return parseConfigDocument(raw, path).suppress;
+}
+
+/** `suppress`, with the array-shape gate it has always had. */
+function parseSuppressList(value: unknown, path: string): readonly SuppressionEntry[] {
+  if (!Array.isArray(value)) {
     throw new ConfigError(
       path,
-      `"suppress" must be an array of entries, got ${JSON.stringify(list)}`,
+      `"suppress" must be an array of entries, got ${JSON.stringify(value)}`,
     );
   }
+  return value.map((item, index) => parseEntry(item, index, path));
+}
 
-  return list.map((item, index) => parseEntry(item, index, path));
+/**
+ * `suppress-rule`, with the same shape gate and the same unknown-id sentence
+ * the entries validate their `rule` field with: the canonical list is
+ * {@link RULE_IDS}, and an element outside it exits 2 naming the element —
+ * never a silent no-op policy.
+ */
+function parseDisabledRules(value: unknown, path: string): readonly RuleId[] {
+  if (!Array.isArray(value)) {
+    throw new ConfigError(
+      path,
+      `"suppress-rule" must be an array of rule ids, got ${JSON.stringify(value)}`,
+    );
+  }
+  return value.map((element, index) => {
+    if (typeof element !== "string" || !RULE_IDS.includes(element as RuleId)) {
+      throw new ConfigError(
+        path,
+        `element ${index + 1} of "suppress-rule": unknown rule ${JSON.stringify(
+          element ?? null,
+        )} — expected one of ${RULE_IDS.join(", ")}`,
+      );
+    }
+    return element as RuleId;
+  });
 }
 
 function parseEntry(item: unknown, index: number, path: string): SuppressionEntry {

@@ -475,6 +475,7 @@ describe("--json carries the same pointer as data", () => {
       "countsByRule",
       "suppressed",
       "unmatchedSuppressions",
+      "suppressedDisabled",
       "skipped",
       "coverage",
     ]);

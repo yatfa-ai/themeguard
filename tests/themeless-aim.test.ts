@@ -580,6 +580,7 @@ describe("--json carries the same diagnosis as data", () => {
       "countsByRule",
       "suppressed",
       "unmatchedSuppressions",
+      "suppressedDisabled",
       "skipped",
       "coverage",
     ]);

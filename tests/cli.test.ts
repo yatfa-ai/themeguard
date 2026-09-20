@@ -888,6 +888,7 @@ describe("--json — the report as data, one NDJSON line per file", () => {
       "countsByRule",
       "suppressed",
       "unmatchedSuppressions",
+      "suppressedDisabled",
       "skipped",
       "coverage",
     ]);

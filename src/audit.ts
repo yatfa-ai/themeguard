@@ -153,6 +153,24 @@ export interface AuditReport {
     SuppressionEntry | SiteScopedSuppressionEntry | FileScopedSuppressionEntry
   )[];
   /**
+   * Findings the project's own RULE POLICY set aside — the rule each was
+   * reported under is named in `AuditOptions.disabledRules`, the config's
+   * `suppress-rule` key. The complement of the per-finding ledger: an entry
+   * judges ONE finding, and no list of entries can say "we have looked at
+   * this RULE for this project and judged it not-a-defect" — the answer is
+   * wholesale, and one entry per finding is one entry per regeneration of
+   * every generated sheet the rule fires on. A disabled rule's findings never
+   * reach `findings`, never reach the per-entry match, and never reach the
+   * counts — the rule's `countsByRule` entry reads `0`, the key stays — and
+   * land here instead, in reading order, under the same counted-not-silent
+   * discipline as `suppressed`: a policy that silenced a rule silently would
+   * be a silence reading as a pass. Each row carries the finding whole and
+   * the policy's own reason, verbatim and the same for every row — the policy
+   * names rules, not prose. Empty on the one-arg call and under a config
+   * that names no rule, which is the byte-identical-before-0.1.27 case.
+   */
+  readonly suppressedDisabled: readonly PolicySuppressedFinding[];
+  /**
    * Per theme, every base-theme token marked `overridden` or `inherited`, with
    * the kind each theme's copy resolves to. A fact inventory, never a
    * judgement: a wholly inherited family is normal (theme-independent tokens
@@ -222,6 +240,20 @@ export interface AuditOptions {
    * the one-arg call.
    */
   readonly stylesheet?: string;
+
+  /**
+   * Rule ids the project policy has turned OFF — the config's `suppress-rule`
+   * key, already validated against the known rule ids by config's parser. A
+   * finding reported by a disabled rule never reaches `findings`, never
+   * reaches the per-entry match below (the policy check precedes it — a
+   * disabled rule's findings are not available for an entry to claim), and
+   * never reaches the counts: its `countsByRule` entry reads `0`, the key
+   * stays. The findings land whole on the report's `suppressedDisabled` leg,
+   * under the same counted-not-silent discipline as `suppressed`. Optional
+   * and additive: a caller that omits it — the one-arg call included — gets
+   * today's behaviour for every rule, byte-identically, and no rule is off.
+   */
+  readonly disabledRules?: readonly RuleId[];
 }
 
 /**
@@ -313,6 +345,28 @@ export interface SuppressedFinding {
    * recorded at.
    */
   readonly entry: SuppressionEntry | SiteScopedSuppressionEntry | FileScopedSuppressionEntry;
+}
+
+/**
+ * A finding the project's RULE POLICY set aside: the finding itself, kept
+ * whole so the reader can still check the measurement it was reported with,
+ * and the disabled rule it was reported under. There is deliberately no user
+ * reason on this row — the policy names rules, not prose — and no matching
+ * entry, because no entry matched: the policy check ran BEFORE the per-entry
+ * match, and the finding never reached it. The `reason` is the policy's own,
+ * verbatim and the same for every row the policy covers.
+ */
+export interface PolicySuppressedFinding {
+  readonly finding: Finding;
+  /** The disabled rule the finding was reported under — the id `suppress-rule` named. */
+  readonly rule: RuleId;
+  /**
+   * The policy's reason, verbatim — the marker the CLI prints where the
+   * `suppressed` section quotes a user's reason. One constant, because the
+   * judgement being recorded is about the RULE, and it is the same judgement
+   * for every finding the rule reported.
+   */
+  readonly reason: string;
 }
 
 /**
@@ -842,6 +896,14 @@ export function audit(
   const matched = new Array<boolean>(suppressions.length).fill(false);
   const suppressed: SuppressedFinding[] = [];
   const kept: Finding[] = [];
+  // The policy check PRECEDES the per-entry match: a disabled rule's findings
+  // never reach the entry loop at all. That ordering is the semantics, not an
+  // optimization — a config entry naming a disabled rule must stay UNMATCHED
+  // (it lands on `unmatchedSuppressions`, where the CLI can tell its author
+  // the rule is off), not silently absorb the honour the policy took away,
+  // and the counts must read the KEPT findings only.
+  const disabled = new Set<RuleId>(options.disabledRules ?? []);
+  const suppressedDisabled: PolicySuppressedFinding[] = [];
   for (const finding of sortFindings([
     ...collisions,
     ...dead,
@@ -853,6 +915,14 @@ export function audit(
     ...unresolvedImports,
     ...themePartials,
   ])) {
+    if (disabled.has(finding.rule)) {
+      suppressedDisabled.push({
+        finding,
+        rule: finding.rule,
+        reason: "[disabled by policy]",
+      });
+      continue;
+    }
     let index = -1;
     for (let i = 0; i < suppressions.length; i += 1) {
       const candidate = suppressions[i] as
@@ -893,6 +963,13 @@ export function audit(
     // CLI's single merge seam (config entries first, then directives), so
     // this order IS the order the judgements were recorded in.
     unmatchedSuppressions: suppressions.filter((_, i) => !matched[i]),
+    // The policy's set-aside, in the same reading order `suppressed` reports:
+    // the sorted findings the policy took out of `findings` and the counts,
+    // named so the silence a disabled rule would otherwise be is a counted
+    // section instead. The counts above read `kept`, so a disabled rule's
+    // entry is `0` with its key intact — the population moved, it did not
+    // vanish from the vocabulary.
+    suppressedDisabled,
     skipped: scale.skipped,
     coverage: coverageReport(resolved),
   };
