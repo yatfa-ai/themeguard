@@ -58,10 +58,18 @@ import { resolveStylesheet, resolveCss } from "../src/resolve.js";
  * SAME fixture under `suppress-rule` and shows the verdict flip on the config
  * key alone.
  *
- * ⚠️ FILE-SCOPED ENTRIES DECLINE WHOLE — the themeless arm's own discipline.
- * The clause's moves are aimed at THIS report's pair, but a file-scoped entry
- * was recorded against ANOTHER stylesheet; the `[file: …]` clauses are what
- * speak for such an entry.
+ * ⚠️ FILE SCOPES: THE DECLINE IS OTHER-FILE ONLY. An entry whose `file` scope
+ * names ANOTHER stylesheet declines whole — the themeless arm's own
+ * discipline, narrowed to the population it was built for: the clause's moves
+ * are aimed at THIS report's pair, and a sibling-recorded entry aims at a
+ * sheet whose skipped rows this report holds none of, so the `[file: …]`
+ * clauses are what speak for it. A scope naming the AUDITED stylesheet itself
+ * aims at a pair one section up — the sub-case the blanket decline knowingly
+ * lost (its deciding comparison was against `options.stylesheet`, which the
+ * derivation never held) — and it EARNS the clause now: the caller threads
+ * the audited path, the fate line stops firing beside it ("that file's
+ * report" is the report in the reader's hands), and a caller that omits the
+ * parameter keeps the blanket decline byte-for-byte.
  */
 
 const tmp = mkdtempSync(join(tmpdir(), "themeguard-skipped-aim-"));
@@ -454,8 +462,8 @@ describe("the POLICY arm is byte-identical — the two carve-outs are disjoint b
   });
 });
 
-describe("a file-scoped entry DECLINES — the themeless arm's own discipline", () => {
-  it("a `file` scope aimed at a kept pair earns no clause; its own carve-out stands", () => {
+describe("a file scope naming ANOTHER stylesheet DECLINES — the decline is other-file only", () => {
+  it("a `file` scope aimed at a SIBLING's kept pair earns no clause; its own carve-out stands", () => {
     // The clause's moves are aimed at THIS report's pair, but the entry was
     // recorded against ANOTHER stylesheet — whose own skipped rows this report
     // holds none of. The `[file: …]` clauses are what speak for such an entry.
@@ -480,6 +488,128 @@ describe("a file-scoped entry DECLINES — the themeless arm's own discipline", 
     expect(result.stdout).not.toContain(SECTION_LINE);
     expect(result.stdout).not.toContain("can never silence a skipped row");
     expect(result.stdout).toContain("an entry carrying a [file: …] clause names the stylesheet");
+  });
+});
+
+describe("a file scope naming the AUDITED stylesheet itself EARNS the clause — the decline's lost sub-case, claimed", () => {
+  // The one sub-case the blanket decline knowingly lost, now claimed. The
+  // deciding comparison — scope against the audited stylesheet — is one the
+  // derivation could not resolve when it was written (`options.stylesheet`
+  // was never in its frame; the themeless arm's own comment names the lost
+  // hint). The CLI holds the resolved path at the call site and threads it,
+  // and for this entry the file conjunct PASSES: the aim here names a pair
+  // this report holds, one section up, so BOTH stock readings are false for
+  // it exactly as they are for an unscoped one, and the fate line — "that
+  // file's report is the one that states its fate" — is circular: the file
+  // is the one being read.
+
+  it("earns the clause, keeps [file: …] on the row, and the fate line does not fire beside it", () => {
+    const entry = write("selffile/a.css", PROBE);
+    config("selffile", {
+      suppress: [
+        {
+          rule: "scale-collapse",
+          tokens: ["--card-bg", "--card-bg-hover"],
+          file: "a.css",
+          reason: "recorded against this sheet",
+        },
+      ],
+    });
+    const result = run(entry);
+    // The fence, first: diagnosis, never suppression — the entry stays on the
+    // unmatched leg, and the exit code does not move.
+    expect(result.code).toBe(EXIT_OK);
+    expect(result.stdout).toContain("suppressed (0)");
+    expect(result.stdout).toContain("unmatched (1)");
+    expect(result.stdout).toContain('skipped (1)');
+    // The whole row, byte for byte: the entry's own `[file: …]` spelling is
+    // quoted back, and the kept-skipped clause rides beside it.
+    expect(unmatchedRow(result)).toBe(
+      '  [unmatched] [scale-collapse] — "recorded against this sheet"' +
+        " [tokens: --card-bg, --card-bg-hover] [file: a.css]" +
+        TRANSLUCENT_CLAUSE,
+    );
+    // The section states the case, and the fate line — whose advice is
+    // circular for a same-file entry — is silent whole.
+    expect(result.stdout).toContain(SECTION_LINE);
+    expect(result.stdout).not.toContain(
+      "an entry carrying a [file: …] clause names the stylesheet",
+    );
+  });
+
+  it("a MIXED section keeps the fate line for its other-file entries — only the same-file population exits it", () => {
+    // The gate narrows per ENTRY, never whole-section: a sibling-scoped entry
+    // beside the same-file one still vouches the carve-out into printing (its
+    // advice is genuinely true there), while the same-file row earns the
+    // clause. Each line states its own entry's truth.
+    const entry = write("mixed/a.css", PROBE);
+    write("mixed/sibling.css", ":root { --s: #101010; }\n.s { color: var(--s); }\n");
+    config("mixed", {
+      suppress: [
+        {
+          rule: "scale-collapse",
+          tokens: ["--card-bg", "--card-bg-hover"],
+          file: "a.css",
+          reason: "this sheet",
+        },
+        {
+          rule: "scale-collapse",
+          tokens: ["--absent-one", "--absent-two"],
+          file: "sibling.css",
+          reason: "the sibling's pair",
+        },
+      ],
+    });
+    const result = run(entry);
+    expect(result.stdout).toContain("unmatched (2)");
+    const rows = result.out.filter((l) => l.startsWith("  [unmatched] "));
+    expect(rows).toHaveLength(2);
+    // The same-file row earns the clause…
+    expect(rows[0]).toBe(
+      '  [unmatched] [scale-collapse] — "this sheet"' +
+        " [tokens: --card-bg, --card-bg-hover] [file: a.css]" +
+        TRANSLUCENT_CLAUSE,
+    );
+    // …and the sibling row keeps the generic prose, the carve-out stays
+    // printed for it, and the kept-skipped section line is present for the
+    // first row alone (the sibling's tokens match no pair here).
+    expect(rows[1]).toBe(
+      '  [unmatched] [scale-collapse] — "the sibling\'s pair"' +
+        " [tokens: --absent-one, --absent-two] [file: sibling.css]",
+    );
+    expect(result.stdout).toContain(SECTION_LINE);
+    expect(result.stdout).toContain(
+      "an entry carrying a [file: …] clause names the stylesheet",
+    );
+  });
+
+  it("--json carries the same aim as data on the earned same-file row — the existing key, no new one", () => {
+    const entry = write("json-self/a.css", PROBE);
+    config("json-self", {
+      suppress: [
+        {
+          rule: "scale-collapse",
+          tokens: ["--card-bg", "--card-bg-hover"],
+          file: "a.css",
+          reason: "recorded against this sheet",
+        },
+      ],
+    });
+    const report = JSON.parse(run("--json", entry).out[0] as string) as {
+      unmatchedSuppressions: Record<string, unknown>[];
+    };
+    expect(report.unmatchedSuppressions).toHaveLength(1);
+    const row = report.unmatchedSuppressions[0] as Record<string, unknown>;
+    expect(row.file).toBe("a.css");
+    expect(row.skippedAim).toEqual({
+      theme: "root",
+      base: "--card-bg",
+      state: "--card-bg-hover",
+      reason: "translucent",
+    });
+    // The sibling machine keys are not minted by this arm.
+    expect("crossFileAim" in row).toBe(false);
+    expect("themelessAim" in row).toBe(false);
   });
 });
 
@@ -697,6 +827,40 @@ describe("the derivation reads the matcher's own semantics — never a re-derive
     expect(skippedAims([unscoped], [finding])).toEqual([
       { theme: "root", base: "--card-bg", state: "--card-bg-hover", reason: "translucent" },
     ]);
+  });
+
+  it("the audited stylesheet as the OPTIONAL third parameter — the same-file sub-case claimed, the blanket decline kept without it", () => {
+    // The parameter is additive exactly like `options.stylesheet` was: a
+    // caller that passes it resolves the comparison the original decline
+    // could not, so a scope naming the audited sheet EARNS the aim; the same
+    // scope with NO parameter still declines (an entry cannot claim a file
+    // the derivation was never told about — the blanket decline,
+    // byte-identical), and a scope naming a DIFFERENT sheet declines even
+    // with the parameter — the decline is other-file only, not
+    // parameter-on. Both spellings of the scope covered.
+    const finding = { theme: "root", base: "--card-bg", state: "--card-bg-hover", reason: "translucent" as const };
+    const aim = { theme: "root", base: "--card-bg", state: "--card-bg-hover", reason: "translucent" };
+    const selfEntry = {
+      rule: "scale-collapse" as const,
+      tokens: ["--card-bg", "--card-bg-hover"],
+      fileResolved: "/proj/self/a.css",
+      reason: "this sheet only",
+    };
+    expect(skippedAims([selfEntry], [finding], "/proj/self/a.css")).toEqual([aim]);
+    expect(skippedAims([selfEntry], [finding])).toEqual([undefined]);
+    expect(skippedAims([selfEntry], [finding], "/proj/self/other.css")).toEqual([undefined]);
+    const selfWritten = {
+      rule: "scale-collapse" as const,
+      tokens: ["--card-bg", "--card-bg-hover"],
+      file: "a.css",
+      reason: "this sheet only",
+    };
+    // The written spelling is compared as the caller handed it — a relative
+    // scope cannot equal an absolute audited path, so it declines; the same
+    // caller that resolves its scopes before handing them over claims the
+    // sub-case, exactly as `matches` reads it.
+    expect(skippedAims([selfWritten], [finding], "/proj/self/a.css")).toEqual([undefined]);
+    expect(skippedAims([selfWritten], [finding], "a.css")).toEqual([aim]);
   });
 
   it("matchesEntryIdentity asks the identity conjuncts ALONE — the pair adapter proves the includes semantics are the matcher's own", () => {

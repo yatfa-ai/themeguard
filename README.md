@@ -668,7 +668,10 @@ third reading since `file` scopes exist: an entry carrying a ` [file: …]` clau
 because it was recorded against ANOTHER stylesheet, which this config governs too. When the section
 holds such an entry, a line beside the prose says exactly that, and names the file the clause names —
 the judgement is neither retireable on this report's word nor unaccounted for: the file it aims at is
-the one whose report states its fate. One boundary the config itself cannot cross, and the section
+the one whose report states its fate. A scope naming the audited stylesheet itself earns none of this:
+the file it names is the one in the reader's hands, so the advice would be circular, and such an entry
+is left to the generic prose or to whichever carve-out does hold for it. One boundary the config itself
+cannot cross, and the section
 states it too: a config governs its own directory and below, so a scope naming a file OUTSIDE that
 subtree can never be honoured by any run — for such an entry the report says exactly that, and that
 report is the fate-statement: re-aim the entry inside the config's directory, or retire it.
@@ -723,10 +726,12 @@ unmatched, the finding still prints, and the counts and the exit code do not mov
 only where the RULE's own stance is theme-less — a scope on a theme-BEARING rule that simply named the
 wrong theme keeps the existing advice, which may yet be true of it, since a config shared across a
 subtree can aim that entry at a sibling file where the theme exists. It is equally withheld from an
-entry that ALSO carries a `file` scope: there the theme would not be the only reason nothing matched —
-the scope names a stylesheet this audit is not — so deleting the theme key would aim nothing, and the
-promise would repeat the very false advice the clause exists to replace; the `[file: …]` carve-outs are
-what speak for such an entry. `cycle-reference` is deliberately
+entry whose `file` scope names ANOTHER stylesheet: there the theme would not be the only reason nothing
+matched — the scope names a stylesheet this audit is not — so deleting the theme key would aim nothing,
+and the promise would repeat the very false advice the clause exists to replace; the `[file: …]`
+carve-outs are what speak for such an entry. A scope naming the audited stylesheet itself is different:
+the file conjunct PASSES there, the theme is the only dead scope, and the entry earns the clause —
+the one sub-case the original blanket decline knowingly lost, now claimed. `cycle-reference` is deliberately
 outside the set: it reports `theme: null` for a loop the base declarations author and a real theme for
 one a theme's own declarations close, so its scope stays aimable in principle even in a run whose loops
 all happen to be base-authored. [`--json`](#--json--the-report-as-data) carries the same diagnosis as
@@ -774,9 +779,12 @@ and the exit code do not move. The aim is asked of the matcher's OWN identity pr
 three identity halves (rule `scale-collapse`, the pair's theme, the pair's two names), so the scalar
 `token` and the `tokens` set fire exactly as they would against a finding, and the theme scope fires
 only on the pair's own theme. One pointer, not a census: the first matching pair in report order. The
-clause is withheld from an entry that ALSO carries a `file` scope (the themeless arm's own discipline —
-the `[file: …]` carve-outs speak for such an entry) and from a scope naming the view where the pair
-MEASURED fine (there the pair never printed as skipped, and the generic advice may genuinely be true).
+clause is withheld from an entry whose `file` scope names ANOTHER stylesheet (the themeless arm's own
+discipline — the `[file: …]` carve-outs speak for such an entry) and from a scope naming the view where
+the pair MEASURED fine (there the pair never printed as skipped, and the generic advice may genuinely
+be true). A scope naming the audited stylesheet itself aims at a pair the skipped section above holds —
+the sub-case the original blanket decline knowingly lost, now claimed, with the self-referential fate
+line silent beside it.
 The disabled arm never fires beside it: a disabled rule's pairs sit on `skippedDisabled`, never kept
 `skipped`, so the two carve-outs are disjoint by construction — the same fixture under `suppress-rule`
 flips the row to the policy carve-out byte-for-byte.
