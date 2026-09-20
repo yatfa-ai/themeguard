@@ -174,7 +174,10 @@ npx themeguard --json src/*.css
 The object is the **same report the library returns**, verbatim, with the audited `path` in front of it:
 `findings` (each with its `rule`, `theme`, `tokens`, `message`, `evidence` and — where the rule has a
 position to give — its `sites`, each naming a token, a line and the imported file it was spliced from),
-`countsByRule`, `suppressed`, `unmatchedSuppressions`, `skipped` (each row's `reason` one of
+`countsByRule`, `suppressed`, `unmatchedSuppressions`, `suppressedDisabled` (the policy's set-aside:
+`{finding, rule, reason}` rows, the reason the policy's own marker, verbatim — see
+[Turning a rule off for the project](#turning-a-rule-off-for-the-project--suppress-rule)), `skipped`
+(each row's `reason` one of
 `translucent` / `not-a-color` / `absent` / `unresolvable`, and an `absent` row carrying the additive
 `declaredIn` pointer — **absent**, never `null`, on every other reason) and `coverage`. Nothing is
 renamed, summarized or dropped. The prose renderer is a lossy projection of that object — sites become
@@ -255,6 +258,9 @@ suppressed (0)
 unmatched (0)
   nothing unmatched — every recorded judgement still covers a finding this report carries.
 
+suppressed-disabled (0)
+  nothing disabled by policy — every finding above was reported by a rule the project has not turned off.
+
 coverage (2 themes, 73 base tokens)
   root: declares all 73 base tokens, inherits 0.
   winter: declares 51 of 73 base tokens, inherits 22 (8 color / 14 non-color).
@@ -303,6 +309,16 @@ declared entries — config or directive — that no finding matched, named with
 judgement that has outlived its defect announces that instead of going silent. It prints even at zero,
 and like `skipped` and `coverage` it never moves the exit code. See
 [When a judgement matches nothing](#when-a-judgement-matches-nothing--unmatched-n).
+
+**`suppressed-disabled` is what your project policy decided.** The complement of the per-finding ledger:
+findings reported by a rule the project turned OFF in the config's `suppress-rule` key. Where
+`suppressed` records a judgement about one finding, this section records a judgement about a RULE —
+"we have looked at what this rule says about this project and judged it not-a-defect" — which no list of
+per-finding entries can say. It prints even at zero, under the same discipline as `skipped`, `coverage`
+and `suppressed`: an empty section is the visible proof that no rule is off. Its findings leave the
+counts and the exit code and carry the policy's own marker instead of a quoted reason — the policy names
+rules, not prose. See
+[Turning a rule off for the project](#turning-a-rule-off-for-the-project--suppress-rule).
 
 ### Stylesheets composed with `@import`
 
@@ -473,6 +489,78 @@ means no suppression at all: no existing line of the report changes, the exit co
 the only difference from a run without the feature is the counted `suppressed` section appended at zero —
 with its `unmatched` complement beside it, also at zero.
 
+### Turning a rule off for the project — `suppress-rule`
+
+An entry judges ONE finding. Some judgements are about a RULE — "we have looked at what `dead-token`
+says about this project and judged it not-a-defect" — and no ledger of per-finding entries can say that:
+the answer is wholesale, and writing it one entry at a time is one entry per finding per regeneration of
+every generated sheet the rule fires on. The config's second top-level key is that judgement — an array
+of rule ids, each of which stops reporting for every stylesheet this config governs:
+
+```json
+{
+  "suppress-rule": ["dead-token"]
+}
+```
+
+A rule named there does not report: its findings leave the per-rule counts (the rule's entry reads `0`
+— the key stays, the population moved) and leave the exit code, and are printed instead in the counted
+`suppressed-disabled (N)` section, one row per finding under the policy's own marker:
+
+```
+suppressed-disabled (2)
+  findings reported by a rule the project turned off — its id is named in the "suppress-rule" key of themeguard.config.json. Counted here, named below — out of the counts and the exit code by project policy, never by silence.
+  [disabled by policy] [dead-token] --topbar-height is declared at :root:402 and no var() in this stylesheet references it.
+  [disabled by policy] [dead-token] --transition-slow is declared at :root:407 and no var() in this stylesheet references it.
+```
+
+The rows carry no quoted reason, deliberately: the policy names rules, not prose. Where a `suppressed`
+row quotes the reason a human gave for ONE finding, a policy row shows the one judgement the project
+made about the RULE — the same for every finding it reported. There are exactly two ways a finding can
+leave the counts — a judgement about the finding (`suppress`, or a directive), and a judgement about its
+rule (`suppress-rule`) — and the report names which one took it.
+
+The policy composes with the ledger: an entry judges the findings a rule still reports, the policy
+decides whether the rule reports at all, and the two answer different questions. A rule whose findings
+are all noise TO THIS PROJECT is policy work; a finding inside a live rule you have personally judged is
+entry work. Both keys in one config is the ordinary shape:
+
+```json
+{
+  "suppress": [
+    { "rule": "collision", "tokens": ["--accent", "--primary"], "reason": "brand tokens are identical by design" }
+  ],
+  "suppress-rule": ["dead-token"]
+}
+```
+
+Validation is the same strict, never-silently-ignored discipline as `suppress`: the key must be an
+array, and every element must be a rule id — the SAME list an entry's `rule` field validates against, so
+the two spellings of "a rule this package knows" cannot drift apart. An unknown id exits `2` naming the
+element (`element 2 of "suppress-rule": unknown rule "no-such-rule" — expected one of …`), because a
+policy the tool silently ignored is a user who believes a rule was off while its findings were reported
+after all. An empty array is legal and disables nothing, and an absent key is byte-identical to the
+one-key config — no existing line of any report changes.
+
+One interaction deserves its name: a `suppress` entry (or a `themeguard-ignore` directive) whose rule
+the policy turned off can never match — the policy runs first, and the finding it aims at is no longer
+available to claim. Such an entry lands on `unmatched`, where the retirement advice ("the defect was
+fixed — retire it") would be FALSE: the rule's findings print one section above, and the judgement is
+one policy decision from working. The report says so instead:
+
+```
+unmatched (1)
+  declared suppressions no finding matched. Either the defect was fixed and the judgement can be retired, or the entry never aimed at a finding that exists — the report cannot tell which.
+  an entry whose rule the project turned OFF in "suppress-rule" is a further case this report CAN tell: a disabled rule reports its findings into the suppressed-disabled section above and can never match, so this judgement is neither expired nor mis-aimed — it is one policy decision away from working. Re-enable the rule, or retire the entry.
+  [unmatched] [dead-token] — "reserved for the print stylesheet" [token: --unused] — [dead-token] is disabled by this project's "suppress-rule" policy, so the judgement can never match while the rule is off: re-enable the rule, or retire the entry.
+```
+
+The clause is claimed only where the disabled rule actually REPORTED into `suppressed-disabled` on this
+report: a rule that is off AND silent leaves its entries' ordinary advice standing, because there "the
+defect was fixed" may be exactly true. The section prints even at zero, and like every counted section
+it never moves the exit code — the exit stays the unsuppressed-findings question, and findings the
+project's own policy set aside are not findings the report stands behind.
+
 ### Marking it at the site — `/* themeguard-ignore … */`
 
 The config records a judgement *next to* the stylesheet; a directive records it *in* the stylesheet, on
@@ -614,6 +702,18 @@ one a theme's own declarations close, so its scope stays aimable in principle ev
 all happen to be base-authored. [`--json`](#--json--the-report-as-data) carries the same diagnosis as
 data, as an additive `themelessAim` key on the unmatched row.
 
+**And one the project disabled itself.** The newest way an entry can match nothing is also the one the
+report has the most to say about: its rule is named in the config's `suppress-rule` key. The policy runs
+BEFORE the entry match — a disabled rule's findings never reach the ledger — so the entry matched
+nothing by construction, and BOTH stock readings are false: the defect is not fixed (the finding prints,
+one section above, under `suppressed-disabled`) and the entry did aim at a finding that exists. The
+retirement advice would steer its author into deleting a judgement one policy decision from working. So
+the row names the truth — a disabled rule cannot match; re-enable the rule, or retire the entry — and
+the section states the case beside its prose, exactly as the three cases above do. The clause is
+claimed only where the disabled rule actually REPORTED on this report: a rule that is off and silent
+leaves its entries' ordinary advice standing, because there the defect may genuinely be gone. See
+[Turning a rule off for the project](#turning-a-rule-off-for-the-project--suppress-rule).
+
 **The section prints even at zero.** An empty section is the proof that every recorded judgement is
 still doing work, and a section that vanished at zero would reproduce exactly the silence this exists to
 remove:
@@ -626,9 +726,10 @@ unmatched (0)
 **It never moves the exit code.** A stale entry is hygiene, not a defect in the stylesheet — the same
 posture `skipped` and `coverage` take. In general the report cannot tell the two causes apart, and its
 prose says so rather than pretending to: either the defect was fixed and the entry should be retired, or
-the entry never aimed at a finding that exists. The three cases it CAN tell — a `file`-scoped entry
-aimed at a sibling, a site-scoped judgement whose finding lives one `@import` edge away, and a `theme`
-scope on a rule that reports no theme — get their own lines beside that prose, and none moves the code
+the entry never aimed at a finding that exists. The four cases it CAN tell — a `file`-scoped entry
+aimed at a sibling, a site-scoped judgement whose finding lives one `@import` edge away, a `theme`
+scope on a rule that reports no theme, and a rule the project's own `suppress-rule` policy turned off —
+get their own lines beside that prose, and none moves the code
 either: the misfiled judgement's finding was already live and already counted, so naming its aim adds a
 pointer and nothing else. What it will not do is stay
 silent, and what it will never do is
@@ -663,6 +764,12 @@ population for `0`'s, and is still printed and counted in the report's `suppress
 is computed over unsuppressed findings only. Code `2` also covers a config that exists but cannot be
 honoured, or a directive that cannot be parsed: the offending entry — or the comment's line — is named
 on stderr, never silently skipped.
+
+The project's own RULE POLICY moves them the same way, one level up: findings reported by a rule named
+in `suppress-rule` leave `1`'s population for `0`'s, printed and counted in `suppressed-disabled` under
+the policy's marker — the exit is computed over kept findings only, and the policy's set-aside is a
+recorded judgement, not a defect the report stands behind. A malformed policy is the config case above:
+exit `2` naming the offending element, never a silently ignored key.
 
 The `unmatched (N)` section is likewise outside the exit: a declared entry that matched nothing is a
 stale or mis-aimed *judgement*, not a defect in the stylesheet, so an expired judgement never turns a
@@ -718,6 +825,12 @@ for (const { finding, reason } of report.suppressed) {
 }
 ```
 
+The project-level face is a library option too: `disabledRules` names rule ids to turn off whole, and
+their findings land on `report.suppressedDisabled` — `{finding, rule, reason}` rows, the reason the
+policy's own marker, verbatim — out of `findings` and the counts, under the same counted-not-silent
+discipline. A disabled rule is checked before `suppressions` is consulted, so an entry aimed at a
+disabled rule stays on `report.unmatchedSuppressions`, where the report can say why it matched nothing.
+
 The complement is on the report too: `report.unmatchedSuppressions` carries the declared entries that
 matched nothing — in declaration order, entries whole — under the same counted-not-silent discipline
 the CLI prints as its `unmatched (N)` section. The diagnosis the CLI prints beside those rows is
@@ -756,8 +869,8 @@ facts and passes no judgement, the upper one judges those facts and nothing else
 | `src/parse.ts` | Which blocks declare custom properties, in which of the four shapes — `:root`, `[data-theme=…]`, `@theme inline`, and a `prefers-color-scheme` `:root` block as its own theme — at which line, and every `var()` **use**, from every declaration rather than only the custom-property ones. |
 | `src/resolve.ts` | What each property resolves to **per theme**, following `var()` chains — through embedded primary-position references (`1px solid var(--c)`) as well as whole-value ones, re-marking a walk that stopped at a compound value `cycle` when the value it stopped at references a loop MEMBER in that theme's view — iterated to a fixed point, so a dependent several hops out is reached too — and minting, names-only, the loops no walk closes (an all-compound loop never completes a circuit from any seed), so their members carry the same fact and rule 6 judges them beside every other loop. Theme absence, translucency, unresolved references and cycles are each represented explicitly — none of them is an error and none is guessed at. |
 | `src/color.ts` | Colour parsing (hex 3/4/6/8, `rgb()`/`rgba()`, `hsl()`/`hsla()`, alpha throughout), WCAG relative luminance, CIE L\*, contrast ratio, source-over compositing. |
-| `src/audit.ts` | `audit(resolved)` — the nine rules in one pass, returning findings tagged `collision`, `dead-token`, `scale-collapse`, `family-consistency`, `unresolved-reference`, `cycle-reference`, `duplicate-declaration`, `unresolved-import` or `theme-partial-token`, plus the per-theme coverage inventory. Passing `suppressions` moves caller-declared findings out of `findings` and the counts into a `suppressed` leg, and the entries that matched nothing onto `unmatchedSuppressions`. Also publishes the suppression matcher's own halves — `matchesEntryIdentity`, `findingSiteCoordinates`, `findingLinesIn`, `siteLineCovers`, `closureOrigins` — and the two reads over a FINISHED report that diagnose an unmatched judgement without suppressing anything: `crossFileAims`, which says which site-scoped judgement would govern a live finding one `@import` edge away, and `themelessAims`, which says which `theme`-scoped judgement names a rule that reports no theme at all. |
-| `src/config.ts` | `themeguard.config.json` — optional, discovered at or above the stylesheet (nearest ancestor wins; a config beside the stylesheet is the first hop). Parses and validates the `suppress` entries (strictly: an unhonourable config is an error naming the entry, never a silent skip) into the structured declarations `audit()` filters a finished report by. |
+| `src/audit.ts` | `audit(resolved)` — the nine rules in one pass, returning findings tagged `collision`, `dead-token`, `scale-collapse`, `family-consistency`, `unresolved-reference`, `cycle-reference`, `duplicate-declaration`, `unresolved-import` or `theme-partial-token`, plus the per-theme coverage inventory. Passing `suppressions` moves caller-declared findings out of `findings` and the counts into a `suppressed` leg, and the entries that matched nothing onto `unmatchedSuppressions`. Passing `disabledRules` moves a whole rule's findings out of `findings` and the counts onto a `suppressedDisabled` leg — the project-level policy face, checked before the per-entry match, so an entry naming a disabled rule stays unmatched and the report can say why. Also publishes the suppression matcher's own halves — `matchesEntryIdentity`, `findingSiteCoordinates`, `findingLinesIn`, `siteLineCovers`, `closureOrigins` — and the two reads over a FINISHED report that diagnose an unmatched judgement without suppressing anything: `crossFileAims`, which says which site-scoped judgement would govern a live finding one `@import` edge away, and `themelessAims`, which says which `theme`-scoped judgement names a rule that reports no theme at all. |
+| `src/config.ts` | `themeguard.config.json` — optional, discovered at or above the stylesheet (nearest ancestor wins; a config beside the stylesheet is the first hop). Parses and validates the `suppress` entries (strictly: an unhonourable config is an error naming the entry, never a silent skip) and the `suppress-rule` policy — an array of rule ids to turn off whole, validated against the same rule-id list the entries' `rule` field names, an unknown id an error naming the element — into the structured declarations `audit()` filters a finished report by. |
 | `src/rules/` | One module per question. Each docstring carries its judgement heuristics and, more usefully, what it deliberately does **not** report. `rules/coverage.ts` also carries the coverage inventory itself — the facts rule 4 is measured over, printed by the CLI as an informational section and never an exit code. `rules/finding.ts` carries the shared citation the clauses are built from — `citeSite` for one site and `citeSiteList` for a list, which `positionClause` is now the `Declared at …` frame around, so a sibling clause needing the same file-aware spelling reads it rather than re-deriving it. It also declares `THEMELESS_RULES` — the five rules that report `theme: null` by construction, the stance the unmatched section's dead-theme-scope diagnosis reads rather than inferring from one run's findings. |
 | `src/cli.ts` | The command. I/O and presentation over `audit()` — no rule, no heuristic and no judgement of its own. Two renderers over the same report: the default prose, and `--json`'s NDJSON projection, which serializes the report verbatim for a pipeline caller. |
 

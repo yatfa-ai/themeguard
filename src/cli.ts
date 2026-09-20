@@ -93,6 +93,22 @@
  * ` [tokens: …]` / ` [file: …]` after the reason), so a run that exits 0
  * shows how far each judgement reached.
  *
+ * The config's second, PROJECT-LEVEL key is `suppress-rule`: an array of rule
+ * ids the adopter has judged not-a-defect for the project whole. A per-finding
+ * ledger structurally cannot say "we have looked at this RULE and judged it" —
+ * the answer is wholesale, and one entry per finding is one entry per
+ * regeneration of every generated sheet the rule fires on. A rule named there
+ * stops reporting: its findings move out of the counts into the counted
+ * `suppressed-disabled` section — printed even at zero, the policy's marker on
+ * every row, out of the exit code by the same not-a-defect-by-declaration
+ * reasoning — and never reach the per-entry match, so a `suppress` entry
+ * naming a disabled rule lands on `unmatched` with an honest clause (a
+ * disabled rule cannot match; re-enable or retire) instead of retirement
+ * advice that would be false. The key is validated with `suppress`'s own
+ * discipline: an unknown rule id exits 2 naming the element, an empty array
+ * disables nothing, and an absent key is byte-identical to the one-key
+ * config.
+ *
  * ── The directives ────────────────────────────────────────────────────────
  * `/* themeguard-ignore … *\/` comments in the stylesheet are the SITE-level
  * complement: the same structured entry, written where a reader of the CSS
@@ -237,6 +253,15 @@
  * opposite case: the audit did not run on the terms the user wrote, so it is
  * exit 2 alongside the usage errors, naming the offending entry.
  *
+ * The project POLICY is outside the exit by the same reasoning, one level up:
+ * findings a rule reported after the project turned that rule off in
+ * `suppress-rule` are recorded — counted, named, the policy's marker on every
+ * row in `suppressed-disabled` — and hold no code. The judgement they carry is
+ * the adopter's own, made about the RULE rather than per finding, and the exit
+ * stays the question it has always been: were there UNSUPPRESSED findings. A
+ * malformed `suppress-rule` is the config case above — exit 2 naming the
+ * element — never a silently ignored key.
+ *
  * The `unmatched` section is likewise outside the exit: a declared entry that
  * matched nothing is a stale, mis-aimed or MISFILED JUDGEMENT, not a defect in
  * the stylesheet, so an expired judgement must never turn a green pipeline red.
@@ -274,7 +299,7 @@ import {
   CONFIG_FILENAME,
   ConfigError,
   configPathFor,
-  readConfig,
+  readConfigDocument,
   type SuppressionEntry,
 } from "./config.js";
 import { DirectiveError } from "./directives.js";
@@ -465,6 +490,42 @@ function themelessClause(
 }
 
 /**
+ * The disabled-rule clause an unmatched judgement earns when its rule is one
+ * the project turned OFF in `suppress-rule` — the additive sentence that keeps
+ * the section's retirement advice from being flatly wrong about it, the same
+ * harm class the cross-file and dead-theme-scope clauses removed before it.
+ *
+ * The section's two readings are "the defect was fixed, retire the entry" and
+ * "the entry never aimed at a finding that exists". For this shape BOTH are
+ * false when the disabled rule is REPORTING: its findings print — one section
+ * above, under `suppressed-disabled` — and the entry did aim at findings that
+ * exist, but the policy check ran before the entry match, so the entry can
+ * never claim one while the rule is off. So this clause says what the report
+ * DOES know: which rule is off, and the two moves that aim the judgement —
+ * re-enable the rule, or retire it.
+ *
+ * `reporting` is the set of disabled rules that actually reported into
+ * `suppressedDisabled` on THIS report. A rule that is disabled AND silent —
+ * it reported nothing — leaves its entries' ordinary advice standing, because
+ * there "the defect was fixed" may be exactly true, and "re-enable" would be
+ * noise beside it. The set is derived from the report alone: only the policy
+ * puts rows on that leg, so membership there IS the fact
+ * rule-reported-and-was-disabled, with no second channel to drift.
+ *
+ * `""` for every other entry, which keeps every row this does not apply to
+ * byte-identical. It joins the tokenScope / scopeSuffix / fileClause /
+ * sourceClause / crossFileClause / themelessClause family and composes last.
+ */
+function disabledRuleClause(
+  entry: SuppressionEntry | SiteScopedSuppressionEntry | FileScopedSuppressionEntry,
+  reporting: ReadonlySet<RuleId>,
+): string {
+  return reporting.has(entry.rule)
+    ? ' — [' + entry.rule + '] is disabled by this project\'s "suppress-rule" policy, so the judgement can never match while the rule is off: re-enable the rule, or retire the entry.'
+    : "";
+}
+
+/**
  * The sibling-scope pointer an `absent` skipped row carries: WHERE the pair
  * that is missing from this theme's view actually lives.
  *
@@ -635,12 +696,19 @@ function auditStylesheet(path: string, io: CliIo, json = false): number {
   // skip. ONE walk serves both halves — the entries, and the home their
   // `file` scopes resolve against below.
   let suppressions;
+  let disabledRules: readonly RuleId[] | undefined;
   let configDir: string | null = null;
   try {
     const configPath = configPathFor(path);
     if (configPath !== null) {
       configDir = dirname(configPath);
-      suppressions = readConfig(configPath);
+      // The whole document, one read: the entries merge into the suppression
+      // list below, the policy rides to the audit beside them. `suppressions`
+      // and `disabledRules` stay undefined together when no config exists —
+      // the byte-identical-before-the-policy-key case.
+      const document = readConfigDocument(configPath);
+      suppressions = document?.suppress;
+      disabledRules = document?.disabledRules;
     }
   } catch (error) {
     io.err(
@@ -729,6 +797,11 @@ function auditStylesheet(path: string, io: CliIo, json = false): number {
   const resolved = resolveStylesheet(sheet);
   const report = audit(resolved, {
     suppressions: [...scoped, ...(sheet.directives ?? [])],
+    // The policy rides to the audit beside the entries: a disabled rule's
+    // findings never reach the per-entry match, so an entry naming a disabled
+    // rule lands on `unmatchedSuppressions` — where the report can say WHY it
+    // matched nothing — instead of suppressing by accident of ordering.
+    disabledRules,
     stylesheet: resolve(path),
   });
   // The cross-file aim of each unmatched site-scoped judgement — DIAGNOSIS
@@ -776,6 +849,14 @@ export function formatReport(
 ): string[] {
   const lines: string[] = [`themeguard — ${path}`, ""];
 
+  // The disabled rules that actually REPORTED on this report — the population
+  // the unmatched section's disabled-rule carve-out can honestly vouch for.
+  // Derived from the report alone: only the policy puts rows on
+  // `suppressedDisabled`, so membership there IS the fact, never a second
+  // derivation of it.
+  const policyReportingRules = new Set(
+    report.suppressedDisabled.map((row) => row.rule),
+  );
   for (const rule of RULE_ORDER) {
     const found = report.findings.filter((f) => f.rule === rule);
     lines.push(`${rule} (${report.countsByRule[rule]})`);
@@ -889,6 +970,11 @@ export function formatReport(
         "  an entry whose [theme: …] scope names a rule measured STYLESHEET-WIDE is a further case this report CAN tell: five of the nine rules report no theme at all, so such a scope matches nothing in this file, in any file of the closure, or in any run of this config. Neither reading above holds for it — the defect is not fixed, and the entry did aim at a finding that exists — so it is one key deletion from working rather than retirable, and its line names which key.",
       );
     }
+    if (report.unmatchedSuppressions.some((entry) => policyReportingRules.has(entry.rule))) {
+      lines.push(
+        '  an entry whose rule the project turned OFF in "suppress-rule" is a further case this report CAN tell: a disabled rule reports its findings into the suppressed-disabled section above and can never match, so this judgement is neither expired nor mis-aimed — it is one policy decision away from working. Re-enable the rule, or retire the entry.',
+      );
+    }
     if (
       report.unmatchedSuppressions.some(
         (entry) => entry.file !== undefined && !beyondConfigHome(entry),
@@ -905,8 +991,33 @@ export function formatReport(
     }
     for (const [index, entry] of report.unmatchedSuppressions.entries()) {
       lines.push(
-        `  [unmatched] [${entry.rule}] — "${entry.reason}"${tokenScope(entry)}${scopeSuffix(entry)}${fileClause(entry)}${sourceClause(entry)}${crossFileClause(aims[index])}${themelessClause(entry, themeless[index])}`,
+        `  [unmatched] [${entry.rule}] — "${entry.reason}"${tokenScope(entry)}${scopeSuffix(entry)}${fileClause(entry)}${sourceClause(entry)}${crossFileClause(aims[index])}${themelessClause(entry, themeless[index])}${disabledRuleClause(entry, policyReportingRules)}`,
       );
+    }
+  }
+  lines.push("");
+
+  // The policy's counted section, in the same counted-not-silent discipline
+  // as `suppressed`: findings a PROJECT POLICY set aside — the rule each was
+  // reported under is named in the config's `suppress-rule` key — leave the
+  // per-rule counts above and the exit code, but never the record. The
+  // headline prints even at zero: an empty section is the proof that no rule
+  // is off, and a section that vanished at zero would read as a pass by
+  // omission — the same silence discipline every counted section here is
+  // built against. The rows print the policy's marker where `suppressed`
+  // quotes a per-finding reason, because the policy names rules, not prose:
+  // the judgement it records is the same for every finding the rule reported.
+  lines.push(`suppressed-disabled (${report.suppressedDisabled.length})`);
+  if (report.suppressedDisabled.length === 0) {
+    lines.push(
+      "  nothing disabled by policy — every finding above was reported by a rule the project has not turned off.",
+    );
+  } else {
+    lines.push(
+      '  findings reported by a rule the project turned off — its id is named in the "suppress-rule" key of themeguard.config.json. Counted here, named below — out of the counts and the exit code by project policy, never by silence.',
+    );
+    for (const { finding, reason } of report.suppressedDisabled) {
+      lines.push(`  ${reason} [${finding.rule}] ${finding.message}`);
     }
   }
   lines.push("");
@@ -986,8 +1097,8 @@ export function formatReport(
  * against, and the prose header quotes it the same way.
  *
  * ⚠️ The key order is the REPORT OBJECT's own insertion order — `findings`,
- * `countsByRule`, `suppressed`, `unmatchedSuppressions`, `skipped`,
- * `coverage` (`audit.ts`'s return literal). That is NOT the prose renderer's
+ * `countsByRule`, `suppressed`, `unmatchedSuppressions`, `suppressedDisabled`,
+ * `skipped`, `coverage` (`audit.ts`'s return literal). That is NOT the prose renderer's
  * section order, which prints `skipped` BEFORE `suppressed`. Follow the
  * object: `JSON.stringify` preserves insertion order, and the project already
  * treats that order as a compatibility surface — `tests/package.test.ts` pins

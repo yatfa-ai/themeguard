@@ -56,9 +56,10 @@ export {
   type SiteCoordinate,
   type SuppressedFinding,
   type SiteScopedSuppressionEntry,
+  type PolicySuppressedFinding,
 } from "./audit.js";
 
-export type { SuppressionEntry } from "./config.js";
+export type { SuppressionEntry, ConfigDocument } from "./config.js";
 
 export {
   sortFindings,
