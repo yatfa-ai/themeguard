@@ -477,6 +477,7 @@ describe("--json carries the same pointer as data", () => {
       "unmatchedSuppressions",
       "suppressedDisabled",
       "skipped",
+      "skippedDisabled",
       "coverage",
     ]);
     // The finding is still LIVE in the data, exactly as the prose reports it.

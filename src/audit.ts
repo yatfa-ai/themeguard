@@ -98,9 +98,30 @@ export interface AuditReport {
    * the row then names the sibling theme that declares it) or `unresolvable`
    * (a `var()` chain found nothing, or came back around). Reported so the
    * silence is countable rather than looking like a pass, and split so a row
-   * does not assert something about a value the view has none of.
+   * does not assert something about a value the view has none of. A rule the
+   * project's policy turned off does not report here: its skipped pairs are
+   * on {@link AuditReport.skippedDisabled}, the channel's counted set-aside.
    */
   readonly skipped: readonly SkippedPair[];
+  /**
+   * The skipped pairs the project's RULE POLICY set aside — the
+   * `suppress-rule` key named the rule they were reported under. The skipped
+   * channel is `AuditReport`'s second output leg beside `findings`, and the
+   * policy partitions both: a rule turned off whole stops reporting into
+   * EITHER channel, so its skipped pairs leave `skipped` exactly as its
+   * findings leave `findings`, and land here — whole, in reading order,
+   * under the same counted-not-silent discipline — instead of printing
+   * beside the kept pairs while `suppressedDisabled` asserted the rule
+   * silent. `scale-collapse` is the only rule with a skipped channel (every
+   * other rule returns `Finding[]` and is fully partitioned by the findings
+   * loop), so the set-aside names that one rule; a second producer would
+   * extend this loop, not invent a new leg. Each row carries the policy's
+   * own marker as its `reason`, verbatim and the same for every row — the
+   * policy names rules, not prose — while the pair's own `reason` (WHICH
+   * silence it is) stays nested inside, untouched. Empty on the one-arg call
+   * and under a config that names no rule.
+   */
+  readonly skippedDisabled: readonly PolicySuppressedSkipped[];
   /**
    * Findings the caller declared deliberate via `AuditOptions.suppressions` —
    * each carried whole, with the user's reason, under the same
@@ -249,9 +270,14 @@ export interface AuditOptions {
    * disabled rule's findings are not available for an entry to claim), and
    * never reaches the counts: its `countsByRule` entry reads `0`, the key
    * stays. The findings land whole on the report's `suppressedDisabled` leg,
-   * under the same counted-not-silent discipline as `suppressed`. Optional
-   * and additive: a caller that omits it — the one-arg call included — gets
-   * today's behaviour for every rule, byte-identically, and no rule is off.
+   * under the same counted-not-silent discipline as `suppressed`. The same
+   * partition covers the report's SECOND output channel: a rule turned off
+   * whole stops reporting into `skipped` too, and its skipped pairs land
+   * whole on `skippedDisabled` instead of printing beside the kept pairs —
+   * `scale-collapse` is the only rule with that channel, so the leg's rows
+   * all name it. Optional and additive: a caller that omits it — the one-arg
+   * call included — gets today's behaviour for every rule, byte-identically,
+   * and no rule is off.
    */
   readonly disabledRules?: readonly RuleId[];
 }
@@ -365,6 +391,32 @@ export interface PolicySuppressedFinding {
    * `suppressed` section quotes a user's reason. One constant, because the
    * judgement being recorded is about the RULE, and it is the same judgement
    * for every finding the rule reported.
+   */
+  readonly reason: string;
+}
+
+/**
+ * A skipped pair the project's RULE POLICY set aside: the pair itself, kept
+ * whole — its own `reason` (WHICH silence it is: translucent / not-a-color /
+ * absent / unresolvable) and its `declaredIn` sibling scopes included — and
+ * the disabled rule it was reported under. There is deliberately no user
+ * reason on this row, for the same reason {@link PolicySuppressedFinding}
+ * carries none: the policy names rules, not prose, and the judgement it
+ * records is about the RULE, the same for every row it covers. The two rows
+ * are sibling shapes rather than one union because the two channels answer
+ * different questions — a finding is a defect held back, a skipped pair is a
+ * measurement never taken — and a consumer reading one leg should not have
+ * to branch to know which question each row answers.
+ */
+export interface PolicySuppressedSkipped {
+  /** The pair the policy set aside, whole. */
+  readonly skipped: SkippedPair;
+  /** The disabled rule the pair was reported under — the id `suppress-rule` named. */
+  readonly rule: RuleId;
+  /**
+   * The policy's reason, verbatim — the marker the CLI prints where the
+   * `skipped` section's kept rows print the pair's own skip reason. One
+   * constant, because the judgement being recorded is about the RULE.
    */
   readonly reason: string;
 }
@@ -544,6 +596,15 @@ export interface CrossFileAim {
  * read, hoisted; `SiteCoordinate` satisfies its structural parameter.
  */
 const citeSite = citeSiteFromFinding;
+
+/**
+ * The policy's own reason, printed on every row either policy leg carries.
+ * The policy names RULES, not prose — the judgement it records is about the
+ * rule, and it is the same judgement for every finding and every skipped
+ * pair the rule reported — so the marker is one constant the partition loops
+ * share, never a second spelling per loop.
+ */
+const DISABLED_BY_POLICY = "[disabled by policy]";
 
 /**
  * For each unmatched entry, the live finding it would govern IN ANOTHER FILE —
@@ -919,7 +980,7 @@ export function audit(
       suppressedDisabled.push({
         finding,
         rule: finding.rule,
-        reason: "[disabled by policy]",
+        reason: DISABLED_BY_POLICY,
       });
       continue;
     }
@@ -942,6 +1003,26 @@ export function audit(
       const entry = suppressions[index] as SuppressionEntry | SiteScopedSuppressionEntry | FileScopedSuppressionEntry;
       suppressed.push({ finding, reason: entry.reason, entry });
     }
+  }
+
+  // The skipped channel partitions at the SAME `disabled` set, on the
+  // findings loop's own semantics: a rule turned off whole stops reporting
+  // into either channel the report has, so its skipped pairs move off
+  // `skipped` exactly as its findings move off `findings` — onto a counted
+  // set-aside, never into a silence. `scale-collapse` is the only rule with
+  // a skipped channel (every other rule returns `Finding[]` and was fully
+  // partitioned by the loop above), so the check names that one rule id; a
+  // second producer would extend this loop, not invent a new leg. The kept
+  // pairs keep the rule's own reading order, and so do the set-aside rows:
+  // the policy moved the population, it did not reshuffle it.
+  const skippedDisabled: PolicySuppressedSkipped[] = [];
+  const keptSkipped: SkippedPair[] = [];
+  if (disabled.has("scale-collapse")) {
+    for (const pair of scale.skipped) {
+      skippedDisabled.push({ skipped: pair, rule: "scale-collapse", reason: DISABLED_BY_POLICY });
+    }
+  } else {
+    keptSkipped.push(...scale.skipped);
   }
 
   return {
@@ -970,7 +1051,13 @@ export function audit(
     // entry is `0` with its key intact — the population moved, it did not
     // vanish from the vocabulary.
     suppressedDisabled,
-    skipped: scale.skipped,
+    skipped: keptSkipped,
+    // The skipped channel's own set-aside, in the rule's reading order — the
+    // policy half of the leg above, named so a disabled rule's skipped pairs
+    // are a counted section and not a silence reading as a pass. Emitted
+    // after `skipped` so the two legs of one channel sit beside each other
+    // in the report object's insertion order, which `--json` preserves.
+    skippedDisabled,
     coverage: coverageReport(resolved),
   };
 }

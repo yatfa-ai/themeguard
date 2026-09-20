@@ -497,20 +497,28 @@ function themelessClause(
  *
  * The section's two readings are "the defect was fixed, retire the entry" and
  * "the entry never aimed at a finding that exists". For this shape BOTH are
- * false when the disabled rule is REPORTING: its findings print — one section
- * above, under `suppressed-disabled` — and the entry did aim at findings that
- * exist, but the policy check ran before the entry match, so the entry can
- * never claim one while the rule is off. So this clause says what the report
- * DOES know: which rule is off, and the two moves that aim the judgement —
- * re-enable the rule, or retire it.
+ * false when the disabled rule is REPORTING: its output prints in the
+ * report's counted policy sections — findings under `suppressed-disabled`,
+ * skipped pairs under `skipped-disabled` — and the entry did aim at
+ * measurements that exist, but the policy check ran before the entry match,
+ * so the entry can never claim one while the rule is off. So this clause
+ * says what the report DOES know: which rule is off, and the two moves that
+ * aim the judgement — re-enable the rule, or retire it.
  *
- * `reporting` is the set of disabled rules that actually reported into
- * `suppressedDisabled` on THIS report. A rule that is disabled AND silent —
- * it reported nothing — leaves its entries' ordinary advice standing, because
- * there "the defect was fixed" may be exactly true, and "re-enable" would be
- * noise beside it. The set is derived from the report alone: only the policy
- * puts rows on that leg, so membership there IS the fact
- * rule-reported-and-was-disabled, with no second channel to drift.
+ * `reporting` is the set of disabled rules that actually REPORTED on THIS
+ * report, derived from the report alone: only the policy puts rows on its
+ * two policy legs — `suppressedDisabled` and `skippedDisabled`, the findings
+ * channel and the skipped one — so membership there IS the fact
+ * rule-reported-and-was-disabled, with no second derivation of it to drift.
+ * BOTH legs count: the report has two output channels and the policy
+ * partitions both, so a rule that reported into `skipped` ONLY — its
+ * findings silent — is a reporting rule here exactly as a findings-reporting
+ * one is; reading the findings leg alone would call such a rule silent and
+ * leave its entries' ordinary advice standing while the pairs printed one
+ * section up. A rule that is disabled AND silent on BOTH channels — it
+ * reported nothing anywhere — leaves its entries' ordinary advice standing,
+ * because there "the defect was fixed" may be exactly true, and "re-enable"
+ * would be noise beside it.
  *
  * `""` for every other entry, which keeps every row this does not apply to
  * byte-identical. It joins the tokenScope / scopeSuffix / fileClause /
@@ -851,12 +859,19 @@ export function formatReport(
 
   // The disabled rules that actually REPORTED on this report — the population
   // the unmatched section's disabled-rule carve-out can honestly vouch for.
-  // Derived from the report alone: only the policy puts rows on
-  // `suppressedDisabled`, so membership there IS the fact, never a second
-  // derivation of it.
-  const policyReportingRules = new Set(
-    report.suppressedDisabled.map((row) => row.rule),
-  );
+  // Derived from the report alone: only the policy puts rows on the two
+  // policy legs, so membership there IS the fact, never a second derivation
+  // of it. BOTH legs count, because the report has two output channels and
+  // the policy partitions both: a rule that reported into `skipped` ONLY
+  // (its findings silent) must earn the carve-out exactly as a
+  // findings-reporting rule does — the old single-leg derivation read such a
+  // rule as "disabled AND silent" and restored the false retirement advice
+  // the carve-out was built to remove, while the pairs printed one section
+  // up.
+  const policyReportingRules = new Set<RuleId>([
+    ...report.suppressedDisabled.map((row) => row.rule),
+    ...report.skippedDisabled.map((row) => row.rule),
+  ]);
   for (const rule of RULE_ORDER) {
     const found = report.findings.filter((f) => f.rule === rule);
     lines.push(`${rule} (${report.countsByRule[rule]})`);
@@ -867,12 +882,53 @@ export function formatReport(
   // Never dropped: an unmeasurable pair is silence, and silence reads as a pass.
   lines.push(`skipped (${report.skipped.length})`);
   if (report.skipped.length === 0) {
-    lines.push("  nothing skipped — every pair rule 3 derived was measurable.");
+    if (report.skippedDisabled.length > 0) {
+      // The policy holds the pairs, so measurability was never established
+      // for them — this line must not claim it. The truthful sentence names
+      // where the pairs went: the counted set-aside printed directly below.
+      // (The partition is all-or-nothing per rule — `scale-collapse` is the
+      // skipped channel's only producer — so a kept count of 0 beside a
+      // populated set-aside means every pair the rule derived is below.)
+      lines.push(
+        "  nothing kept here — every pair rule 3 derived was set aside below by project policy, not found measurable.",
+      );
+    } else {
+      lines.push("  nothing skipped — every pair rule 3 derived was measurable.");
+    }
   } else {
     lines.push("  pairs rule 3 could not measure. Not findings, and not a pass either.");
     for (const pair of report.skipped) {
       lines.push(
         `  [skipped] ${pair.state} against ${pair.base} in theme "${pair.theme}": ` +
+          `${pair.reason}${siblingScopeClause(pair)}`,
+      );
+    }
+  }
+  // The skipped channel's own policy set-aside — the counted-not-silent
+  // discipline applied to the partition: a rule the project turned off
+  // stops reporting into THIS channel too, and pairs that silently
+  // vanished under the policy would reproduce exactly the silence this
+  // section is built against. Counted under its own headline, named with
+  // the policy's marker beside the channel's own. The headline prints only
+  // when the set-aside holds rows — an always-printed empty headline would
+  // change every policy-free report's bytes — and that gate is a DIFFERENT
+  // surface from the zero line in the kept section above: the gate protects
+  // policy-free byte-identity, while the zero line is policy-on output
+  // territory and names this set-aside when it holds rows, never asserting
+  // a measurability the run did not establish. Each row reuses the kept
+  // rows' vocabulary — state,
+  // base, theme, the pair's own reason, the sibling-scope clause — so a
+  // reader moves between the two lists without learning a second shape;
+  // the only difference is the marker, because WHO removed the row from
+  // this list is the fact the row exists to state.
+  if (report.skippedDisabled.length > 0) {
+    lines.push(`skipped-disabled (${report.skippedDisabled.length})`);
+    lines.push(
+      '  skipped pairs a rule the project turned off in the "suppress-rule" key of themeguard.config.json also reported — counted here, named below, out of this section by project policy and never by a measurement: the pairs are exactly as unmeasured as they were, and the rule is off whole, its findings set aside under suppressed-disabled just as its pairs are set aside here.',
+    );
+    for (const { skipped: pair } of report.skippedDisabled) {
+      lines.push(
+        `  [disabled by policy] [skipped] ${pair.state} against ${pair.base} in theme "${pair.theme}": ` +
           `${pair.reason}${siblingScopeClause(pair)}`,
       );
     }
@@ -972,7 +1028,7 @@ export function formatReport(
     }
     if (report.unmatchedSuppressions.some((entry) => policyReportingRules.has(entry.rule))) {
       lines.push(
-        '  an entry whose rule the project turned OFF in "suppress-rule" is a further case this report CAN tell: a disabled rule reports its findings into the suppressed-disabled section above and can never match, so this judgement is neither expired nor mis-aimed — it is one policy decision away from working. Re-enable the rule, or retire the entry.',
+        '  an entry whose rule the project turned OFF in "suppress-rule" is a further case this report CAN tell: a disabled rule reports into the counted policy sections of this report — suppressed-disabled for its findings, skipped-disabled for the pairs it could not measure — and can never match, so this judgement is neither expired nor mis-aimed — it is one policy decision away from working. Re-enable the rule, or retire the entry.',
       );
     }
     if (
@@ -1098,13 +1154,19 @@ export function formatReport(
  *
  * ⚠️ The key order is the REPORT OBJECT's own insertion order — `findings`,
  * `countsByRule`, `suppressed`, `unmatchedSuppressions`, `suppressedDisabled`,
- * `skipped`, `coverage` (`audit.ts`'s return literal). That is NOT the prose renderer's
+ * `skipped`, `skippedDisabled`, `coverage` (`audit.ts`'s return literal). That
+ * is NOT the prose renderer's
  * section order, which prints `skipped` BEFORE `suppressed`. Follow the
  * object: `JSON.stringify` preserves insertion order, and the project already
  * treats that order as a compatibility surface — `tests/package.test.ts` pins
  * `JSON.stringify(report.countsByRule)` as an exact byte string, key order
  * included. A later reader "fixing" this to match the prose would break a
  * consumer for cosmetics.
+ *
+ * `skippedDisabled` is the skipped channel's own policy leg, appended after
+ * `skipped` so the two legs of one channel sit beside each other: the same
+ * additive-key status every other report-level leg carries, empty — not
+ * absent — wherever no rule is off, exactly as `suppressedDisabled` is.
  *
  * ⚠️ `sites` is ABSENT on the findings of rules that carry none
  * (`dead-token`, `unresolved-reference`, `duplicate-declaration`) rather than

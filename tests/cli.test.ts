@@ -890,6 +890,7 @@ describe("--json — the report as data, one NDJSON line per file", () => {
       "unmatchedSuppressions",
       "suppressedDisabled",
       "skipped",
+      "skippedDisabled",
       "coverage",
     ]);
     // The path is the string the CALLER named, not a resolved absolute — it
