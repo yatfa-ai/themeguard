@@ -582,6 +582,7 @@ describe("--json carries the same diagnosis as data", () => {
       "unmatchedSuppressions",
       "suppressedDisabled",
       "skipped",
+      "skippedDisabled",
       "coverage",
     ]);
     // The findings are still LIVE in the data, exactly as the prose reports.

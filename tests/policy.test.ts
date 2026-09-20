@@ -266,7 +266,6 @@ describe("audit — the partition widens", () => {
     expect(withEntry.unmatchedSuppressions).toEqual([entry]);
     expect(withEntry.suppressedDisabled).toEqual(report.suppressedDisabled);
   });
-
   it("an entry naming a LIVE rule still suppresses, byte-identically, beside a policy", () => {
     const entry = {
       rule: "scale-collapse" as const,
@@ -398,7 +397,7 @@ describe("the unmatched interaction — the entry a policy disabled", () => {
     expect(result.out).toContain("suppressed-disabled (1)");
     expect(result.out).toContain("unmatched (1)");
     expect(result.out).toContain(
-      '  an entry whose rule the project turned OFF in "suppress-rule" is a further case this report CAN tell: a disabled rule reports its findings into the suppressed-disabled section above and can never match, so this judgement is neither expired nor mis-aimed — it is one policy decision away from working. Re-enable the rule, or retire the entry.',
+      '  an entry whose rule the project turned OFF in "suppress-rule" is a further case this report CAN tell: a disabled rule reports into the counted policy sections of this report — suppressed-disabled for its findings, skipped-disabled for the pairs it could not measure — and can never match, so this judgement is neither expired nor mis-aimed — it is one policy decision away from working. Re-enable the rule, or retire the entry.',
     );
     const row = result.out.find((l) => l.startsWith("  [unmatched] "));
     expect(row).toBeDefined();
@@ -465,5 +464,256 @@ describe("the unmatched interaction — the entry a policy disabled", () => {
     const row = result.out.find((l) => l.startsWith("  [unmatched] "));
     expect(row).toBeDefined();
     expect(row).toContain("re-enable the rule, or retire the entry");
+  });
+});
+
+/**
+ * THE SKIPPED CHANNEL — the policy partitions the report's SECOND output.
+ *
+ * `scale-collapse` is the one rule with two output channels: it returns a
+ * `{findings, skipped}` pair where every other rule returns `Finding[]`, so
+ * the findings-only partition loop left its skipped rows on the report
+ * byte-identically to the no-policy control — a machine consumer reading
+ * `suppressedDisabled: []` concluded the rule was silent while the same
+ * object carried its output. The skipped channel now partitions at the same
+ * `disabled` set onto `skippedDisabled`, counted and named in the skipped
+ * section, and the unmatched section's carve-out derives its reporting-rule
+ * fact from BOTH legs — a skipped-only disabled rule earns the
+ * one-policy-decision-away truth instead of retirement advice.
+ */
+describe("the skipped channel — the policy partitions the second output", () => {
+  /**
+   * Skipped rows WITHOUT scale-collapse findings: a translucent pair and a
+   * pair of lengths — both arms the skip branch reports, and neither one a
+   * finding. `--used` gives the sheet one live token so it is a real audit.
+   */
+  const SKIPPED_ONLY_CSS = `
+:root {
+  --scrim: #ffffff33;
+  --scrim-hover: #ffffff55;
+  --gap: 4px;
+  --gap-hover: 8px;
+  --used: #101010;
+}
+
+.x { background: var(--scrim) var(--gap) var(--used); }
+.y { background: var(--scrim-hover) var(--gap-hover); }
+`;
+
+  /**
+   * BOTH channels at once: the two-rule sheet's real scale-collapse finding
+   * (--panel/--panel-hover sit under 4 L* apart) beside a translucent pair.
+   */
+  const COMPOSITE_CSS = `
+:root {
+  --used: #101010;
+  --unused: #909090;
+  --panel: #202020;
+  --panel-hover: #252525;
+  --scrim: #ffffff33;
+  --scrim-hover: #ffffff55;
+}
+
+.x { color: var(--used); }
+.panel { background: var(--panel); }
+.panel:hover { background: var(--panel-hover); }
+.scrim { background: var(--scrim); }
+.scrim:hover { background: var(--scrim-hover); }
+`;
+
+  const SKIPPED_ONLY_PATH = write("skipped-only.css", SKIPPED_ONLY_CSS);
+  const COMPOSITE_PATH = write("composite.css", COMPOSITE_CSS);
+
+  function auditOf(path: string, disabledRules?: readonly RuleId[]) {
+    return audit(resolveStylesheet(loadStylesheet(path)), {
+      ...(disabledRules === undefined ? {} : { disabledRules }),
+    });
+  }
+
+  it("a disabled scale-collapse's skipped pairs move off `skipped`, whole, onto `skippedDisabled`", () => {
+    const plain = auditOf(SKIPPED_ONLY_PATH);
+    // The sheet really does carry skipped rows and no scale-collapse
+    // findings — the exact population the old partition left leaking.
+    expect(plain.findings.map((f) => f.rule)).toEqual([]);
+    expect(plain.skipped).toHaveLength(2);
+    expect(plain.skippedDisabled).toEqual([]);
+
+    const policy = auditOf(SKIPPED_ONLY_PATH, ["scale-collapse"]);
+    // The population moved, it did not vanish: the kept leg is empty and
+    // the set-aside carries the pairs whole, in the rule's own reading
+    // order, under the policy's marker.
+    expect(policy.skipped).toEqual([]);
+    expect(policy.findings).toEqual([]);
+    expect(policy.skippedDisabled).toHaveLength(2);
+    expect(
+      policy.skippedDisabled.map((row) => ({
+        theme: row.skipped.theme,
+        base: row.skipped.base,
+        state: row.skipped.state,
+        reason: row.skipped.reason,
+      })),
+    ).toEqual(
+      plain.skipped.map((pair) => ({
+        theme: pair.theme,
+        base: pair.base,
+        state: pair.state,
+        reason: pair.reason,
+      })),
+    );
+    // The policy names rules, not prose — the same marker the findings leg
+    // carries — while each pair's own skip reason stays nested, untouched.
+    for (const row of policy.skippedDisabled) {
+      expect(row.rule).toBe("scale-collapse");
+      expect(row.reason).toBe("[disabled by policy]");
+    }
+    // Both arms the skip branch reports ride along, order-agnostically: the
+    // set-aside preserves the rule's own reading order (asserted above
+    // against `plain`), it does not reshuffle it.
+    expect(policy.skippedDisabled.map((row) => row.skipped.reason).sort()).toEqual([
+      "not-a-color",
+      "translucent",
+    ]);
+  });
+
+  it("a policy naming a DIFFERENT rule leaves every skipped pair exactly where it was", () => {
+    const plain = auditOf(SKIPPED_ONLY_PATH);
+    const other = auditOf(SKIPPED_ONLY_PATH, ["dead-token"]);
+    expect(other.skipped).toEqual(plain.skipped);
+    expect(other.skippedDisabled).toEqual([]);
+    expect(other).toEqual(plain);
+  });
+
+  it("a policy-free report still sets nothing aside from either channel", () => {
+    const oneArg = audit(resolveStylesheet(loadStylesheet(SKIPPED_ONLY_PATH)));
+    expect(oneArg.skippedDisabled).toEqual([]);
+    expect(oneArg).toEqual(auditOf(SKIPPED_ONLY_PATH, []));
+  });
+
+  it("BOTH channels partition on one disabled rule: findings to the findings leg, pairs to the skipped leg", () => {
+    const policy = auditOf(COMPOSITE_PATH, ["scale-collapse"]);
+    // Only the disabled rule's findings leave: `--unused` still reports, and
+    // holds the exit exactly as it would beside a live scale-collapse.
+    expect(policy.findings.map((f) => f.rule)).toEqual(["dead-token"]);
+    expect(policy.skipped).toEqual([]);
+    expect(policy.suppressedDisabled.map((row) => row.rule)).toEqual(["scale-collapse"]);
+    expect(policy.suppressedDisabled[0]!.finding.tokens).toContain("--panel-hover");
+    expect(policy.skippedDisabled).toHaveLength(1);
+    expect(policy.skippedDisabled[0]!.skipped.reason).toBe("translucent");
+    expect(policy.skippedDisabled[0]!.rule).toBe("scale-collapse");
+  });
+
+  it("the skipped section counts the set-aside beside the kept rows, under its own headline", () => {
+    config("skipped-prose", { "suppress-rule": ["scale-collapse"] });
+    const path = write("skipped-prose/sheet.css", COMPOSITE_CSS);
+    const result = run(path);
+    // The kept leg keeps its own count; the set-aside is counted under its
+    // own headline, named, and never a silence reading as a pass.
+    expect(result.out).toContain("skipped (0)");
+    expect(result.out).toContain("skipped-disabled (1)");
+    expect(result.out).toContain(
+      '  skipped pairs a rule the project turned off in the "suppress-rule" key of themeguard.config.json also reported — counted here, named below, out of this section by project policy and never by a measurement: the pairs are exactly as unmeasured as they were, and the rule is off whole, its findings set aside under suppressed-disabled just as its pairs are set aside here.',
+    );
+    // The row keeps the channel's own vocabulary — state, base, theme, the
+    // pair's own reason — with the policy's marker in front.
+    const row = result.out.find((l) => l.startsWith("  [disabled by policy] [skipped] "));
+    expect(row).toBeDefined();
+    expect(row).toContain('--scrim-hover against --scrim in theme "root": translucent');
+    // The live finding from the other rule still holds the exit.
+    expect(result.code).toBe(EXIT_FINDINGS);
+  });
+
+  it("a policy naming a rule with NO skipped rows prints no set-aside headline at all", () => {
+    config("skipped-quiet", { "suppress-rule": ["dead-token"] });
+    const path = write("skipped-quiet/sheet.css", TWO_RULE_CSS);
+    const result = run(path);
+    expect(result.out).toContain("skipped (0)");
+    expect(result.out.some((l) => l.startsWith("skipped-disabled"))).toBe(false);
+  });
+
+  it("a stylesheet whose ONLY scale-collapse output was skipped rows exits 0 — skipped never held the exit, and neither does the set-aside", () => {
+    config("skipped-exit", { "suppress-rule": ["scale-collapse"] });
+    const path = write("skipped-exit/sheet.css", SKIPPED_ONLY_CSS);
+    const result = run(path);
+    expect(result.out).toContain("No findings.");
+    expect(result.out).toContain("skipped-disabled (2)");
+    expect(result.code).toBe(EXIT_OK);
+    // Parity with the same stylesheet under no policy: the exit was 0
+    // before the leg existed and stays 0 — the partition moved prose, not
+    // the verdict.
+    expect(run(SKIPPED_ONLY_PATH).code).toBe(EXIT_OK);
+  });
+
+  it("the unmatched carve-out fires for a skipped-only disabled rule — the oracle reads BOTH policy legs", () => {
+    const path = write("skipped-carveout/sheet.css", SKIPPED_ONLY_CSS);
+    config("skipped-carveout", {
+      suppress: [
+        { rule: "scale-collapse", token: "--scrim-hover", reason: "judged wholesale" },
+      ],
+      "suppress-rule": ["scale-collapse"],
+    });
+    const result = run(path);
+    // The rule reported into `skipped` ONLY: the old single-leg derivation
+    // read it as disabled-and-silent and kept the retirement advice, while
+    // the pair printed one section up. Both legs now count as reporting.
+    expect(result.out).toContain("suppressed-disabled (0)");
+    expect(result.out).toContain("skipped-disabled (2)");
+    expect(result.out).toContain("unmatched (1)");
+    expect(result.out).toContain(
+      '  an entry whose rule the project turned OFF in "suppress-rule" is a further case this report CAN tell: a disabled rule reports into the counted policy sections of this report — suppressed-disabled for its findings, skipped-disabled for the pairs it could not measure — and can never match, so this judgement is neither expired nor mis-aimed — it is one policy decision away from working. Re-enable the rule, or retire the entry.',
+    );
+    const row = result.out.find((l) => l.startsWith("  [unmatched] "));
+    expect(row).toBeDefined();
+    expect(row).toContain(
+      ' — [scale-collapse] is disabled by this project\'s "suppress-rule" policy, so the judgement can never match while the rule is off: re-enable the rule, or retire the entry.',
+    );
+    expect(result.code).toBe(EXIT_OK);
+  });
+
+  it("--json serves `skippedDisabled` after `skipped`, rows whole, empty when no rule is off", () => {
+    const plainPath = write("skipped-json-plain.css", SKIPPED_ONLY_CSS);
+    const out: string[] = [];
+    const err: string[] = [];
+    const io: CliIo = { out: (l) => out.push(l), err: (l) => err.push(l) };
+    const code = runCli(["--json", plainPath], io);
+    expect(code).toBe(EXIT_OK);
+    const report = JSON.parse(out.join("\n")) as Record<string, unknown>;
+    expect(Object.keys(report)).toEqual([
+      "path",
+      "findings",
+      "countsByRule",
+      "suppressed",
+      "unmatchedSuppressions",
+      "suppressedDisabled",
+      "skipped",
+      "skippedDisabled",
+      "coverage",
+    ]);
+    // Additive, not absent: the leg is an empty array wherever no rule is
+    // off — the same status `suppressedDisabled` has always had.
+    expect(report.skippedDisabled).toEqual([]);
+    expect((report.skipped as unknown[]).length).toBe(2);
+
+    config("skipped-json", { "suppress-rule": ["scale-collapse"] });
+    const path = write("skipped-json/sheet.css", SKIPPED_ONLY_CSS);
+    const out2: string[] = [];
+    const io2: CliIo = { out: (l) => out2.push(l), err: () => {} };
+    expect(runCli(["--json", path], io2)).toBe(EXIT_OK);
+    const policyReport = JSON.parse(out2.join("\n")) as {
+      skipped: unknown[];
+      skippedDisabled: {
+        skipped: { base: string; state: string; theme: string; reason: string };
+        rule: string;
+        reason: string;
+      }[];
+    };
+    expect(policyReport.skipped).toEqual([]);
+    expect(
+      policyReport.skippedDisabled
+        .map((r) => [r.rule, r.reason, r.skipped.reason] as const)
+        .sort((a, b) => (a[2] < b[2] ? -1 : 1)),
+    ).toEqual([
+      ["scale-collapse", "[disabled by policy]", "not-a-color"],
+      ["scale-collapse", "[disabled by policy]", "translucent"],
+    ]);
   });
 });

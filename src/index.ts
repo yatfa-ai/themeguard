@@ -57,6 +57,7 @@ export {
   type SuppressedFinding,
   type SiteScopedSuppressionEntry,
   type PolicySuppressedFinding,
+  type PolicySuppressedSkipped,
 } from "./audit.js";
 
 export type { SuppressionEntry, ConfigDocument } from "./config.js";

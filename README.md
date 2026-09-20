@@ -174,12 +174,14 @@ npx themeguard --json src/*.css
 The object is the **same report the library returns**, verbatim, with the audited `path` in front of it:
 `findings` (each with its `rule`, `theme`, `tokens`, `message`, `evidence` and — where the rule has a
 position to give — its `sites`, each naming a token, a line and the imported file it was spliced from),
-`countsByRule`, `suppressed`, `unmatchedSuppressions`, `suppressedDisabled` (the policy's set-aside:
-`{finding, rule, reason}` rows, the reason the policy's own marker, verbatim — see
+`countsByRule`, `suppressed`, `unmatchedSuppressions`, `suppressedDisabled` (the policy's findings
+set-aside: `{finding, rule, reason}` rows, the reason the policy's own marker, verbatim — see
 [Turning a rule off for the project](#turning-a-rule-off-for-the-project--suppress-rule)), `skipped`
 (each row's `reason` one of
 `translucent` / `not-a-color` / `absent` / `unresolvable`, and an `absent` row carrying the additive
-`declaredIn` pointer — **absent**, never `null`, on every other reason) and `coverage`. Nothing is
+`declaredIn` pointer — **absent**, never `null`, on every other reason), `skippedDisabled` (the skipped
+channel's own policy set-aside, `{skipped, rule, reason}` rows carrying the pair whole — empty, not
+absent, wherever no rule is off, exactly like `suppressedDisabled`) and `coverage`. Nothing is
 renamed, summarized or dropped. The prose renderer is a lossy projection of that object — sites become
 clause text, evidence becomes sentence fragments, scopes become bracket suffixes — so a caller that
 wanted *which file, which token, which line* had to scrape sentences shaped for people.
@@ -520,6 +522,27 @@ made about the RULE — the same for every finding it reported. There are exactl
 leave the counts — a judgement about the finding (`suppress`, or a directive), and a judgement about its
 rule (`suppress-rule`) — and the report names which one took it.
 
+The promise covers the rule's WHOLE output, and one rule has two channels: `scale-collapse` is the one
+rule that returns findings *and* skipped pairs (every other rule reports findings only), so a disabled
+`scale-collapse` stops reporting into `skipped` too. Its skipped pairs move onto the counted
+`skippedDisabled` leg in `--json` and print in the skipped section under their own headline — counted,
+because a policy making unmeasurable pairs vanish silently would reproduce exactly the
+silence-reads-as-a-pass the skipped section exists to prevent:
+
+```
+skipped (0)
+  nothing skipped — every pair rule 3 derived was measurable.
+skipped-disabled (1)
+  skipped pairs a rule the project turned off in the "suppress-rule" key of themeguard.config.json also reported — counted here, named below, out of this section by project policy and never by a measurement: the pairs are exactly as unmeasured as they were, and the rule is off whole, its findings set aside under suppressed-disabled just as its pairs are set aside here.
+  [disabled by policy] [skipped] --scrim-hover against --scrim in theme "root": translucent
+```
+
+The row keeps the skipped vocabulary — state, base, theme, the pair's own reason, the sibling-scope
+clause — with the policy's marker in front, because WHO removed the pair from the kept list is the fact
+the row exists to state. The set-aside prints only when it holds rows: the zero state is the ordinary
+`skipped` reading plus the policy's own `suppressed-disabled` section, and a permanently-printed empty
+headline would change every report a config without `suppress-rule` produces.
+
 The policy composes with the ledger: an entry judges the findings a rule still reports, the policy
 decides whether the rule reports at all, and the two answer different questions. A rule whose findings
 are all noise TO THIS PROJECT is policy work; a finding inside a live rule you have personally judged is
@@ -545,20 +568,21 @@ one-key config — no existing line of any report changes.
 One interaction deserves its name: a `suppress` entry (or a `themeguard-ignore` directive) whose rule
 the policy turned off can never match — the policy runs first, and the finding it aims at is no longer
 available to claim. Such an entry lands on `unmatched`, where the retirement advice ("the defect was
-fixed — retire it") would be FALSE: the rule's findings print one section above, and the judgement is
-one policy decision from working. The report says so instead:
+fixed — retire it") would be FALSE: the rule's output prints in the report's counted policy sections,
+and the judgement is one policy decision from working. The report says so instead:
 
 ```
 unmatched (1)
   declared suppressions no finding matched. Either the defect was fixed and the judgement can be retired, or the entry never aimed at a finding that exists — the report cannot tell which.
-  an entry whose rule the project turned OFF in "suppress-rule" is a further case this report CAN tell: a disabled rule reports its findings into the suppressed-disabled section above and can never match, so this judgement is neither expired nor mis-aimed — it is one policy decision away from working. Re-enable the rule, or retire the entry.
+  an entry whose rule the project turned OFF in "suppress-rule" is a further case this report CAN tell: a disabled rule reports into the counted policy sections of this report — suppressed-disabled for its findings, skipped-disabled for the pairs it could not measure — and can never match, so this judgement is neither expired nor mis-aimed — it is one policy decision away from working. Re-enable the rule, or retire the entry.
   [unmatched] [dead-token] — "reserved for the print stylesheet" [token: --unused] — [dead-token] is disabled by this project's "suppress-rule" policy, so the judgement can never match while the rule is off: re-enable the rule, or retire the entry.
 ```
 
-The clause is claimed only where the disabled rule actually REPORTED into `suppressed-disabled` on this
-report: a rule that is off AND silent leaves its entries' ordinary advice standing, because there "the
-defect was fixed" may be exactly true. The section prints even at zero, and like every counted section
-it never moves the exit code — the exit stays the unsuppressed-findings question, and findings the
+The clause is claimed only where the disabled rule actually REPORTED on this report — into either
+counted policy leg: `suppressed-disabled` for its findings, `skipped-disabled` for its skipped pairs. A
+rule that is off AND silent on both channels leaves its entries' ordinary advice standing, because there
+"the defect was fixed" may be exactly true. The section prints even at zero, and like every counted
+section it never moves the exit code — the exit stays the unsuppressed-findings question, and findings the
 project's own policy set aside are not findings the report stands behind.
 
 ### Marking it at the site — `/* themeguard-ignore … */`
@@ -706,12 +730,14 @@ data, as an additive `themelessAim` key on the unmatched row.
 report has the most to say about: its rule is named in the config's `suppress-rule` key. The policy runs
 BEFORE the entry match — a disabled rule's findings never reach the ledger — so the entry matched
 nothing by construction, and BOTH stock readings are false: the defect is not fixed (the finding prints,
-one section above, under `suppressed-disabled`) and the entry did aim at a finding that exists. The
+in this same report, under `suppressed-disabled`) and the entry did aim at a finding that exists. The
 retirement advice would steer its author into deleting a judgement one policy decision from working. So
 the row names the truth — a disabled rule cannot match; re-enable the rule, or retire the entry — and
 the section states the case beside its prose, exactly as the three cases above do. The clause is
-claimed only where the disabled rule actually REPORTED on this report: a rule that is off and silent
-leaves its entries' ordinary advice standing, because there the defect may genuinely be gone. See
+claimed only where the disabled rule actually REPORTED on this report — into either counted policy leg,
+`suppressed-disabled` for its findings or `skipped-disabled` for its skipped pairs: a rule that is off
+and silent on both leaves its entries' ordinary advice standing, because there the defect may genuinely
+be gone. See
 [Turning a rule off for the project](#turning-a-rule-off-for-the-project--suppress-rule).
 
 **The section prints even at zero.** An empty section is the proof that every recorded judgement is
@@ -828,7 +854,10 @@ for (const { finding, reason } of report.suppressed) {
 The project-level face is a library option too: `disabledRules` names rule ids to turn off whole, and
 their findings land on `report.suppressedDisabled` — `{finding, rule, reason}` rows, the reason the
 policy's own marker, verbatim — out of `findings` and the counts, under the same counted-not-silent
-discipline. A disabled rule is checked before `suppressions` is consulted, so an entry aimed at a
+discipline. The partition covers the report's second output channel too: `scale-collapse`'s skipped
+pairs land whole on `report.skippedDisabled` — `{skipped, rule, reason}` rows — instead of printing
+beside the kept pairs, so a disabled rule is silent on BOTH channels or neither. A disabled rule is
+checked before `suppressions` is consulted, so an entry aimed at a
 disabled rule stays on `report.unmatchedSuppressions`, where the report can say why it matched nothing.
 
 The complement is on the report too: `report.unmatchedSuppressions` carries the declared entries that
@@ -869,7 +898,7 @@ facts and passes no judgement, the upper one judges those facts and nothing else
 | `src/parse.ts` | Which blocks declare custom properties, in which of the four shapes — `:root`, `[data-theme=…]`, `@theme inline`, and a `prefers-color-scheme` `:root` block as its own theme — at which line, and every `var()` **use**, from every declaration rather than only the custom-property ones. |
 | `src/resolve.ts` | What each property resolves to **per theme**, following `var()` chains — through embedded primary-position references (`1px solid var(--c)`) as well as whole-value ones, re-marking a walk that stopped at a compound value `cycle` when the value it stopped at references a loop MEMBER in that theme's view — iterated to a fixed point, so a dependent several hops out is reached too — and minting, names-only, the loops no walk closes (an all-compound loop never completes a circuit from any seed), so their members carry the same fact and rule 6 judges them beside every other loop. Theme absence, translucency, unresolved references and cycles are each represented explicitly — none of them is an error and none is guessed at. |
 | `src/color.ts` | Colour parsing (hex 3/4/6/8, `rgb()`/`rgba()`, `hsl()`/`hsla()`, alpha throughout), WCAG relative luminance, CIE L\*, contrast ratio, source-over compositing. |
-| `src/audit.ts` | `audit(resolved)` — the nine rules in one pass, returning findings tagged `collision`, `dead-token`, `scale-collapse`, `family-consistency`, `unresolved-reference`, `cycle-reference`, `duplicate-declaration`, `unresolved-import` or `theme-partial-token`, plus the per-theme coverage inventory. Passing `suppressions` moves caller-declared findings out of `findings` and the counts into a `suppressed` leg, and the entries that matched nothing onto `unmatchedSuppressions`. Passing `disabledRules` moves a whole rule's findings out of `findings` and the counts onto a `suppressedDisabled` leg — the project-level policy face, checked before the per-entry match, so an entry naming a disabled rule stays unmatched and the report can say why. Also publishes the suppression matcher's own halves — `matchesEntryIdentity`, `findingSiteCoordinates`, `findingLinesIn`, `siteLineCovers`, `closureOrigins` — and the two reads over a FINISHED report that diagnose an unmatched judgement without suppressing anything: `crossFileAims`, which says which site-scoped judgement would govern a live finding one `@import` edge away, and `themelessAims`, which says which `theme`-scoped judgement names a rule that reports no theme at all. |
+| `src/audit.ts` | `audit(resolved)` — the nine rules in one pass, returning findings tagged `collision`, `dead-token`, `scale-collapse`, `family-consistency`, `unresolved-reference`, `cycle-reference`, `duplicate-declaration`, `unresolved-import` or `theme-partial-token`, plus the per-theme coverage inventory. Passing `suppressions` moves caller-declared findings out of `findings` and the counts into a `suppressed` leg, and the entries that matched nothing onto `unmatchedSuppressions`. Passing `disabledRules` moves a whole rule's output out of the report's live legs — findings off `findings` and the counts onto `suppressedDisabled`, and (for `scale-collapse`, the one rule with a second channel) skipped pairs off `skipped` onto `skippedDisabled` — the project-level policy face, checked before the per-entry match, so an entry naming a disabled rule stays unmatched and the report can say why. Also publishes the suppression matcher's own halves — `matchesEntryIdentity`, `findingSiteCoordinates`, `findingLinesIn`, `siteLineCovers`, `closureOrigins` — and the two reads over a FINISHED report that diagnose an unmatched judgement without suppressing anything: `crossFileAims`, which says which site-scoped judgement would govern a live finding one `@import` edge away, and `themelessAims`, which says which `theme`-scoped judgement names a rule that reports no theme at all. |
 | `src/config.ts` | `themeguard.config.json` — optional, discovered at or above the stylesheet (nearest ancestor wins; a config beside the stylesheet is the first hop). Parses and validates the `suppress` entries (strictly: an unhonourable config is an error naming the entry, never a silent skip) and the `suppress-rule` policy — an array of rule ids to turn off whole, validated against the same rule-id list the entries' `rule` field names, an unknown id an error naming the element — into the structured declarations `audit()` filters a finished report by. |
 | `src/rules/` | One module per question. Each docstring carries its judgement heuristics and, more usefully, what it deliberately does **not** report. `rules/coverage.ts` also carries the coverage inventory itself — the facts rule 4 is measured over, printed by the CLI as an informational section and never an exit code. `rules/finding.ts` carries the shared citation the clauses are built from — `citeSite` for one site and `citeSiteList` for a list, which `positionClause` is now the `Declared at …` frame around, so a sibling clause needing the same file-aware spelling reads it rather than re-deriving it. It also declares `THEMELESS_RULES` — the five rules that report `theme: null` by construction, the stance the unmatched section's dead-theme-scope diagnosis reads rather than inferring from one run's findings. |
 | `src/cli.ts` | The command. I/O and presentation over `audit()` — no rule, no heuristic and no judgement of its own. Two renderers over the same report: the default prose, and `--json`'s NDJSON projection, which serializes the report verbatim for a pipeline caller. |
