@@ -609,6 +609,16 @@ describe("the skipped channel — the policy partitions the second output", () =
     // The kept leg keeps its own count; the set-aside is counted under its
     // own headline, named, and never a silence reading as a pass.
     expect(result.out).toContain("skipped (0)");
+    // The kept section's zero line stays truthful under the policy: with a
+    // populated set-aside it names where the pairs went instead of asserting
+    // the measurability the run never established — the exact false sentence
+    // this state used to print directly above the rows that contradicted it.
+    expect(result.out).toContain(
+      "  nothing kept here — every pair rule 3 derived was set aside below by project policy, not found measurable.",
+    );
+    expect(result.out).not.toContain(
+      "  nothing skipped — every pair rule 3 derived was measurable.",
+    );
     expect(result.out).toContain("skipped-disabled (1)");
     expect(result.out).toContain(
       '  skipped pairs a rule the project turned off in the "suppress-rule" key of themeguard.config.json also reported — counted here, named below, out of this section by project policy and never by a measurement: the pairs are exactly as unmeasured as they were, and the rule is off whole, its findings set aside under suppressed-disabled just as its pairs are set aside here.',
@@ -627,6 +637,12 @@ describe("the skipped channel — the policy partitions the second output", () =
     const path = write("skipped-quiet/sheet.css", TWO_RULE_CSS);
     const result = run(path);
     expect(result.out).toContain("skipped (0)");
+    // No set-aside rows: the kept section's zero line keeps its ordinary
+    // measurability sentence — the truthful-line swap fires only when the
+    // set-aside actually holds rows, never under a policy alone.
+    expect(result.out).toContain(
+      "  nothing skipped — every pair rule 3 derived was measurable.",
+    );
     expect(result.out.some((l) => l.startsWith("skipped-disabled"))).toBe(false);
   });
 
@@ -636,6 +652,12 @@ describe("the skipped channel — the policy partitions the second output", () =
     const result = run(path);
     expect(result.out).toContain("No findings.");
     expect(result.out).toContain("skipped-disabled (2)");
+    // The kept section's zero line names the set-aside here too: the whole
+    // channel was set aside, so the ordinary measurability sentence would be
+    // the most false it can be — the run derived pairs and measured none.
+    expect(result.out).toContain(
+      "  nothing kept here — every pair rule 3 derived was set aside below by project policy, not found measurable.",
+    );
     expect(result.code).toBe(EXIT_OK);
     // Parity with the same stylesheet under no policy: the exit was 0
     // before the leg existed and stays 0 — the partition moved prose, not

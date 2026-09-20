@@ -882,7 +882,19 @@ export function formatReport(
   // Never dropped: an unmeasurable pair is silence, and silence reads as a pass.
   lines.push(`skipped (${report.skipped.length})`);
   if (report.skipped.length === 0) {
-    lines.push("  nothing skipped — every pair rule 3 derived was measurable.");
+    if (report.skippedDisabled.length > 0) {
+      // The policy holds the pairs, so measurability was never established
+      // for them — this line must not claim it. The truthful sentence names
+      // where the pairs went: the counted set-aside printed directly below.
+      // (The partition is all-or-nothing per rule — `scale-collapse` is the
+      // skipped channel's only producer — so a kept count of 0 beside a
+      // populated set-aside means every pair the rule derived is below.)
+      lines.push(
+        "  nothing kept here — every pair rule 3 derived was set aside below by project policy, not found measurable.",
+      );
+    } else {
+      lines.push("  nothing skipped — every pair rule 3 derived was measurable.");
+    }
   } else {
     lines.push("  pairs rule 3 could not measure. Not findings, and not a pass either.");
     for (const pair of report.skipped) {
@@ -897,11 +909,14 @@ export function formatReport(
   // stops reporting into THIS channel too, and pairs that silently
   // vanished under the policy would reproduce exactly the silence this
   // section is built against. Counted under its own headline, named with
-  // the policy's marker beside the channel's own, and printed only when
-  // the set-aside holds rows — the zero state is the ordinary `skipped`
-  // reading above plus the policy's own `suppressed-disabled` section,
-  // and an always-printed empty headline would change every policy-free
-  // report's bytes. Each row reuses the kept rows' vocabulary — state,
+  // the policy's marker beside the channel's own. The headline prints only
+  // when the set-aside holds rows — an always-printed empty headline would
+  // change every policy-free report's bytes — and that gate is a DIFFERENT
+  // surface from the zero line in the kept section above: the gate protects
+  // policy-free byte-identity, while the zero line is policy-on output
+  // territory and names this set-aside when it holds rows, never asserting
+  // a measurability the run did not establish. Each row reuses the kept
+  // rows' vocabulary — state,
   // base, theme, the pair's own reason, the sibling-scope clause — so a
   // reader moves between the two lists without learning a second shape;
   // the only difference is the marker, because WHO removed the row from

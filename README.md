@@ -531,7 +531,7 @@ silence-reads-as-a-pass the skipped section exists to prevent:
 
 ```
 skipped (0)
-  nothing skipped — every pair rule 3 derived was measurable.
+  nothing kept here — every pair rule 3 derived was set aside below by project policy, not found measurable.
 skipped-disabled (1)
   skipped pairs a rule the project turned off in the "suppress-rule" key of themeguard.config.json also reported — counted here, named below, out of this section by project policy and never by a measurement: the pairs are exactly as unmeasured as they were, and the rule is off whole, its findings set aside under suppressed-disabled just as its pairs are set aside here.
   [disabled by policy] [skipped] --scrim-hover against --scrim in theme "root": translucent
@@ -539,9 +539,10 @@ skipped-disabled (1)
 
 The row keeps the skipped vocabulary — state, base, theme, the pair's own reason, the sibling-scope
 clause — with the policy's marker in front, because WHO removed the pair from the kept list is the fact
-the row exists to state. The set-aside prints only when it holds rows: the zero state is the ordinary
-`skipped` reading plus the policy's own `suppressed-disabled` section, and a permanently-printed empty
-headline would change every report a config without `suppress-rule` produces.
+the row exists to state. The set-aside prints only when it holds rows — a permanently-printed empty
+headline would change every report a config without `suppress-rule` produces — and the kept section's
+zero line knows the difference: with a populated set-aside it names where the pairs went, instead of
+asserting a measurability the run never established.
 
 The policy composes with the ledger: an entry judges the findings a rule still reports, the policy
 decides whether the rule reports at all, and the two answer different questions. A rule whose findings
