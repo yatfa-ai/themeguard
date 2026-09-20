@@ -166,9 +166,11 @@ export interface AuditReport {
    * — the defect prints above, and the entry did aim at a finding that exists
    * — and the entry is ONE KEY DELETION from working. The derivation that
    * names it is {@link themelessAims}, on the same reads-a-finished-report,
-   * suppresses-nothing footing. (An entry that ALSO carries a `file` scope is
-   * outside the arm: the theme would not be its only dead conjunct, so the
-   * derivation declines it whole — see there.)
+   * suppresses-nothing footing. (An entry whose `file` scope names ANOTHER
+   * stylesheet is outside the arm: the theme would not be its only dead
+   * conjunct, so the derivation declines it whole — see there. A scope naming
+   * the audited stylesheet itself is not a second dead conjunct and earns the
+   * clause.)
    */
   readonly unmatchedSuppressions: readonly (
     SuppressionEntry | SiteScopedSuppressionEntry | FileScopedSuppressionEntry
@@ -765,10 +767,10 @@ export interface ThemelessAim {
  * semantics are the matcher's own and never a re-derived twin — AND **every**
  * such finding carries `theme: null`.
  *
- * An entry that ALSO carries a `file` scope declines, whatever its theme. The
- * clause claims the theme is the ONLY reason nothing matched, and a `file`
- * scope naming another stylesheet is a second dead conjunct — deleting the
- * theme key would leave the entry unmatched, so the advice would be the very
+ * An entry whose `file` scope names ANOTHER stylesheet declines. The clause
+ * claims the theme is the ONLY reason nothing matched, and a scope naming a
+ * sibling stylesheet is a second dead conjunct — deleting the theme key
+ * would leave the entry unmatched, so the advice would be the very
  * false-advice harm this arm exists to remove. The whole entry disqualifies,
  * the same move {@link crossFileAims} makes for a same-file identity match,
  * and the section's own `[file: …]` clauses still speak for the row. A scope
