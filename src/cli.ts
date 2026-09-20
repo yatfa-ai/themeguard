@@ -153,10 +153,14 @@
  * expired judgement (defect fixed, retire the entry) from a mis-aimed one, and
  * must not pretend to. Two causes it CAN tell, each with its own line beside
  * that prose. Since 0.1.11: an entry carrying a ` [file: …]` clause names the
- * stylesheet it was recorded against, so its presence on this report is neither
- * expiry nor mis-aim — it aims at a sibling file this config governs, and that
- * file's report is the one that states its fate. A clause-carrying entry is
- * never advised retired on this report's word. And since 0.1.24: a SITE-scoped
+ * stylesheet it was recorded against — where that stylesheet is ANOTHER one
+ * this config governs, its presence on this report is neither expiry nor
+ * mis-aim: it aims at that sibling, and that file's report is the one that
+ * states its fate, so a sibling-aiming entry is never advised retired on this
+ * report's word. A scope naming the audited stylesheet itself aims nowhere
+ * else — the report in the reader's hands is that file's report — so such an
+ * entry is left to the generic prose or to whichever carve-out does hold for
+ * it. And since 0.1.24: a SITE-scoped
  * judgement whose rule and tokens match a live finding every one of whose sites
  * lives in ANOTHER file of the closure. There both readings are outright false
  * — the defect is not fixed (the finding prints above, in this same report) and
@@ -177,8 +181,10 @@
  * theme — while the finding the entry's rule and tokens DO match prints above.
  * Both readings are false again, and the row names the rule, the dead scope
  * and the one-key move that revives the judgement — claimed only where the
- * THEME is the whole reason nothing matched, since an entry that also carries
- * a `file` scope would still match nothing after the deletion. DIAGNOSIS on
+ * THEME is the whole reason nothing matched, since an entry whose `file`
+ * scope names ANOTHER stylesheet would still match nothing after the
+ * deletion (a scope naming the audited sheet itself loses that conjunct with
+ * the key, so the sub-case earns the clause). DIAGNOSIS on
  * the same terms: {@link themelessAims} reads a FINISHED report, the matcher
  * is untouched, and the entry stays unmatched.
  *
@@ -1043,10 +1049,13 @@ export function formatReport(
   // one, and must not pretend to. SIX cases it CAN tell, each with its own
   // carve-out line below, each printing only when this section actually
   // carries such an entry — so every section they do not apply to stays
-  // byte-identical. FIRST, an entry with a
-  // `file` scope names the stylesheet it was recorded against, so its
-  // unmatchedness HERE is neither expiry nor mis-aim — it aims at a sibling
-  // this config governs, and that file's report states its fate. SECOND, an
+  // byte-identical. FIRST, an entry whose
+  // `file` scope names ANOTHER stylesheet this config governs: its
+  // unmatchedness HERE is neither expiry nor mis-aim — it aims at that
+  // sibling, and that file's report states its fate. A scope naming the
+  // audited stylesheet itself aims nowhere else — the fate line's advice is
+  // circular there — so such an entry does not vouch this line in and keeps
+  // the generic prose or whichever carve-out does hold for it. SECOND, an
   // entry carrying a SITE whose rule and tokens match a live finding every one
   // of whose sites lives in ANOTHER file of the closure: there BOTH readings
   // are false — the defect prints above in this same report, and the entry did
