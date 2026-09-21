@@ -296,9 +296,11 @@ import {
   audit,
   crossFileAims,
   skippedAims,
+  siblingAims,
   themelessAims,
   type CrossFileAim,
   type FileScopedSuppressionEntry,
+  type SiblingAim,
   type SkippedAim,
   type ThemelessAim,
   type SiteScopedSuppressionEntry,
@@ -880,7 +882,15 @@ function auditStylesheet(path: string, io: CliIo, json = false): number {
   // a scope naming this very sheet aims at a pair this report holds, one
   // section up.
   const skipped = skippedAims(report.unmatchedSuppressions, report.skipped, auditedStylesheet);
-  if (json) io.out(formatReportJson(path, report, aims, themeless, skipped));
+  // The file-sibling aim of each unmatched file-scoped judgement — the fourth
+  // diagnosis, on the same footing: derived from the finished report,
+  // consulted by nothing that suppresses. It needs the report and the audited
+  // stylesheet: the audited path decides the one sub-case the fate line
+  // declines (a scope naming this very sheet is circular there), and the
+  // beyond-config-home annotation rides the entry itself, so nothing else
+  // travels.
+  const siblings = siblingAims(report.unmatchedSuppressions, auditedStylesheet);
+  if (json) io.out(formatReportJson(path, report, aims, themeless, skipped, siblings));
   else
     for (const line of formatReport(path, report, aims, themeless, skipped, auditedStylesheet))
       io.out(line);
@@ -1321,6 +1331,16 @@ export function formatReport(
  * pair spelled exactly as the skipped section prints it. ABSENT (not `null`)
  * on every row without one, and `skipped` ({@link skippedAims}) is that
  * diagnosis, aligned by index the same way and optional on the same terms.
+ *
+ * ⚠️ A FOURTH additive key rides the same discipline: `siblingAim`, `{file}`
+ * naming the sibling stylesheet an entry's `file` scope was recorded against —
+ * the machine form of the section's fate line ("That file's report is the one
+ * that states its fate"), the section's OLDEST tell and the last of its six
+ * cases to gain a key. ABSENT (not `null`) on every row without one, and
+ * `siblings` ({@link siblingAims}) is that diagnosis, aligned by index the
+ * same way and optional on the same terms — the audited stylesheet deciding
+ * the same-file sub-case the fate line declines, exactly as its own prose
+ * gate does.
  */
 export function formatReportJson(
   path: string,
@@ -1328,6 +1348,7 @@ export function formatReportJson(
   aims: readonly (CrossFileAim | undefined)[] = [],
   themeless: readonly (ThemelessAim | undefined)[] = [],
   skipped: readonly (SkippedAim | undefined)[] = [],
+  siblings: readonly (SiblingAim | undefined)[] = [],
 ): string {
   // The rows are rebuilt only where an aim exists, and the entry's own keys are
   // spread FIRST so the added one lands last and no existing key order moves. A
@@ -1338,12 +1359,21 @@ export function formatReportJson(
     const aim = aims[index];
     const themelessAim = themeless[index];
     const skippedAim = skipped[index];
-    if (aim === undefined && themelessAim === undefined && skippedAim === undefined) return entry;
+    const siblingAim = siblings[index];
+    if (
+      aim === undefined &&
+      themelessAim === undefined &&
+      skippedAim === undefined &&
+      siblingAim === undefined
+    ) {
+      return entry;
+    }
     return {
       ...entry,
       ...(aim === undefined ? {} : { crossFileAim: aim }),
       ...(themelessAim === undefined ? {} : { themelessAim }),
       ...(skippedAim === undefined ? {} : { skippedAim }),
+      ...(siblingAim === undefined ? {} : { siblingAim }),
     };
   });
   return JSON.stringify({ path, ...report, unmatchedSuppressions });
