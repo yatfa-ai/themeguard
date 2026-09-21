@@ -194,7 +194,13 @@ same absence-is-a-fact discipline `sites` carries. A second such key rides the s
 `themelessAim`, `{rule}` — the machine form of the dead-theme-scope clause, on a row whose `theme` scope
 names a rule that reports no theme at all. A third rides it too: `skippedAim`,
 `{theme, base, state, reason}` — the machine form of the kept-skipped clause, the unmeasurable pair an
-entry's conjuncts match spelled exactly as the skipped section prints it. See
+entry's conjuncts match spelled exactly as the skipped section prints it. And a fourth — the section's
+oldest tell, given its key last: `siblingAim`, `{file}` — the machine form of the fate line, on a row
+whose `file` scope names a sibling stylesheet this config governs; the key names the file whose own
+report states the judgement's fate, read as the audit reads the scope (`fileResolved` once resolved,
+the written spelling otherwise), and it is absent on the rows the fate line itself does not vouch for
+(a scope resolving beyond the config's home, where the boundary line speaks, and a scope naming this
+very sheet, where the advice would be circular). See
 [When a judgement matches nothing](#when-a-judgement-matches-nothing--unmatched-n).
 
 It composes with `jq` the way a per-line stream should:

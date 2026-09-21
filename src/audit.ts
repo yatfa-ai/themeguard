@@ -1016,6 +1016,125 @@ export function skippedAims(
 }
 
 /**
+ * WHICH SIBLING STYLESHEET an unmatched file-scoped judgement aims at — the
+ * fate line's machine form, and the last of the `unmatched` section's six
+ * tellable cases to gain a key.
+ *
+ * `file` names the stylesheet the entry's `file` scope was recorded against —
+ * the sibling whose own report is the one that states the judgement's fate,
+ * in the section's oldest sentence ("one unmatched entry the prose can vouch
+ * for", 0.1.11).
+ */
+export interface SiblingAim {
+  /**
+   * The stylesheet the entry aims at — the scope read exactly as
+   * {@link audit}'s own file conjunct reads it: `fileResolved` once the CLI
+   * has resolved one, the entry's own spelling otherwise.
+   */
+  readonly file: string;
+}
+
+/**
+ * For each unmatched entry, the FILE-SIBLING diagnosis — or `undefined`,
+ * which is every other entry.
+ *
+ * ── Why this exists ────────────────────────────────────────────────────────
+ * The `unmatched` section tells SIX cases, and the `--json` machine channel
+ * carried only three of them as keys: `crossFileAim` (0.1.24), `themelessAim`
+ * (0.1.26) and `skippedAim` (0.1.29) — each landing with its own new tell,
+ * none retrofitted onto the tells that predate the convention. The OLDEST
+ * tell was the unarmed one. The section's fate line has vouched for the
+ * file-sibling case since 0.1.11 — an entry carrying a `[file: …]` clause
+ * names the stylesheet it was recorded against, so its unmatchedness HERE is
+ * neither expiry nor mis-aim, and THAT file's report states its fate — while
+ * both a sibling-aiming entry and a same-file dead entry produced `--json`
+ * rows carrying no verdict key at all. A pipeline caller pruning stale
+ * judgements through the README's own `themeguard --json … | jq …` pattern
+ * deletes live sibling-aiming entries byte-identically to dead ones. The
+ * verdict is also NOT consumer-derivable from the row: the gate compares the
+ * RESOLVED scope against the path-resolved audited stylesheet, and both the
+ * config home and the audited sheet are the tool's own discovery — directive
+ * rows carry no `fileResolved`, and the entry's `file` is the caller's
+ * spelling.
+ *
+ * ── The predicate ─────────────────────────────────────────────────────────
+ * Only an entry carrying a `file` scope qualifies — a config entry. A
+ * directive cannot carry one (the SITE is the judgement, and the scope is not
+ * in its schema), and an unscoped entry has no file to name; both are
+ * returned `undefined` here, which keeps their advice byte-for-byte.
+ *
+ * For a scoped entry, the SAME gate the prose renderer runs inline, read in
+ * the same order:
+ *   - the entry carrying the `fileBeyondConfigHome: true` annotation
+ *     declines — that boundary arm speaks for itself (the scope resolves
+ *     outside the config's governed subtree, so no run of this config audits
+ *     the file it names, and the boundary line, not the fate line, is the
+ *     section's word for it). The annotation rides the entry itself, so the
+ *     check reads the entry directly.
+ *   - a scope naming the AUDITED stylesheet declines — the fate line's advice
+ *     is circular there ("that file's report" is the report in the reader's
+ *     hands), and such an entry does not vouch the line in. The comparison is
+ *     the one {@link audit}'s own file conjunct makes, read exactly as
+ *     `matches` reads the scope: `fileResolved` once the CLI has resolved
+ *     one, the entry's spelling otherwise.
+ *   - everything else earns `{file: <that scope>}` — the same population that
+ *     vouches the fate line into printing, so the machine key and the prose
+ *     line can never disagree about which entries are sibling-aiming.
+ *
+ * The optional parameter is the `options.stylesheet` precedent (0.1.30):
+ * a caller that omits it cannot resolve the same-file comparison, and the
+ * population is exactly the prose gate's own under the same omission — every
+ * scoped, non-boundary entry — so a one-argument call agrees with a renderer
+ * handed no audited stylesheet byte-for-byte.
+ *
+ * ── What it is NOT ────────────────────────────────────────────────────────
+ * DIAGNOSIS, never suppression. Nothing here is consulted by {@link matches}:
+ * the file conjunct is untouched, the entry stays unmatched, the counts are
+ * untouched, and the `unmatched` leg still sits outside the exit code. This
+ * function reads a finished report and names the file whose report is the
+ * fate-statement; reading that report is the reader's to do.
+ *
+ * @param unmatched the report's `unmatchedSuppressions`, in its own order.
+ * @param auditedStylesheet the audited ENTRY stylesheet, path-resolved — the
+ *   same value `audit()` was given as `options.stylesheet`. Omitting it keeps
+ *   the prose gate's own population: a caller that cannot name the audited
+ *   sheet cannot resolve the comparison, so every scoped, non-boundary entry
+ *   earns — the same entries that vouch the fate line there.
+ * @returns one slot per unmatched entry, ALIGNED BY INDEX with `unmatched`,
+ *   for the same reason {@link crossFileAims} aligns that way: the leg reports
+ *   SLOTS, and a map keyed on shape would fold two identical judgements.
+ */
+export function siblingAims(
+  unmatched: readonly (
+    SuppressionEntry | SiteScopedSuppressionEntry | FileScopedSuppressionEntry
+  )[],
+  auditedStylesheet?: string,
+): readonly (SiblingAim | undefined)[] {
+  return unmatched.map((entry) => {
+    // Only a config entry carrying a `file` scope qualifies: a directive
+    // cannot carry one and an unscoped entry has no file to name, so both
+    // keep whatever other advice holds for them.
+    if (entry.file === undefined) return undefined;
+    // The boundary arm speaks for itself: a scope resolving outside the
+    // config's governed subtree can never be honoured by any run of this
+    // config, and the section's boundary line — not the fate line — is its
+    // word. The annotation rides the entry, so it is read directly.
+    if ("fileBeyondConfigHome" in entry && entry.fileBeyondConfigHome === true) {
+      return undefined;
+    }
+    // The scope is read exactly as `matches` reads it (`fileResolved` once
+    // the CLI has resolved one, the entry's own spelling otherwise), and the
+    // comparison is the same one the file conjunct makes. A scope naming the
+    // audited stylesheet itself does not aim elsewhere — the fate line's
+    // advice is circular there — so it declines, exactly as the prose gate
+    // stops such an entry from vouching the line in.
+    const scope = "fileResolved" in entry ? entry.fileResolved : entry.file;
+    if (scope === auditedStylesheet) return undefined;
+    return { file: scope };
+  });
+}
+
+/**
  * Run all nine rules over a resolved stylesheet.
  *
  * @param resolved the resolver's output — the facts to judge.
