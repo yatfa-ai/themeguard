@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { EXIT_ERROR, EXIT_FINDINGS, EXIT_OK, runCli, type CliIo } from "../src/cli.js";
+import { EXIT_ERROR, EXIT_FINDINGS, EXIT_OK } from "../src/cli.js";
 import {
   CONFIG_FILENAME,
   ConfigError,
@@ -15,6 +15,7 @@ import {
 import { audit } from "../src/audit.js";
 import { resolveCss } from "../src/resolve.js";
 import { FIXTURE_PATH, fixtureCss, fixtureStubCss } from "./fixture.js";
+import { run } from "./run.js";
 
 /**
  * `themeguard.config.json` — the suppression slice.
@@ -45,22 +46,6 @@ import { FIXTURE_PATH, fixtureCss, fixtureStubCss } from "./fixture.js";
  */
 
 const repo = fileURLToPath(new URL("..", import.meta.url));
-
-interface Run {
-  readonly code: number;
-  readonly out: string[];
-  readonly err: string[];
-  readonly stdout: string;
-  readonly stderr: string;
-}
-
-function run(...args: string[]): Run {
-  const out: string[] = [];
-  const err: string[] = [];
-  const io: CliIo = { out: (l) => out.push(l), err: (l) => err.push(l) };
-  const code = runCli(args, io);
-  return { code, out, err, stdout: out.join("\n"), stderr: err.join("\n") };
-}
 
 /**
  * A stylesheet with exactly ONE finding — a hover 2.43 L* from its resting

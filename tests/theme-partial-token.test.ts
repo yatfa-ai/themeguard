@@ -4,12 +4,13 @@ import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { audit } from "../src/audit.js";
 import { parseConfig } from "../src/config.js";
-import { EXIT_FINDINGS, EXIT_OK, runCli, type CliIo } from "../src/cli.js";
+import { EXIT_FINDINGS, EXIT_OK } from "../src/cli.js";
 import { scanIgnoreDirectives } from "../src/directives.js";
 import { loadStylesheet } from "../src/load.js";
 import { themePartialTokenRule } from "../src/rules/theme-partial-token.js";
 import { resolveCss, resolveStylesheet } from "../src/resolve.js";
 import { fixtureCss } from "./fixture.js";
+import { run } from "./run.js";
 
 /**
  * Rule 9 — THEME PARTIAL TOKEN.
@@ -32,22 +33,6 @@ import { fixtureCss } from "./fixture.js";
  * and the preservation of the calibration fixture's census — derived, never
  * asserted from memory.
  */
-
-interface Run {
-  readonly code: number;
-  readonly out: string[];
-  readonly err: string[];
-  readonly stdout: string;
-  readonly stderr: string;
-}
-
-function run(...args: string[]): Run {
-  const out: string[] = [];
-  const err: string[] = [];
-  const io: CliIo = { out: (l) => out.push(l), err: (l) => err.push(l) };
-  const code = runCli(args, io);
-  return { code, out, err, stdout: out.join("\n"), stderr: err.join("\n") };
-}
 
 const tmp = mkdtempSync(join(tmpdir(), "themeguard-theme-partial-"));
 afterAll(() => rmSync(tmp, { recursive: true, force: true }));

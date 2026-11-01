@@ -2,10 +2,11 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { EXIT_ERROR, EXIT_FINDINGS, EXIT_OK, runCli, type CliIo } from "../src/cli.js";
+import { EXIT_ERROR, EXIT_FINDINGS, EXIT_OK } from "../src/cli.js";
 import { DirectiveError, scanIgnoreDirectives } from "../src/directives.js";
 import { audit } from "../src/audit.js";
 import { resolveCss } from "../src/resolve.js";
+import { run } from "./run.js";
 
 /**
  * `/* themeguard-ignore … *\/` — the site-scoped suppression slice.
@@ -28,22 +29,6 @@ import { resolveCss } from "../src/resolve.js";
  *     printing again and the exit code moving — while an annotation on the
  *     live line suppresses with its `[file:line]` source clause.
  */
-
-interface Run {
-  readonly code: number;
-  readonly out: string[];
-  readonly err: string[];
-  readonly stdout: string;
-  readonly stderr: string;
-}
-
-function run(...args: string[]): Run {
-  const out: string[] = [];
-  const err: string[] = [];
-  const io: CliIo = { out: (l) => out.push(l), err: (l) => err.push(l) };
-  const code = runCli(args, io);
-  return { code, out, err, stdout: out.join("\n"), stderr: err.join("\n") };
-}
 
 describe("scanIgnoreDirectives — the grammar, as data in and errors out", () => {
   it("reads the trailing placement — the comment's own line, and file:line source", () => {

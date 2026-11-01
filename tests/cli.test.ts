@@ -11,12 +11,11 @@ import {
   EXIT_OK,
   USAGE,
   formatReportJson,
-  runCli,
-  type CliIo,
 } from "../src/cli.js";
 import { loadStylesheet } from "../src/load.js";
 import { resolveStylesheet } from "../src/resolve.js";
 import { FIXTURE_PATH } from "./fixture.js";
+import { run } from "./run.js";
 
 /**
  * The CLI — success criteria 1 and 2.
@@ -33,22 +32,6 @@ import { FIXTURE_PATH } from "./fixture.js";
  * library, and a presentation layer that quietly drops or double-counts a
  * finding would leave the library's own tests green.
  */
-
-interface Run {
-  readonly code: number;
-  readonly out: string[];
-  readonly err: string[];
-  readonly stdout: string;
-  readonly stderr: string;
-}
-
-function run(...args: string[]): Run {
-  const out: string[] = [];
-  const err: string[] = [];
-  const io: CliIo = { out: (l) => out.push(l), err: (l) => err.push(l) };
-  const code = runCli(args, io);
-  return { code, out, err, stdout: out.join("\n"), stderr: err.join("\n") };
-}
 
 /**
  * A stylesheet with nothing to report, written to be clean for a REASON in each

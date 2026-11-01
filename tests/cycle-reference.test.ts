@@ -4,11 +4,12 @@ import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { audit } from "../src/audit.js";
 import { parseConfig } from "../src/config.js";
-import { EXIT_FINDINGS, EXIT_OK, runCli, type CliIo } from "../src/cli.js";
+import { EXIT_FINDINGS, EXIT_OK } from "../src/cli.js";
 import { scanIgnoreDirectives } from "../src/directives.js";
 import { cycleReferenceRule } from "../src/rules/cycle-reference.js";
 import { resolveCss } from "../src/resolve.js";
 import { fixtureCss } from "./fixture.js";
+import { run } from "./run.js";
 
 /**
  * Rule 6 — CYCLE REFERENCE.
@@ -28,22 +29,6 @@ import { fixtureCss } from "./fixture.js";
  * preservation of the calibration fixture's census — derived, never asserted
  * from memory.
  */
-
-interface Run {
-  readonly code: number;
-  readonly out: string[];
-  readonly err: string[];
-  readonly stdout: string;
-  readonly stderr: string;
-}
-
-function run(...args: string[]): Run {
-  const out: string[] = [];
-  const err: string[] = [];
-  const io: CliIo = { out: (l) => out.push(l), err: (l) => err.push(l) };
-  const code = runCli(args, io);
-  return { code, out, err, stdout: out.join("\n"), stderr: err.join("\n") };
-}
 
 const tmp = mkdtempSync(join(tmpdir(), "themeguard-cycle-"));
 afterAll(() => rmSync(tmp, { recursive: true, force: true }));

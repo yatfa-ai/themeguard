@@ -3,11 +3,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { audit } from "../src/audit.js";
-import { EXIT_FINDINGS, EXIT_OK, runCli, type CliIo } from "../src/cli.js";
+import { EXIT_FINDINGS, EXIT_OK } from "../src/cli.js";
 import { scanIgnoreDirectives } from "../src/directives.js";
 import { unresolvedReferenceRule } from "../src/rules/unresolved-reference.js";
 import { resolveCss } from "../src/resolve.js";
 import { fixtureCss } from "./fixture.js";
+import { run } from "./run.js";
 
 /**
  * Rule 5 — UNRESOLVED REFERENCE.
@@ -52,22 +53,6 @@ const HOSTILE_CSS = `
 }
 .alias-user { color: var(--color-app-typo); }
 `;
-
-interface Run {
-  readonly code: number;
-  readonly out: string[];
-  readonly err: string[];
-  readonly stdout: string;
-  readonly stderr: string;
-}
-
-function run(...args: string[]): Run {
-  const out: string[] = [];
-  const err: string[] = [];
-  const io: CliIo = { out: (l) => out.push(l), err: (l) => err.push(l) };
-  const code = runCli(args, io);
-  return { code, out, err, stdout: out.join("\n"), stderr: err.join("\n") };
-}
 
 const tmp = mkdtempSync(join(tmpdir(), "themeguard-unresolved-"));
 afterAll(() => rmSync(tmp, { recursive: true, force: true }));

@@ -4,9 +4,10 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, it } from "vitest";
 import { audit } from "../src/audit.js";
-import { EXIT_ERROR, EXIT_FINDINGS, EXIT_OK, runCli, type CliIo } from "../src/cli.js";
+import { EXIT_ERROR, EXIT_FINDINGS, EXIT_OK } from "../src/cli.js";
 import type { SuppressionEntry } from "../src/config.js";
 import { resolveCss } from "../src/resolve.js";
+import { run } from "./run.js";
 
 /**
  * File-scoped suppression entries — the `file` field on a config entry, the
@@ -42,22 +43,6 @@ const repo = fileURLToPath(new URL("..", import.meta.url));
 const STYLES_DIR = fileURLToPath(new URL("./fixtures/styles/", import.meta.url));
 const TOKENS_CSS = join(STYLES_DIR, "tokens.css");
 const BUTTONS_CSS = join(STYLES_DIR, "buttons.css");
-
-interface Run {
-  readonly code: number;
-  readonly out: string[];
-  readonly err: string[];
-  readonly stdout: string;
-  readonly stderr: string;
-}
-
-function run(...args: string[]): Run {
-  const out: string[] = [];
-  const err: string[] = [];
-  const io: CliIo = { out: (l) => out.push(l), err: (l) => err.push(l) };
-  const code = runCli(args, io);
-  return { code, out, err, stdout: out.join("\n"), stderr: err.join("\n") };
-}
 
 /**
  * The report slice for ONE file of a multi-file invocation: everything the
