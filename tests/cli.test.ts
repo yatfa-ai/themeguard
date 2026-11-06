@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -9,6 +9,7 @@ import {
   EXIT_ERROR,
   EXIT_FINDINGS,
   EXIT_OK,
+  HELP,
   USAGE,
   formatReportJson,
 } from "../src/cli.js";
@@ -428,6 +429,92 @@ describe("usage and file errors", () => {
 });
 
 /**
+ * `--help` / `-h` / `--version` — the only arguments besides `--json` that are
+ * not stylesheet paths. They answer before any file is read, print to stdout,
+ * and exit 0 with nothing on stderr.
+ */
+describe("--help, -h and --version", () => {
+  const manifest = JSON.parse(
+    readFileSync(fileURLToPath(new URL("../package.json", import.meta.url)), "utf8"),
+  ) as { version: string; homepage: string };
+
+  it("HELP carries the usage line, the options, the exit-code contract, the config pointer and the homepage", () => {
+    expect(HELP.split("\n")[0]).toBe(USAGE);
+    for (const part of ["--json", "--help", "--version", "themeguard.config.json", manifest.homepage]) {
+      expect(HELP).toContain(part);
+    }
+    expect(HELP).toMatch(/0\s+every stylesheet is clean/);
+    expect(HELP).toMatch(/1\s+at least one stylesheet has unsuppressed findings/);
+    expect(HELP).toMatch(/2\s+cannot audit/);
+  });
+
+  for (const flag of ["--help", "-h"]) {
+    it(`${flag} prints the help block on stdout, exits 0 and writes nothing to stderr`, () => {
+      const result = run(flag);
+      expect(result.code).toBe(EXIT_OK);
+      expect(result.stdout).toBe(HELP);
+      expect(result.err).toEqual([]);
+    });
+
+    it(`${flag} after a path still prints help — it neither audits nor fails fast`, () => {
+      const result = run(FIXTURE_PATH, flag);
+      expect(result.code).toBe(EXIT_OK);
+      expect(result.stdout).toBe(HELP);
+      expect(result.err).toEqual([]);
+      const missing = run(join(tmp, "does-not-exist.css"), flag);
+      expect(missing.code).toBe(EXIT_OK);
+      expect(missing.stdout).toBe(HELP);
+      expect(missing.err).toEqual([]);
+    });
+  }
+
+  it("--help works alongside --json", () => {
+    const result = run("--json", "--help");
+    expect(result.code).toBe(EXIT_OK);
+    expect(result.stdout).toBe(HELP);
+  });
+
+  it("--version prints exactly the package.json version, exits 0 and writes nothing to stderr", () => {
+    const result = run("--version");
+    expect(result.code).toBe(EXIT_OK);
+    expect(result.out).toEqual([manifest.version]);
+    expect(result.err).toEqual([]);
+  });
+
+  it("--version beats paths", () => {
+    const result = run(FIXTURE_PATH, "--version");
+    expect(result.code).toBe(EXIT_OK);
+    expect(result.out).toEqual([manifest.version]);
+  });
+
+  it("help beats version", () => {
+    for (const args of [["--version", "--help"], ["--help", "--version"], ["--version", "-h"]]) {
+      const result = run(...args);
+      expect(result.code).toBe(EXIT_OK);
+      expect(result.stdout).toBe(HELP);
+    }
+  });
+
+  it("bare invocation and --json alone are unchanged — usage plus the no-stylesheet line, exit 2", () => {
+    for (const args of [[], ["--json"]]) {
+      const result = run(...args);
+      expect(result.code).toBe(EXIT_ERROR);
+      expect(result.err).toEqual([USAGE, "themeguard: no stylesheet given."]);
+      expect(result.out).toEqual([]);
+    }
+  });
+
+  it("other unknown flags — including -v — are still read as paths and fail as cannot read", () => {
+    for (const flag of ["--hepl", "-v", "--config", "--no-color"]) {
+      const result = run(flag);
+      expect(result.code).toBe(EXIT_ERROR);
+      expect(result.stderr).toContain(`cannot read ${flag}`);
+      expect(result.out).toEqual([]);
+    }
+  });
+});
+
+/**
  * Several stylesheets in one invocation — the multi-file contract. Each file
  * is audited INDEPENDENTLY (its config and directives are its own; references
  * do not cross files), each report prints under its own `themeguard — <path>`
@@ -556,6 +643,18 @@ describe("node dist/cli.js — the built artifact", () => {
       return { code: e.status ?? -1, stdout: e.stdout ?? "", stderr: e.stderr ?? "" };
     }
   }
+
+  it("--version and --help work from the built file, reading package.json from beside dist/", () => {
+    const { version } = JSON.parse(readFileSync(join(repo, "package.json"), "utf8")) as {
+      version: string;
+    };
+    const v = spawn("--version");
+    expect(v).toEqual({ code: 0, stdout: `${version}\n`, stderr: "" });
+    const h = spawn("-h");
+    expect(h.code).toBe(0);
+    expect(h.stdout).toBe(`${HELP}\n`);
+    expect(h.stderr).toBe("");
+  });
 
   it("reproduces the census over the fixture and exits 1", () => {
     const result = spawn(FIXTURE_PATH);

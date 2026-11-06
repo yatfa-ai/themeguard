@@ -141,6 +141,11 @@ One command, one option — point it at a CSS file.
 npx themeguard path/to/application.css
 ```
 
+`themeguard --help` (or `-h`) prints the usage, the exit-code contract and a pointer to this README, and
+`themeguard --version` prints the installed version; both exit `0` without auditing anything, wherever they
+appear among the arguments (help wins over version). They are the only arguments besides `--json` that are not
+stylesheet paths.
+
 Several stylesheets take one invocation — the positionals repeat:
 
 ```bash
@@ -222,8 +227,8 @@ Three properties a pipeline caller may rely on:
   rather than one array, whose closing bracket a fail-fast run never reaches.
 
 The flag is accepted in any position among the paths, and repeating it changes nothing. There is no short
-alias. Everything that is not `--json` is a positional, exactly as before — an unknown `--flag` is read as
-a path and fails as one — and `themeguard --json` with no stylesheet is the usage error it has always
+alias. Everything that is not `--json`, `--help`/`-h` or `--version` is a positional, exactly as before — an
+unknown `--flag` is read as a path and fails as one — and `themeguard --json` with no stylesheet is the usage error it has always
 been, never a silent success.
 
 Run over this repository's own calibration fixture (a real 97 KB Tailwind stylesheet with two themes,

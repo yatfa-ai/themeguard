@@ -9,9 +9,11 @@
  * would ever need the DATA. 0.1.7 made the pipeline caller first-class (N
  * files, ONE aggregated verdict) without giving it anything but the number,
  * and `--json` is the other half of that: the number stays the verdict
- * channel, and the flag adds a DATA channel beside it. It is the only option,
- * it is accepted anywhere among the arguments, and repeating it changes
- * nothing. Everything that is not `--json` is a positional, exactly as
+ * channel, and the flag adds a DATA channel beside it. It is the only option
+ * that affects the audit, it is accepted anywhere among the arguments, and
+ * repeating it changes nothing. `--help`/`-h` and `--version` are the only
+ * other recognised arguments: they print text and exit 0 instead of auditing.
+ * Everything else is a positional, exactly as
  * before — an unknown `--flag` is still read as a path and still fails as
  * one, because inventing flag VALIDATION here would change the exit
  * semantics of invocations that work today.
@@ -336,7 +338,46 @@ export interface CliIo {
   readonly err: (line: string) => void;
 }
 
+/**
+ * A string field of the package's own package.json, read at runtime so the
+ * release workflow's version bump is the only edit a release needs.
+ * `../package.json` resolves from both `src/cli.ts` and `dist/cli.js`, and the
+ * file is always in the tarball.
+ */
+function packageField(field: "version" | "homepage"): string {
+  const manifest: unknown = JSON.parse(
+    readFileSync(fileURLToPath(new URL("../package.json", import.meta.url)), "utf8"),
+  );
+  const value = (manifest as Record<string, unknown>)[field];
+  return typeof value === "string" ? value : "";
+}
+
 export const USAGE = "usage: themeguard [--json] <file.css> [file.css…]";
+
+/**
+ * The `--help` / `-h` text. Short on purpose: the usage line, the three
+ * options, the exit-code contract, the config pointer and where the full
+ * documentation lives. It does not re-document the rules.
+ */
+export const HELP = [
+  USAGE,
+  "",
+  "Audits the colour custom properties of CSS stylesheets.",
+  "",
+  "options:",
+  "  --json       print one NDJSON report object per stylesheet instead of prose",
+  "  --help, -h   print this help and exit 0",
+  "  --version    print the installed version and exit 0",
+  "",
+  "exit codes:",
+  "  0  every stylesheet is clean",
+  "  1  at least one stylesheet has unsuppressed findings",
+  "  2  cannot audit (bad usage, or a file that cannot be read or honoured);",
+  "     the first such file ends the run",
+  "",
+  "config: the nearest themeguard.config.json at or above each stylesheet.",
+  `docs: ${packageField("homepage")}`,
+].join("\n");
 
 /**
  * The one option, and the only argument that is not a stylesheet path.
@@ -671,6 +712,19 @@ function themeList(themes: readonly string[]): string {
  * contract exists to prevent.
  */
 export function runCli(args: readonly string[], io: CliIo): number {
+  // Help and version answer before the `--json` filter and before any file is
+  // read, so `themeguard a.css --help` neither audits nor fails fast. Help wins
+  // over version. Only these exact spellings: no `-v` (ambiguous with
+  // "verbose"), and every other `--flag` is still read as a path.
+  if (args.includes("--help") || args.includes("-h")) {
+    io.out(HELP);
+    return EXIT_OK;
+  }
+  if (args.includes("--version")) {
+    io.out(packageField("version"));
+    return EXIT_OK;
+  }
+
   const json = args.includes(JSON_FLAG);
   const paths = args.filter((arg) => arg !== JSON_FLAG);
 
