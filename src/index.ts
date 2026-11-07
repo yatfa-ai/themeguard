@@ -134,10 +134,12 @@ export {
 export {
   parseStylesheet,
   registeredInitialValues,
+  unrecognisedClassTheme,
   type Declaration,
   type Reference,
   type Registration,
   type RegisteredInitial,
+  type ParseOptions,
   type Scope,
   type ScopeKind,
   type Stylesheet,
@@ -145,7 +147,7 @@ export {
   type UnresolvedImport,
 } from "./parse.js";
 
-export { loadStylesheet } from "./load.js";
+export { loadStylesheet, type LoadOptions } from "./load.js";
 
 export {
   resolveCss,

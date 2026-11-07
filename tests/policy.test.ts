@@ -116,13 +116,14 @@ describe("parseConfigDocument — the policy key validates with suppress's own d
     expect(parseConfigDocument('{"suppress-rule": ["dead-token"]}', "mem/config.json")).toEqual({
       suppress: [],
       disabledRules: ["dead-token"],
+      themes: [],
     });
     expect(
       parseConfigDocument(
         '{"suppress-rule": ["dead-token", "collision"]}',
         "mem/config.json",
       ),
-    ).toEqual({ suppress: [], disabledRules: ["dead-token", "collision"] });
+    ).toEqual({ suppress: [], disabledRules: ["dead-token", "collision"], themes: [] });
   });
 
   it("reads both keys from one document — each half whole", () => {
@@ -137,17 +138,20 @@ describe("parseConfigDocument — the policy key validates with suppress's own d
     ).toEqual({
       suppress: [{ rule: "collision", token: "--a", reason: "deliberate" }],
       disabledRules: ["dead-token"],
+      themes: [],
     });
   });
 
-  it("an empty array is legal and disables nothing; neither key is required", () => {
+  it("an empty array is legal and disables nothing; no key is required", () => {
     expect(parseConfigDocument('{"suppress-rule": []}', "mem/config.json")).toEqual({
       suppress: [],
       disabledRules: [],
+      themes: [],
     });
     expect(parseConfigDocument("{}", "mem/config.json")).toEqual({
       suppress: [],
       disabledRules: [],
+      themes: [],
     });
   });
 
@@ -174,10 +178,12 @@ describe("parseConfigDocument — the policy key validates with suppress's own d
     ).toThrowError(/"suppress-rule" must be an array of rule ids, got "dead-token"/);
   });
 
-  it("an unknown top-level key still refuses, now naming both keys it knows", () => {
+  it("an unknown top-level key still refuses, now naming all three keys it knows", () => {
     expect(() =>
       parseConfigDocument('{"rules": ["dead-token"]}', "mem/config.json"),
-    ).toThrowError(/unknown key "rules" — expected "suppress" or "suppress-rule"/);
+    ).toThrowError(
+      /unknown key "rules" — expected "suppress", "suppress-rule" or "themes"/,
+    );
   });
 
   it("parseConfig is the entries-only view, unchanged by the policy key", () => {
