@@ -196,7 +196,11 @@
  * INFORMATIONAL by construction: inherited is normal (theme-independent tokens
  * have no override by design), so the section is counted, named, printed even
  * at zero, and never moves the exit code. The mixed shape the inventory makes
- * visible is judged by rule 4, whose findings DO count.
+ * visible is judged by rule 4, whose findings DO count. A third bucket exists
+ * only for `@property` registrations: a registered name no scope in the theme
+ * declares prints `, registered K` on the theme's line and a `[registered]`
+ * row per name — absent entirely for a sheet with no registrations, which
+ * prints byte-for-byte what it did before.
  *
  * The split partitions the set it headlines: a base token whose `var()` chain
  * does not resolve in a theme — or cycles — is neither colour nor non-colour,
@@ -1342,8 +1346,21 @@ export function formatReport(
       theme.inherited.filter((e) => e.kind === kind).length;
     const color = byKind("color");
     const nonColor = byKind("non-color");
-    if (theme.inherited.length === 0) {
+    const registered = theme.registered ?? [];
+    // Registered names (an `@property` initial value flows in) are a third
+    // bucket, appended only when present so a sheet with no registrations
+    // prints exactly what it always did.
+    const registeredClause = registered.length > 0 ? `, registered ${registered.length}` : "";
+    if (theme.inherited.length === 0 && registered.length === 0) {
       lines.push(`  ${theme.theme}: declares all ${theme.baseTokens} base tokens, inherits 0.`);
+    } else if (theme.inherited.length === 0) {
+      lines.push(
+        `  ${theme.theme}: declares ${theme.overridden.length} of ${theme.baseTokens} base tokens, ` +
+          `inherits 0${registeredClause}.`,
+      );
+      for (const entry of registered) {
+        lines.push(`    [registered] ${entry.name} (${entry.kind})`);
+      }
     } else {
       // The split must partition the set it headlines. Colour and non-colour
       // are the ordinary two, but a base token's `var()` chain can also fail
@@ -1359,10 +1376,13 @@ export function formatReport(
       }
       lines.push(
         `  ${theme.theme}: declares ${theme.overridden.length} of ${theme.baseTokens} base tokens, ` +
-          `inherits ${theme.inherited.length} (${segments.join(" / ")}).`,
+          `inherits ${theme.inherited.length} (${segments.join(" / ")})${registeredClause}.`,
       );
       for (const entry of theme.inherited) {
         lines.push(`    [inherited] ${entry.name} (${entry.kind})`);
+      }
+      for (const entry of registered) {
+        lines.push(`    [registered] ${entry.name} (${entry.kind})`);
       }
     }
   }
@@ -1395,7 +1415,9 @@ export function formatReport(
             ? `inherited from :root, declared at ${site}`
             : row.declaration === "theme-inline"
               ? `declared in @theme inline at ${site}`
-              : `declared at ${site}`;
+              : row.declaration === "registered"
+                ? `registered by @property at ${site}`
+                : `declared at ${site}`;
         lines.push(`    [unread] ${row.token} (${row.syntax}) in theme "${theme}", ${where}`);
       }
     }
