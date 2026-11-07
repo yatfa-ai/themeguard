@@ -120,6 +120,29 @@ Deliberately not taken: a media prelude whose condition is more than the one fea
 *part* of a compound condition is not a palette of its own; modelling that honestly needs
 condition-aware tables, which this package does not pretend to have.
 
+### Colour formats
+
+A token is judged only if its value is a colour themeguard can place in sRGB. Recognised:
+
+- hex (`#RGB`, `#RGBA`, `#RRGGBB`, `#RRGGBBAA`);
+- `rgb()`/`rgba()` and `hsl()`/`hsla()`, in the legacy comma and the modern space + `/ alpha` syntax;
+- `oklch()`, `oklab()`, `lab()`, `lch()` and `hwb()` in the space-separated `/ alpha` syntax, with
+  percentage or number channels, the `none` keyword read as 0, and hue units `deg`/`grad`/`rad`/`turn`;
+- `color(srgb r g b)`, optionally `/ alpha`;
+- the CSS named-colour keywords (`white`, `rebeccapurple`, …) and `transparent`.
+
+The non-sRGB functions are converted with the standard CSS Color 4 matrices and then **clipped per
+channel** into sRGB and quantised to 0–255, exactly like the legacy forms. There is no gamut mapping: a
+high-chroma `oklch()` that lies outside sRGB is clipped, so it can differ from what a wide-gamut display
+paints. A stylesheet written in `oklch()` therefore reports the same findings as its hex twin.
+
+The boundary: values that are not a fixed colour themeguard can place in sRGB are not colours to it —
+`color-mix()`, `light-dark()`, relative colour syntax (`oklch(from var(--x) l c h)`), `color()` in any
+space other than `srgb` (`display-p3`, `rec2020`, …), system colours and `currentColor`. A token with
+such a value is classified `non-color` and is left out of the colour rules, **without a line in the
+report saying so**; the same is true of any value that does not parse. If a stylesheet audits clean
+and you expected findings, check it for these values.
+
 One file set per audit, one declared composition per file. Reference resolution does not cross files a
 human merely *listed together*: `themeguard a.css b.css` audits two independent sheets, because nothing in
 the source says how they relate, and a rule that guessed at a relationship would report defects in a
@@ -994,7 +1017,7 @@ facts and passes no judgement, the upper one judges those facts and nothing else
 |---|---|
 | `src/parse.ts` | Which blocks declare custom properties, in which of the four shapes — `:root`, `[data-theme=…]`, `@theme inline`, and a `prefers-color-scheme` `:root` block as its own theme — at which line, and every `var()` **use**, from every declaration rather than only the custom-property ones. |
 | `src/resolve.ts` | What each property resolves to **per theme**, following `var()` chains — through embedded primary-position references (`1px solid var(--c)`) as well as whole-value ones, re-marking a walk that stopped at a compound value `cycle` when the value it stopped at references a loop MEMBER in that theme's view — iterated to a fixed point, so a dependent several hops out is reached too — and minting, names-only, the loops no walk closes (an all-compound loop never completes a circuit from any seed), so their members carry the same fact and rule 6 judges them beside every other loop. Theme absence, translucency, unresolved references and cycles are each represented explicitly — none of them is an error and none is guessed at. |
-| `src/color.ts` | Colour parsing (hex 3/4/6/8, `rgb()`/`rgba()`, `hsl()`/`hsla()`, alpha throughout), WCAG relative luminance, CIE L\*, contrast ratio, source-over compositing. |
+| `src/color.ts` | Colour parsing (hex 3/4/6/8, `rgb()`/`rgba()`, `hsl()`/`hsla()`, `oklch()`, `oklab()`, `lab()`, `lch()`, `hwb()`, `color(srgb …)`, named colours and `transparent`, alpha throughout; non-sRGB forms clip per channel, no gamut mapping), WCAG relative luminance, CIE L\*, contrast ratio, source-over compositing. |
 | `src/audit.ts` | `audit(resolved)` — the nine rules in one pass, returning findings tagged `collision`, `dead-token`, `scale-collapse`, `family-consistency`, `unresolved-reference`, `cycle-reference`, `duplicate-declaration`, `unresolved-import` or `theme-partial-token`, plus the per-theme coverage inventory. Passing `suppressions` moves caller-declared findings out of `findings` and the counts into a `suppressed` leg, and the entries that matched nothing onto `unmatchedSuppressions`. Passing `disabledRules` moves a whole rule's output out of the report's live legs — findings off `findings` and the counts onto `suppressedDisabled`, and (for `scale-collapse`, the one rule with a second channel) skipped pairs off `skipped` onto `skippedDisabled` — the project-level policy face, checked before the per-entry match, so an entry naming a disabled rule stays unmatched and the report can say why. Also publishes the suppression matcher's own halves — `matchesEntryIdentity`, `findingSiteCoordinates`, `findingLinesIn`, `siteLineCovers`, `closureOrigins` — and the two reads over a FINISHED report that diagnose an unmatched judgement without suppressing anything: `crossFileAims`, which says which site-scoped judgement would govern a live finding one `@import` edge away, and `themelessAims`, which says which `theme`-scoped judgement names a rule that reports no theme at all. |
 | `src/config.ts` | `themeguard.config.json` — optional, discovered at or above the stylesheet (nearest ancestor wins; a config beside the stylesheet is the first hop). Parses and validates the `suppress` entries (strictly: an unhonourable config is an error naming the entry, never a silent skip) and the `suppress-rule` policy — an array of rule ids to turn off whole, validated against the same rule-id list the entries' `rule` field names, an unknown id an error naming the element — into the structured declarations `audit()` filters a finished report by. |
 | `src/rules/` | One module per question. Each docstring carries its judgement heuristics and, more usefully, what it deliberately does **not** report. `rules/coverage.ts` also carries the coverage inventory itself — the facts rule 4 is measured over, printed by the CLI as an informational section and never an exit code. `rules/finding.ts` carries the shared citation the clauses are built from — `citeSite` for one site and `citeSiteList` for a list, which `positionClause` is now the `Declared at …` frame around, so a sibling clause needing the same file-aware spelling reads it rather than re-deriving it. It also declares `THEMELESS_RULES` — the five rules that report `theme: null` by construction, the stance the unmatched section's dead-theme-scope diagnosis reads rather than inferring from one run's findings. |
