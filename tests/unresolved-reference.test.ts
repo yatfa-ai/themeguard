@@ -7,6 +7,7 @@ import { EXIT_FINDINGS, EXIT_OK } from "../src/cli.js";
 import { scanIgnoreDirectives } from "../src/directives.js";
 import { unresolvedReferenceRule } from "../src/rules/unresolved-reference.js";
 import { loadStylesheet } from "../src/load.js";
+import { parseStylesheet } from "../src/parse.js";
 import { resolveCss, resolveStylesheet } from "../src/resolve.js";
 import { fixtureCss } from "./fixture.js";
 import { run } from "./run.js";
@@ -235,6 +236,34 @@ describe("@property registrations", () => {
 `);
     expect(sheet.stylesheet.registrations?.map((r) => r.name)).toEqual(["--brand", "--gap"]);
     expect(unresolvedReferenceRule(sheet)).toEqual([]);
+  });
+
+  it("an @property nested inside a style rule is not a registration (CSS drops it)", () => {
+    const css = `.x { @property --a { syntax: "<color>"; initial-value: red; inherits: false } color: var(--a); }\n`;
+    expect(parseStylesheet(css).registrations).toBeUndefined();
+    const findings = unresolvedReferenceRule(resolveCss(css));
+    expect(findings).toHaveLength(1);
+    expect(findings[0].tokens).toEqual(["--a"]);
+  });
+
+  it("a single-quoted syntax: '*' withdraws an earlier initial-value like the double-quoted spelling", () => {
+    const sheet = resolveCss(`${BRAND}\n@property --brand { syntax: '*'; inherits: true }\n.x { color: var(--brand); }\n`);
+    expect(unresolvedReferenceRule(sheet)).toHaveLength(1);
+  });
+
+  it("@PROPERTY is read case-insensitively", () => {
+    const sheet = resolveCss(`@PROPERTY --brand { syntax: "<color>"; initial-value: #f00; inherits: true }\n.x { color: var(--brand); }\n`);
+    expect(unresolvedReferenceRule(sheet)).toEqual([]);
+  });
+
+  it("descriptor names fold case", () => {
+    const sheet = resolveCss(`@property --brand { Syntax: "<color>"; Initial-Value: #f00; Inherits: true }\n.x { color: var(--brand); }\n`);
+    expect(unresolvedReferenceRule(sheet)).toEqual([]);
+  });
+
+  it("a descriptor written twice keeps the last", () => {
+    const css = `@property --brand { syntax: "<color>"; initial-value: #f00; syntax: "*"; inherits: true }`;
+    expect(parseStylesheet(css).registrations?.[0]?.syntax).toBe("*");
   });
 
   it("a registration is not a scope declaration — scopes and declared names are unchanged", () => {
