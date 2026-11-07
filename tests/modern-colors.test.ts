@@ -109,6 +109,17 @@ describe("lab() / lch()", () => {
     expect(hexOf("lch(100 0 0)")).toBe("#FFFFFF");
   });
 
+  it("converts the dark end through the CIE linear segment (L* <= 8) rather than the cube", () => {
+    // a = b = 0 makes fx = fy = fz, so this one input drives all three linear arms.
+    expect(hexOf("lab(5 0 0)")).toBe("#111111");
+    expect(hexOf("lch(5 0 0)")).toBe(hexOf("lab(5 0 0)"));
+  });
+
+  it("keeps the x, y and z linear arms distinct on chromatic dark colours", () => {
+    expect(parseColor("lab(5 10 10)")).toEqual({ r: 34, g: 10, b: 0, a: 1 });
+    expect(parseColor("lab(2 20 -20)")).toEqual({ r: 28, g: 0, b: 38, a: 1 });
+  });
+
   it("converts chromatic colours to their hex twins", () => {
     expect(hexOf("lab(60 30 -40)")).toBe("#A97FD8");
     expect(hexOf("lch(60 50 200)")).toBe("#00A6AD");
