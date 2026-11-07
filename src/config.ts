@@ -64,6 +64,30 @@
  * a rule was off when its findings were reported after all. An empty array is
  * legal and disables nothing; an absent key is byte-identical to the
  * one-key config this file has always parsed.
+ *
+ * ── The recognition axis: `themes` ────────────────────────────────────────
+ * Suppression judges findings; the optional top-level `themes` key does
+ * something no entry or policy can: it teaches the parser what a THEME is.
+ * The built-in recognition spells four channels — `.dark`/`.light` on a bare,
+ * `html`, `body` or `:root` subject, `[data-theme=…]`, Bootstrap 5.3's
+ * `[data-bs-theme=…]`, and `prefers-color-scheme` — and a palette written in
+ * any other class (`.theme-dark`, `.high-contrast`) is a theme this package
+ * half-reads: a `:root`-prefixed block folds its declarations last-wins into
+ * the base scope, any other spelling keeps them out of every theme table, and
+ * every dark-only defect goes unreported. The key names the class themes the
+ * user's own convention stands for — `"themes": ["theme-dark"]` — and each
+ * entry is the CLASS NAME (without the dot), never a selector: the class
+ * becomes a theme of its own, named as spelled, on exactly the subjects the
+ * built-in pair accepts. Validation is the same strict discipline: the key
+ * must be an array and every element a non-empty string, because a name the
+ * tool silently ignored is a user who believes their dark palette was audited
+ * when it was folded into the base. The key never INVENTS a theme — naming
+ * `theme-dark` on a sheet that never writes `.theme-dark` changes nothing —
+ * and an absent key is byte-identical to the two-key config. Its other half
+ * is the loader's refusal: a sheet that DECLARES an unrecognised class theme
+ * (a palette variant under a name nothing spells) and is governed by a config
+ * naming no themes exits 2 telling the user exactly this key exists for it —
+ * see {@link loadStylesheet}.
  */
 
 import { readFileSync, statSync } from "node:fs";
@@ -214,6 +238,15 @@ export interface ConfigDocument {
    * the set of rules whose findings never reach the findings or the counts.
    */
   readonly disabledRules: readonly RuleId[];
+  /**
+   * The class theme names the user's convention stands for — the `themes`
+   * key, each element the class name (without the dot) that names a theme.
+   * Empty when the key is absent or an empty array; the loader hands the
+   * names to the parser, which turns each spelled class into a theme of its
+   * own. Naming a class the sheet never writes changes nothing: the key adds
+   * recognition, it never mints a theme.
+   */
+  readonly themes: readonly string[];
 }
 
 /**
@@ -267,7 +300,7 @@ export function loadConfig(cssPath: string): readonly SuppressionEntry[] | null 
 }
 
 /**
- * Parse and validate config text into the whole document — both top-level
+ * Parse and validate config text into the whole document — all three top-level
  * keys, each with the strict never-silently-ignored discipline. Pure — the
  * file read lives in {@link loadConfig} / {@link readConfigDocument} — so the
  * validation rules are testable as data.
@@ -281,8 +314,12 @@ export function loadConfig(cssPath: string): readonly SuppressionEntry[] | null 
  * ignored is a user who believes a rule was off while its findings were
  * reported after all. An empty array is legal and disables nothing; a
  * duplicated id is harmless (the audit reads the policy as a set) and is not
- * an error, because it changes no meaning. Neither key is required: `{}` is
- * the config that governs nothing, byte-identical to no config at all.
+ * an error, because it changes no meaning. `themes` is the recognition half:
+ * the key must be an array and every element a non-empty theme name ({@link
+ * parseThemeNames}), because a name the tool silently ignored is a user who
+ * believes their class palette was audited when it still folded into the
+ * base. None of the keys is required: `{}` is the config that governs
+ * nothing, byte-identical to no config at all.
  */
 export function parseConfigDocument(raw: string, path: string): ConfigDocument {
   let parsed: unknown;
@@ -299,12 +336,12 @@ export function parseConfigDocument(raw: string, path: string): ConfigDocument {
     throw new ConfigError(path, `expected a JSON object with a "suppress" key`);
   }
 
-  const allowed = ["suppress", "suppress-rule"];
+  const allowed = ["suppress", "suppress-rule", "themes"];
   for (const key of Object.keys(parsed)) {
     if (!allowed.includes(key)) {
       throw new ConfigError(
         path,
-        `unknown key "${key}" — expected "suppress" or "suppress-rule". A key this package does not know would otherwise do nothing, silently.`,
+        `unknown key "${key}" — expected "suppress", "suppress-rule" or "themes". A key this package does not know would otherwise do nothing, silently.`,
       );
     }
   }
@@ -315,8 +352,9 @@ export function parseConfigDocument(raw: string, path: string): ConfigDocument {
     parsed["suppress-rule"] === undefined
       ? []
       : parseDisabledRules(parsed["suppress-rule"], path);
+  const themes = parsed["themes"] === undefined ? [] : parseThemeNames(parsed["themes"], path);
 
-  return { suppress, disabledRules };
+  return { suppress, disabledRules, themes };
 }
 
 /**
@@ -365,6 +403,39 @@ function parseDisabledRules(value: unknown, path: string): readonly RuleId[] {
       );
     }
     return element as RuleId;
+  });
+}
+
+/**
+ * `themes`, with the same shape gate the other two keys have and the same
+ * never-silently-ignored reason behind it: an element the tool could not read
+ * as a theme NAME would otherwise be a theme the user believes is recognised
+ * while its palette still folds into the base. Each element is the class name
+ * (without the dot) that names a theme — a non-string, an empty string or a
+ * whitespace-only one is an ERROR naming the element and what was found. A
+ * duplicated name is harmless (the parser reads the set, and a name repeated
+ * changes no meaning); a name that cannot spell one class (`"my.theme"`,
+ * `"a b"`) is ACCEPTED here and simply never matches a subject, the same
+ * honest no-op a selector-valued spelling would deserve — the key adds
+ * recognition, it never mints a theme.
+ */
+function parseThemeNames(value: unknown, path: string): readonly string[] {
+  if (!Array.isArray(value)) {
+    throw new ConfigError(
+      path,
+      `"themes" must be an array of theme names, got ${JSON.stringify(value)}`,
+    );
+  }
+  return value.map((element, index) => {
+    if (typeof element !== "string" || element.trim() === "") {
+      throw new ConfigError(
+        path,
+        `element ${index + 1} of "themes": must be a non-empty theme name — the class name the theme stands for, not a selector — got ${JSON.stringify(
+          element ?? null,
+        )}`,
+      );
+    }
+    return element;
   });
 }
 

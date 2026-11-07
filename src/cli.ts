@@ -316,6 +316,7 @@ import {
   ConfigError,
   configPathFor,
   readConfigDocument,
+  type ConfigDocument,
   type SuppressionEntry,
 } from "./config.js";
 import { DirectiveError } from "./directives.js";
@@ -877,15 +878,22 @@ function auditStylesheet(path: string, io: CliIo, json = false): number {
   let suppressions;
   let disabledRules: readonly RuleId[] | undefined;
   let configDir: string | null = null;
+  let configHome: string | null = null;
+  // The whole document, hoisted for the load below: its `themes` ride to the
+  // loader beside the entries and the policy (the one read serves all three
+  // halves), and `configHome` is what the loader's refusal cites.
+  let configDocument: ConfigDocument | null = null;
   try {
     const configPath = configPathFor(path);
     if (configPath !== null) {
       configDir = dirname(configPath);
+      configHome = configPath;
       // The whole document, one read: the entries merge into the suppression
       // list below, the policy rides to the audit beside them. `suppressions`
       // and `disabledRules` stay undefined together when no config exists —
       // the byte-identical-before-the-policy-key case.
       const document = readConfigDocument(configPath);
+      configDocument = document;
       suppressions = document?.suppress;
       disabledRules = document?.disabledRules;
     }
@@ -911,9 +919,20 @@ function auditStylesheet(path: string, io: CliIo, json = false): number {
   // naming the comment's own file and line.
   let sheet: Stylesheet;
   try {
-    sheet = loadStylesheet(path);
+    sheet = loadStylesheet(path, {
+      themes: configDocument?.themes,
+      configPath: configHome ?? undefined,
+    });
   } catch (error) {
     if (error instanceof DirectiveError) {
+      io.err(`themeguard: ${error.message}`);
+      return EXIT_ERROR;
+    }
+    if (error instanceof ConfigError) {
+      // The unrecognised-theme refusal — the loader naming a palette variant
+      // the config does not spell. The same sentence the config read above
+      // prints for an unhonourable file: exit 2, the fix spelled out, never a
+      // silent half-read reported as a pass.
       io.err(`themeguard: ${error.message}`);
       return EXIT_ERROR;
     }

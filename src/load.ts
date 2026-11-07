@@ -126,7 +126,8 @@
  */
 
 import { readFileSync } from "node:fs";
-import { dirname, relative, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
+import { CONFIG_FILENAME, ConfigError } from "./config.js";
 import { DirectiveError, scanIgnoreDirectives, type IgnoreDirective } from "./directives.js";
 import {
   parseStylesheet,
@@ -135,7 +136,40 @@ import {
   type Reference,
   type Registration,
   type UnresolvedImport,
+  unrecognisedClassTheme,
 } from "./parse.js";
+
+/**
+ * Optional input to {@link loadStylesheet}: the class theme names a caller's
+ * convention stands for (`themeguard.config.json`'s `themes` key, handed over
+ * by whoever discovered the config — the loader itself discovers nothing),
+ * and the governing config's path so the unrecognised-theme refusal can cite
+ * the file that governs. Both absent is the byte-identical behaviour the
+ * loader has always had — the built-in recognition only — except for the one
+ * refusal below, which is exactly the point: a closure whose palette lives in
+ * a class nothing spells must not audit green.
+ */
+export interface LoadOptions {
+  /** Class names (without the dot) that name a theme in the caller's convention. */
+  readonly themes?: readonly string[];
+  /** The governing config's path, cited by the unrecognised-theme refusal. */
+  readonly configPath?: string;
+}
+
+/**
+ * The refusal {@link loadStylesheet} throws when the closure it loaded names
+ * a class theme nothing recognises and no configuration names one either: the
+ * alternative is auditing a half-read palette and calling it a pass. It rides
+ * the config file's own error shape — the CLI's exit-2 fast-fail — and its
+ * path is the governing config when one exists, the candidate beside the
+ * stylesheet when none does, which is where creating one fixes the audit.
+ */
+function unrecognisedThemeError(name: string, path: string): ConfigError {
+  return new ConfigError(
+    path,
+    `theme block themeguard cannot recognise: .${name} (none of .dark/.light on bare/html/body/:root, [data-theme=…], [data-bs-theme=…], prefers-color-scheme) — name the class themes in themeguard.config.json: {"themes": ["${name}"]}. The value is the theme NAME the class stands for, not a selector; today a :root-prefixed block folds its declarations last-wins into the root scope, and any other spelling keeps them out of every theme table.`,
+  );
+}
 
 /**
  * Stamp `origin` onto the items of a child's closure that lack one, leaving
@@ -161,12 +195,19 @@ function stampOrigin<T extends { readonly origin?: string }>(
  * spliced item carrying its `origin`, every failed RELATIVE edge carried
  * on `unresolvedImports`, and every member's `themeguard-ignore` directives
  * carried on `directives`, each imported member's stamped with its
- * entry-relative origin. Throws {@link DirectiveError} for an unhonourable
- * directive in ANY member — the caller's exit-2, never a silent skip.
+ * entry-relative origin — plus every member's recognised themes carried on
+ * `themes`, the closure's inventory. Throws {@link DirectiveError} for an
+ * unhonourable directive in ANY member, and a {@link ConfigError} when the
+ * closure declares a class theme nothing recognises while no configuration
+ * names one — the caller's exit-2 in both cases, never a silent skip.
  */
-export function loadStylesheet(entryPath: string): Stylesheet {
+export function loadStylesheet(entryPath: string, options?: LoadOptions): Stylesheet {
   const entryAbsolute = resolve(entryPath);
   const entryDir = dirname(entryAbsolute);
+  // The configured class themes, passed through to every member's parse — the
+  // loader discovers no config of its own (the caller's nearest-ancestor walk
+  // is the one discovery), it only carries the names.
+  const configured = options?.themes ?? [];
   // Resolved ABSOLUTE paths, not specifiers: `./x.css` and `../dir/x.css` can
   // name one file, and the guard must not splice it twice — and a cycle must
   // terminate on the FILE, whatever route the statements take to reach it.
@@ -174,7 +215,7 @@ export function loadStylesheet(entryPath: string): Stylesheet {
 
   const load = (filePath: string): Stylesheet => {
     const text = readFileSync(filePath, "utf8");
-    const sheet = parseStylesheet(text);
+    const sheet = parseStylesheet(text, { themes: configured });
     // Imported content FIRST, the file's own second. Every collected `@import`
     // precedes the first qualified rule (the parser collects nothing later),
     // so browser order — imported rules, then the author's — is exactly this
@@ -186,6 +227,9 @@ export function loadStylesheet(entryPath: string): Stylesheet {
     const registrations: Registration[] = [];
     const unresolvedImports: UnresolvedImport[] = [];
     const directives: IgnoreDirective[] = [];
+    const themes: string[] = [];
+    const seenThemes = new Set<string>();
+    const childThemes: string[] = [];
     const fileDir = dirname(filePath);
     // This frame's own entry-relative origin, in the Scope/Reference spelling:
     // absent for the entry file, the normalized relative path for anything
@@ -266,11 +310,26 @@ export function loadStylesheet(entryPath: string): Stylesheet {
       unresolvedImports.push(...(child.unresolvedImports ?? []));
       // The child's directives travel with the child, stamped like the rest.
       directives.push(...stampOrigin(child.directives, origin));
+      // The child's recognised themes are the closure's: a tokens file
+      // spelling `[data-theme=dark]` for every importer is the recognition
+      // the closure carries, wherever in the closure it was written.
+      childThemes.push(...(child.themes ?? []));
     }
 
     scopes.push(...sheet.scopes);
     references.push(...sheet.references);
     registrations.push(...(sheet.registrations ?? []));
+
+    // The recognised themes of the whole closure, in statement order: each
+    // member's own inventory first (children spliced above the entry's own,
+    // the same order the scopes arrive in), names deduped across members. An
+    // inventory for the refusal below and for whoever composes the closure —
+    // the resolver derives its own theme tables and reads none of it.
+    for (const name of [...childThemes, ...(sheet.themes ?? [])]) {
+      if (seenThemes.has(name)) continue;
+      seenThemes.add(name);
+      themes.push(name);
+    }
 
     // The entry's OWN import list travels with the sheet: it is what the file
     // declares, even where a statement was skipped — the record of the edges
@@ -284,8 +343,27 @@ export function loadStylesheet(entryPath: string): Stylesheet {
       unresolvedImports,
       directives,
       ...(registrations.length > 0 ? { registrations } : {}),
+      ...(themes.length > 0 ? { themes } : {}),
     };
   };
 
-  return load(entryAbsolute);
+  const sheet = load(entryAbsolute);
+  // The unrecognised-theme refusal, the one place the whole closure is in
+  // hand. Three conditions, and the third is what keeps an ordinary
+  // themeless stylesheet audit-able: the closure names NO theme at all, no
+  // configuration names one either, and the closure DECLARES a palette
+  // variant under a class name nothing spells. The alternative to refusing is
+  // today's half-read — a dark palette folded into the base scope, every
+  // dark-only defect invisible — reported as success, which is the exact
+  // silence-reads-as-a-pass this loader's other bookkeeping exists against.
+  // A TRULY themeless sheet (no palette variant in any class) never refuses.
+  const closureThemes = sheet.themes ?? [];
+  const unrecognised = unrecognisedClassTheme(sheet.scopes);
+  if (closureThemes.length === 0 && configured.length === 0 && unrecognised !== null) {
+    throw unrecognisedThemeError(
+      unrecognised,
+      options?.configPath ?? join(entryDir, CONFIG_FILENAME),
+    );
+  }
+  return sheet;
 }

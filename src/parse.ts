@@ -15,7 +15,10 @@
  *
  * A fifth spelling of the dark/light scopes is the class form — `.dark`,
  * `html.dark`, `body.dark`, `:root.dark` (and `.light`) — read as the `dark` /
- * `light` theme; see {@link classThemeOf}.
+ * `light` theme; see {@link classThemeOf}. Class names beyond that pair are
+ * themes only when a caller configures them ({@link ParseOptions.themes} —
+ * `themeguard.config.json`'s `themes` key); see {@link unrecognisedClassTheme}
+ * for the loader's half of that story.
  *
  * A block's prelude is a selector LIST, so it can name more than one of these
  * at once: `:root, [data-theme="dark"] { … }` — the usual way to write "dark is
@@ -350,6 +353,35 @@ export interface Stylesheet {
    * this field carries what the loader collected, nothing more.
    */
   readonly directives?: readonly IgnoreDirective[];
+  /**
+   * Every theme NAME the sheet's own scopes recognise, in first-appearance
+   * (document) order: the attribute/media values, the built-in `.dark` /
+   * `.light` classes, and any class name a caller configured through
+   * {@link ParseOptions.themes}. Absent when the sheet names no theme, so a
+   * themeless sheet is byte-identical to what it was before themes were
+   * read. An INVENTORY, not an input: nothing in the resolver or the rules
+   * consumes it — recognition itself is decided by {@link classifyOne} — but
+   * a loader composing the closure needs the names to answer one question
+   * the rules cannot ask for themselves: does this sheet spell any theme at
+   * all? A sheet whose dark palette lives in a class name outside the
+   * recognised set reports no `themes` at all, which is how
+   * {@link loadStylesheet} tells a half-read palette from a themeless sheet
+   * (see {@link unrecognisedClassTheme} for the matching half).
+   */
+  readonly themes?: readonly string[];
+}
+
+/**
+ * Optional input to {@link parseStylesheet}: the class theme NAMES a caller's
+ * own convention stands for. Each entry is the class name — `.theme-dark` is
+ * configured as `"theme-dark"`, never `".theme-dark"` and never a selector —
+ * and each configured name becomes a theme of its own, on exactly the subjects
+ * the built-in `.dark`/`.light` pair accepts. Absent (or empty) is the
+ * byte-identical behaviour the parser has always had: the built-in pair only.
+ */
+export interface ParseOptions {
+  /** Class names (without the dot) that name a theme in the caller's convention. */
+  readonly themes?: readonly string[];
 }
 
 /**
@@ -634,19 +666,114 @@ function blankStrings(s: string): string {
  * the ones `[data-theme="dark"]` and the colour-scheme media query already use,
  * so every spelling lands in one table.
  *
- * Deliberately narrow: only these two class names, and only on those subjects.
- * Any other class (`.theme-dark`, `.high-contrast`), any second class
+ * Deliberately narrow: only these two class names, and only on those subjects —
+ * plus any name a caller configured (see {@link ParseOptions.themes}): a user
+ * whose system spells the dark palette `.theme-dark` names it in
+ * `themeguard.config.json` (`"themes": ["theme-dark"]`) and the class becomes a
+ * theme of its own, named `theme-dark`, on the same subjects and under the same
+ * rules as `.dark`. Any other class (`.high-contrast`), any second class
  * (`.dark.card`), an id, or any other element type (`div.dark`) is not a theme
  * and returns `null`; so does a compound naming both `.dark` and `.light`.
+ * Class names are case-sensitive (the element names are not — pinned), so
+ * `.Dark` is not a theme even under a configured `"dark"`.
  * Pseudo-classes (`:hover`) are ignored, exactly as `:root:hover` stays `root`.
  * A descendant (`.dark .card`) never reaches here: its subject is `.card`.
  * `rest` has negations and functional arguments already removed and string
  * contents blanked.
  */
-function classThemeOf(rest: string): "dark" | "light" | null {
+function classThemeOf(rest: string, configured: readonly string[]): string | null {
   const bare = rest.replace(/::?[\w-]+/g, "");
-  const m = bare.match(/^(?:[hH][tT][mM][lL]|[bB][oO][dD][yY])?\.(dark|light)$/);
-  return m ? (m[1] as "dark" | "light") : null;
+  const m = bare.match(/^(?:[hH][tT][mM][lL]|[bB][oO][dD][yY])?\.([\w-]+)$/);
+  if (!m) return null;
+  const name = m[1] as string;
+  // The built-in pair, then the caller's — membership is exact, so a
+  // configured name matches case-sensitively just as `dark` does, and a name
+  // with characters a single class cannot spell (`my.theme`) simply never
+  // matches: the key adds recognition, it never mints a theme.
+  return name === "dark" || name === "light" || configured.includes(name) ? name : null;
+}
+
+/**
+ * The class name of the FIRST scope in `scopes` that names a class theme the
+ * built-in recognition does not spell, or `null`.
+ *
+ * This is the loader's half of the `themes` configuration story: when a
+ * stylesheet declares a palette variant under a class name outside the
+ * recognised set — `.theme-dark`, `.high-contrast` — and no configuration
+ * names that class, the audit runs on a half-read sheet and
+ * {@link loadStylesheet} refuses with the fix spelled out. Reading it back
+ * off the scopes (rather than re-scanning source text) means the detection
+ * sees exactly what classification saw, across the whole import closure a
+ * loader hands it, and answers which class to name in the config.
+ *
+ * A scope "names a class theme" when its subject is one class on a bare,
+ * `html`, `body` or `:root` subject — the exact shape {@link classThemeOf}
+ * accepts, read here with the same preprocessing `classifyOne` applies
+ * (negations and functional arguments stripped, string contents blanked) so
+ * `:root:not(.dark)` and `.dark .card` never read as candidates. Such a scope
+ * is only a CANDIDATE when it re-tunes the sheet's own base palette, because
+ * the ordinary component-override idiom (`.btn-danger { --accent: … }`,
+ * `.card-compact { --radius: … }`) has the same shape and lives in plenty of
+ * sheets with no themes at all — the refusal must never fire on those. Two
+ * kinds of scope qualify, each with its own harm:
+ *
+ *   - a `root`-kind scope (`:root.theme-dark`) that re-declares at least half
+ *     of the base palette's names: `classifyOne` fell through to the base
+ *     test, so the dark palette overwrites the light one;
+ *   - an `other`-kind scope (`.theme-dark`, `html.high-contrast`) that
+ *     re-declares at least half of the base palette's names AND at least
+ *     {@link PALETTE_VARIANT_MIN_OVERLAP} of them. A component overrides a
+ *     name or two; a palette variant restates the palette. Its declarations
+ *     never reach any theme table.
+ *
+ * A scope declaring only fresh names, or overriding a token or two, is a
+ * component, not a palette variant, and never qualifies. The bar errs toward
+ * silence: a variant too small to clear it audits as it always has.
+ */
+export function unrecognisedClassTheme(scopes: readonly Scope[]): string | null {
+  const rootNames = new Set<string>();
+  for (const scope of scopes) {
+    // The BASE palette: root scopes that are not themselves a class-spelled
+    // candidate, so `:root.theme-dark` is never measured against itself.
+    if (scope.kind !== "root" || classThemeSubject(scope.matchedSelector) !== null) continue;
+    for (const d of scope.declarations) rootNames.add(d.name);
+  }
+  for (const scope of scopes) {
+    if (scope.kind !== "root" && scope.kind !== "other") continue;
+    const name = classThemeSubject(scope.matchedSelector);
+    if (name === null) continue;
+    const overlap = new Set(scope.declarations.map((d) => d.name).filter((n) => rootNames.has(n)));
+    if (overlap.size === 0 || overlap.size * 2 < rootNames.size) continue;
+    // A `:root`-prefixed spelling is theme-shaped enough to need no floor
+    // beyond "restates half the palette"; a bare/html/body class, which is
+    // also the component idiom, additionally needs the absolute floor.
+    if (scope.kind === "root" || overlap.size >= PALETTE_VARIANT_MIN_OVERLAP) return name;
+  }
+  return null;
+}
+
+/** Fewest base-palette names a bare class must re-declare to read as a palette variant. */
+const PALETTE_VARIANT_MIN_OVERLAP = 3;
+
+/**
+ * The single class a selector's subject names as a CLASS THEME candidate, or
+ * `null` when the subject is not that shape. Runs the SAME preprocessing
+ * {@link classifyOne} runs — combinator split, negation and functional-
+ * argument stripping, string blanking — then reads the one-class-on-
+ * bare/html/body/:root shape {@link classThemeOf} reads, WITHOUT the name
+ * check: the built-in pair and any configured name are both recognised
+ * themes, and this function's caller judges the name.
+ */
+function classThemeSubject(selector: string): string | null {
+  const raw = selector.trim();
+  const compounds = splitCombinators(raw);
+  if (compounds.length !== 1) return null;
+  const subject = stripNegations(compounds[0]);
+  const { rest: grouped } = extractMatchesAny(subject);
+  const rest = stripFunctionalArgs(grouped);
+  const bare = blankStrings(rest).replace(/::?[\w-]+/g, "");
+  const m = bare.match(/^(?:[hH][tT][mM][lL]|[bB][oO][dD][yY])?\.([\w-]+)$/);
+  return m ? (m[1] as string) : null;
 }
 
 /**
@@ -665,6 +792,7 @@ function classThemeOf(rest: string): "dark" | "light" | null {
  */
 function classifyOne(
   selector: string,
+  configured: readonly string[],
 ): { kind: Exclude<ScopeKind, "other">; theme: string | null; matched: string }[] {
   const raw = selector.trim();
   if (/^@theme\b/i.test(raw)) return [{ kind: "theme-inline", theme: null, matched: raw }];
@@ -681,14 +809,15 @@ function classifyOne(
 
   const found: { kind: Exclude<ScopeKind, "other">; theme: string | null; matched: string }[] = [];
   const themeMatch = rest.match(DATA_THEME);
-  const classTheme = classThemeOf(blankStrings(rest));
+  const classTheme = classThemeOf(blankStrings(rest), configured);
   if (themeMatch) found.push({ kind: "theme", theme: themeMatch[1].trim(), matched: raw });
   // BEFORE the `:root` test: `:root.dark` is the dark scope, not the base.
   else if (classTheme) found.push({ kind: "theme", theme: classTheme, matched: raw });
   else if (/:root\b/.test(blankStrings(rest)))
     found.push({ kind: "root", theme: null, matched: raw });
 
-  for (const arg of args) found.push(...classifyOne(arg).map((f) => ({ ...f, matched: arg })));
+  for (const arg of args)
+    found.push(...classifyOne(arg, configured).map((f) => ({ ...f, matched: arg })));
   return found;
 }
 
@@ -707,12 +836,13 @@ function classifyOne(
  */
 function classifySelectors(
   prelude: string,
+  configured: readonly string[],
 ): { kind: ScopeKind; theme: string | null; matchedSelector: string }[] {
   const selectors = splitSelectorList(prelude);
   const matched: { kind: ScopeKind; theme: string | null; matchedSelector: string }[] = [];
   const seen = new Set<string>();
   for (const selector of selectors) {
-    for (const { kind, theme, matched: matchedSelector } of classifyOne(selector)) {
+    for (const { kind, theme, matched: matchedSelector } of classifyOne(selector, configured)) {
       const key = `${kind}\u0000${theme ?? ""}`;
       if (seen.has(key)) continue;
       seen.add(key);
@@ -1003,7 +1133,8 @@ function colorSchemeOf(prelude: string): "dark" | "light" | null {
  * two answers their flat equivalents get. Nothing is silently dropped, and
  * nothing is filed under a subject that did not declare it.
  */
-export function parseStylesheet(source: string): Stylesheet {
+export function parseStylesheet(source: string, options?: ParseOptions): Stylesheet {
+  const configured = options?.themes ?? [];
   const css = blankComments(source);
   const lines = lineIndex(css);
   const scopes: Scope[] = [];
@@ -1057,7 +1188,7 @@ export function parseStylesheet(source: string): Stylesheet {
               : rawSelector;
           const bodyStart = blockStart + 1;
           const body = css.slice(bodyStart, i);
-          const matches = classifySelectors(selector);
+          const matches = classifySelectors(selector, configured);
           const isNestingAtRule =
             selector.startsWith("@") && matches[0].kind !== "theme-inline";
           if (isNestingAtRule) {
@@ -1092,7 +1223,7 @@ export function parseStylesheet(source: string): Stylesheet {
             // this file's header promises against.
             if (parent !== null) {
               const conditional = readDeclarations(body, bodyStart, lines);
-              const parentMatches = classifySelectors(parent);
+              const parentMatches = classifySelectors(parent, configured);
               references.push(
                 ...readReferences(
                   body,
@@ -1197,11 +1328,29 @@ export function parseStylesheet(source: string): Stylesheet {
   };
 
   walk(0, css.length, null, null, true);
+  // The recognised-theme inventory: the resolver's own theme-name derivation
+  // (attribute themes and the `.dark`/`.light`/configured class pair) plus the
+  // colour-scheme themes the media query names, read off the scopes the walk
+  // pushed. An inventory for the loader — see {@link Stylesheet.themes}.
+  const themeNames: string[] = [];
+  const seenThemeNames = new Set<string>();
+  for (const scope of scopes) {
+    const name =
+      scope.kind === "theme"
+        ? scope.theme
+        : scope.kind === "root"
+          ? (scope.colorScheme ?? null)
+          : null;
+    if (name === null || seenThemeNames.has(name)) continue;
+    seenThemeNames.add(name);
+    themeNames.push(name);
+  }
   return {
     scopes,
     references,
     imports,
     ...(registrations.length > 0 ? { registrations } : {}),
+    ...(themeNames.length > 0 ? { themes: themeNames } : {}),
   };
 }
 

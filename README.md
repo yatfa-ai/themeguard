@@ -125,15 +125,27 @@ media query and `[data-theme="dark"]` use, so all the spellings land in one tabl
 source order winning). `:root.dark` is the dark scope, not the base: it no longer overwrites the light
 palette. The boundary is exactly those two class names on those subjects: `.dark .card { … }` (a
 descendant — its subject is `.card`), `:root:not(.dark)` (a negation, still the base scope),
-`:root:hover`, a second class (`.dark.card`), another element (`div.dark`) and any other class name
-(`.theme-dark`, `.high-contrast`) are not themes and keep their current reading. Naming additional
-class themes is not configurable.
+`:root:hover`, a second class (`.dark.card`) and another element (`div.dark`) are not themes and keep
+their current reading. Any OTHER class name — `.theme-dark`, `.high-contrast` — is not a theme by
+default, and a palette written under such a name is half-read (its declarations never reach a theme
+table, or under a `:root`-prefixed spelling fold last-wins into the base). That is configurable: name
+the class themes your convention stands for in `themeguard.config.json` —
+`{"themes": ["theme-dark", "high-contrast"]}` — and each entry becomes a theme of its own, named as
+spelled, on exactly the subjects `.dark`/`.light` accept. The value is the theme NAME — the class
+without its dot — never a selector, and the built-in spellings need no entry. When a stylesheet
+declares a palette variant under a class nothing spells and no configuration names one, the audit
+refuses (exit `2`) naming the class and this key, rather than report success on a half-read palette; a
+stylesheet with no palette variant in any class audits exactly as before, configured or not. A
+"palette variant" is a class that restates the base palette — at least half of the base tokens, and at
+least three — so a component overriding a token or two (`.card-compact { --radius: 2px; }`) is
+ordinary and never refuses.
 
 The attribute form is recognised under two attribute names, `data-theme` and Bootstrap 5.3's
 `data-bs-theme` (`[data-bs-theme=dark]`, quoted or not): the theme is the attribute value, so `light` /
 `dark` land in the same tables whichever spelling is used, and a compound subject such as
 `.navbar[data-bs-theme=dark]` is classified exactly as `.navbar[data-theme=dark]` is. Other attribute
-names (`data-mode`, `data-color-scheme`, …) are not themes and keep their current reading.
+names (`data-mode`, `data-color-scheme`, …) are not themes and keep their current reading — the
+`themes` key covers CLASS themes only and cannot teach the parser an attribute name.
 
 Deliberately not taken: a media prelude whose condition is more than the one feature — a comma list
 (an OR of conditions), a second feature (`… and (min-width: …)`), a non-screen type (`print`) — and
@@ -710,6 +722,45 @@ rule that is off AND silent on both channels leaves its entries' ordinary advice
 "the defect was fixed" may be exactly true. The section prints even at zero, and like every counted
 section it never moves the exit code — the exit stays the unsuppressed-findings question, and findings the
 project's own policy set aside are not findings the report stands behind.
+
+### Naming your class themes — `themes`
+
+Suppression judges findings; the config's third top-level key does something no entry or policy can —
+it teaches the parser what a THEME is. The built-in recognition spells four channels: `.dark`/`.light`
+on a bare, `html`, `body` or `:root` subject, `[data-theme=…]`, Bootstrap 5.3's `[data-bs-theme=…]`, and
+`prefers-color-scheme`. A palette written in any other class — `.theme-dark`, `.high-contrast` — is a
+theme this package half-reads: a `:root`-prefixed block folds its declarations last-wins into the base
+scope, any other spelling keeps them out of every theme table, and every dark-only defect (collisions,
+scale collapse, family consistency, theme-partial tokens) goes unreported while the coverage count lies.
+Name the classes your convention stands for and the audit reads the whole sheet:
+
+```json
+{
+  "themes": ["theme-dark", "high-contrast"]
+}
+```
+
+Each entry is the theme NAME — the class without its dot, never a selector — and becomes a theme of its
+own, named as spelled, on exactly the subjects `.dark`/`.light` accept (a descendant's subject is a
+component, a second class is not one class, and class names stay case-sensitive). The theme count,
+every cross-theme rule and suppression's `theme` scope simply see more; the built-in spellings need no
+entry, and naming a class the sheet never writes changes nothing — the key adds recognition, it never
+mints a theme. The key covers CLASS themes only: it cannot teach the parser an attribute name, so
+`data-mode` and its cousins stay unrecognised whatever it names.
+
+Two halves travel with the key. Validation is the house discipline: the key must be an array and every
+element a non-empty string — a non-string or empty element exits `2` naming it (`element 1 of "themes":
+must be a non-empty theme name — the class name the theme stands for, not a selector — got 42`),
+because a name the tool silently ignored is a user who believes their dark palette was audited when it
+still folded into the base. And the loader refuses the one silence the key exists to end: a stylesheet
+that DECLARES a palette variant under a class name nothing spells, governed by a config naming no
+themes (or by none at all), exits `2` naming the class, the built-in channels and this key —
+`theme block themeguard cannot recognise: .theme-dark (none of .dark/.light on bare/html/body/:root,
+[data-theme=…], [data-bs-theme=…], prefers-color-scheme) — name the class themes in
+themeguard.config.json: {"themes": ["theme-dark"]}` — riding the same fast-fail an unhonourable config
+already takes. A stylesheet with no palette variant in any class — a single-theme sheet, a component
+library declaring fresh names or overriding a token or two — never refuses, configured or not: the refusal targets the half-read
+palette, not the themeless sheet.
 
 ### Marking it at the site — `/* themeguard-ignore … */`
 
