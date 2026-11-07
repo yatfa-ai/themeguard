@@ -1,8 +1,6 @@
-import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { EXIT_ERROR, EXIT_FINDINGS, EXIT_OK } from "../src/cli.js";
 import {
@@ -15,7 +13,7 @@ import {
 import { audit } from "../src/audit.js";
 import { resolveCss } from "../src/resolve.js";
 import { FIXTURE_PATH, fixtureCss, fixtureStubCss } from "./fixture.js";
-import { run } from "./run.js";
+import { BUILT_CLI, buildCli, run, spawnBuilt } from "./run.js";
 
 /**
  * `themeguard.config.json` — the suppression slice.
@@ -44,8 +42,6 @@ import { run } from "./run.js";
  * (11 / 2 / 2 / 7 = 22). Suppressing the two scale-collapse findings must land
  * on 11 / 2 / 0 / 7 = 20 — the findings move, they do not vanish.
  */
-
-const repo = fileURLToPath(new URL("..", import.meta.url));
 
 /**
  * A stylesheet with exactly ONE finding — a hover 2.43 L* from its resting
@@ -934,25 +930,7 @@ describe("themeguard <file.css> with themeguard.config.json beside the styleshee
 });
 
 describe("node dist/cli.js — the built artifact honours the config too", () => {
-  const cli = join(repo, "dist", "cli.js");
-
-  beforeAll(() => {
-    execFileSync("npm", ["run", "build"], { cwd: repo, stdio: "pipe" });
-  }, 120_000);
-
-  function spawn(...args: string[]): { code: number; stdout: string; stderr: string } {
-    try {
-      const stdout = execFileSync(process.execPath, [cli, ...args], {
-        cwd: repo,
-        encoding: "utf8",
-        stdio: ["ignore", "pipe", "pipe"],
-      });
-      return { code: 0, stdout, stderr: "" };
-    } catch (error) {
-      const e = error as { status?: number; stdout?: string; stderr?: string };
-      return { code: e.status ?? -1, stdout: e.stdout ?? "", stderr: e.stderr ?? "" };
-    }
-  }
+  beforeAll(buildCli, 120_000);
 
   it("suppresses beside the built binary: one finding moved, exit flips 1 → 0", () => {
     const dir = join(tmp, "built");
@@ -960,14 +938,14 @@ describe("node dist/cli.js — the built artifact honours the config too", () =>
     const cssPath = join(dir, "one-finding.css");
     writeFileSync(cssPath, ONE_FINDING_CSS, "utf8");
     // Absent config, through the built file: the finding stands, exit 1.
-    expect(spawn(cssPath).code).toBe(EXIT_FINDINGS);
+    expect(spawnBuilt(cssPath).code).toBe(EXIT_FINDINGS);
     writeConfig(
       dir,
       JSON.stringify({
         suppress: [{ rule: "scale-collapse", token: "--panel-hover", reason: "checked by eye; intentional" }],
       }),
     );
-    const result = spawn(cssPath);
+    const result = spawnBuilt(cssPath);
     expect(result.stdout).toContain("No findings.");
     expect(result.stdout).toContain("suppressed (1)");
     expect(result.code).toBe(EXIT_OK);
@@ -982,7 +960,7 @@ describe("node dist/cli.js — the built artifact honours the config too", () =>
       dir,
       JSON.stringify({ suppress: [{ rule: "no-such-rule", token: "--panel-hover", reason: "r" }] }),
     );
-    const result = spawn(cssPath);
+    const result = spawnBuilt(cssPath);
     expect(result.code).toBe(EXIT_ERROR);
     expect(result.stderr).toContain('entry 1 of "suppress"');
     expect(result.stderr).toContain('"no-such-rule"');
@@ -991,6 +969,6 @@ describe("node dist/cli.js — the built artifact honours the config too", () =>
   it("the installed surface is unchanged in shape: dist ships the config module", () => {
     // config.ts compiles into dist/ alongside cli.js and index.js; the
     // tarball's `files` is dist/ wholesale, so the export map needs no change.
-    expect(readFileSync(cli, "utf8")).toContain("suppressed");
+    expect(readFileSync(BUILT_CLI, "utf8")).toContain("suppressed");
   });
 });

@@ -1,4 +1,3 @@
-import { execFileSync } from "node:child_process";
 import { mkdirSync, readFileSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -16,7 +15,7 @@ import {
 import { loadStylesheet } from "../src/load.js";
 import { resolveStylesheet } from "../src/resolve.js";
 import { FIXTURE_PATH } from "./fixture.js";
-import { run } from "./run.js";
+import { REPO_ROOT, buildCli, run, spawnBuilt } from "./run.js";
 
 /**
  * The CLI — success criteria 1 and 2.
@@ -623,41 +622,22 @@ describe("several stylesheets in one invocation", () => {
  * the shebang and the emitted `.js` are all outside that reach.
  */
 describe("node dist/cli.js — the built artifact", () => {
-  const repo = fileURLToPath(new URL("..", import.meta.url));
-  const cli = join(repo, "dist", "cli.js");
-
-  beforeAll(() => {
-    execFileSync("npm", ["run", "build"], { cwd: repo, stdio: "pipe" });
-  }, 120_000);
-
-  function spawn(...args: string[]): { code: number; stdout: string; stderr: string } {
-    try {
-      const stdout = execFileSync(process.execPath, [cli, ...args], {
-        cwd: repo,
-        encoding: "utf8",
-        stdio: ["ignore", "pipe", "pipe"],
-      });
-      return { code: 0, stdout, stderr: "" };
-    } catch (error) {
-      const e = error as { status?: number; stdout?: string; stderr?: string };
-      return { code: e.status ?? -1, stdout: e.stdout ?? "", stderr: e.stderr ?? "" };
-    }
-  }
+  beforeAll(buildCli, 120_000);
 
   it("--version and --help work from the built file, reading package.json from beside dist/", () => {
-    const { version } = JSON.parse(readFileSync(join(repo, "package.json"), "utf8")) as {
+    const { version } = JSON.parse(readFileSync(join(REPO_ROOT, "package.json"), "utf8")) as {
       version: string;
     };
-    const v = spawn("--version");
+    const v = spawnBuilt("--version");
     expect(v).toEqual({ code: 0, stdout: `${version}\n`, stderr: "" });
-    const h = spawn("-h");
+    const h = spawnBuilt("-h");
     expect(h.code).toBe(0);
     expect(h.stdout).toBe(`${HELP}\n`);
     expect(h.stderr).toBe("");
   });
 
   it("reproduces the census over the fixture and exits 1", () => {
-    const result = spawn(FIXTURE_PATH);
+    const result = spawnBuilt(FIXTURE_PATH);
     expect(result.stdout).toContain("collision (11)");
     expect(result.stdout).toContain("dead-token (2)");
     expect(result.stdout).toContain("scale-collapse (2)");
@@ -665,22 +645,22 @@ describe("node dist/cli.js — the built artifact", () => {
   });
 
   it("exits 0 on the clean stylesheet and 2 on a missing one", () => {
-    expect(spawn(CLEAN_PATH).code).toBe(EXIT_OK);
-    expect(spawn(join(tmp, "absent.css")).code).toBe(EXIT_ERROR);
+    expect(spawnBuilt(CLEAN_PATH).code).toBe(EXIT_OK);
+    expect(spawnBuilt(join(tmp, "absent.css")).code).toBe(EXIT_ERROR);
   });
 
   it("aggregates several files in one invocation — one verdict through the built binary", () => {
     // Two clean files, one invocation: the aggregate is over the per-file
     // outcomes, so 0 and 0 aggregate to 0.
-    const cleanPair = spawn(CLEAN_PATH, CLEAN2_PATH);
+    const cleanPair = spawnBuilt(CLEAN_PATH, CLEAN2_PATH);
     expect(cleanPair.code).toBe(EXIT_OK);
     expect(cleanPair.stdout.split(`themeguard — ${CLEAN_PATH}`)).toHaveLength(2);
     expect(cleanPair.stdout.split(`themeguard — ${CLEAN2_PATH}`)).toHaveLength(2);
     // 0 and 1 aggregate to 1 — a finding in ANY file holds the invocation.
-    expect(spawn(CLEAN_PATH, ONE_FINDING_PATH).code).toBe(EXIT_FINDINGS);
+    expect(spawnBuilt(CLEAN_PATH, ONE_FINDING_PATH).code).toBe(EXIT_FINDINGS);
     // And the first file's report is already on stdout when the second
     // cannot be read — the fail-fast contract, through a real process.
-    const failed = spawn(CLEAN_PATH, join(tmp, "absent.css"));
+    const failed = spawnBuilt(CLEAN_PATH, join(tmp, "absent.css"));
     expect(failed.code).toBe(EXIT_ERROR);
     expect(failed.stdout).toContain(`themeguard — ${CLEAN_PATH}`);
     expect(failed.stdout).toContain("No findings.");
@@ -692,7 +672,7 @@ describe("node dist/cli.js — the built artifact", () => {
     // actually writes those bytes to a real stdout, one line per file, with
     // nothing else mixed in — which is the only form the pipeline caller ever
     // sees.
-    const result = spawn("--json", CLEAN_PATH, ONE_FINDING_PATH);
+    const result = spawnBuilt("--json", CLEAN_PATH, ONE_FINDING_PATH);
     expect(result.code).toBe(EXIT_FINDINGS);
     const lines = result.stdout.trimEnd().split("\n");
     expect(lines).toHaveLength(2);
@@ -703,7 +683,7 @@ describe("node dist/cli.js — the built artifact", () => {
 
     // stdout stays pure NDJSON when a later file cannot be read: the first
     // file's line is written, the diagnostic is prose on stderr.
-    const failed = spawn("--json", CLEAN_PATH, join(tmp, "spawn-absent.css"));
+    const failed = spawnBuilt("--json", CLEAN_PATH, join(tmp, "spawn-absent.css"));
     expect(failed.code).toBe(EXIT_ERROR);
     expect(failed.stdout.trimEnd().split("\n")).toHaveLength(1);
     expect(() => JSON.parse(failed.stdout.trimEnd())).not.toThrow();
