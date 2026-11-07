@@ -206,6 +206,7 @@ describe("a project that has installed the package", () => {
       "skipped",
       "skippedDisabled",
       "coverage",
+      "unreadColors",
     ]);
     expect(report.path).toBe(FIXTURE_PATH);
     expect(JSON.stringify(report.countsByRule)).toBe(

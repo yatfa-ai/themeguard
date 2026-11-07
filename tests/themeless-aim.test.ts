@@ -621,6 +621,7 @@ describe("--json carries the same diagnosis as data", () => {
       "skipped",
       "skippedDisabled",
       "coverage",
+      "unreadColors",
     ]);
     // The findings are still LIVE in the data, exactly as the prose reports.
     expect(report.findings).toHaveLength(2);

@@ -102,6 +102,13 @@ export {
   type ThemeCoverage,
 } from "./rules/coverage.js";
 export {
+  unreadColorsReport,
+  unreadColorSyntax,
+  themeTokenTotals,
+  type UnreadColor,
+  type UnreadColorTotals,
+} from "./rules/unread-colors.js";
+export {
   TokenNames,
   STATE_SUFFIXES,
   type StatePair,

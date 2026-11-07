@@ -150,9 +150,16 @@ paints. A stylesheet written in `oklch()` therefore reports the same findings as
 The boundary: values that are not a fixed colour themeguard can place in sRGB are not colours to it —
 `color-mix()`, `light-dark()`, relative colour syntax (`oklch(from var(--x) l c h)`), `color()` in any
 space other than `srgb` (`display-p3`, `rec2020`, …), system colours and `currentColor`. A token with
-such a value is classified `non-color` and is left out of the colour rules, **without a line in the
-report saying so**; the same is true of any value that does not parse. If a stylesheet audits clean
-and you expected findings, check it for these values.
+such a value is classified `non-color` and is left out of the colour rules — but not silently: the
+report's counted **`unread-colors`** section names every such token (`--bg (light-dark) in theme
+"root", declared at line 2`), with a per-theme headline of how many tokens that is of the theme's
+total, and prints a "nothing left out" line at zero. It lists only a value that *is* the unread syntax
+(one `light-dark()` / `color-mix()` / relative-colour / non-sRGB `color()` call, or `currentColor` / a
+system-colour keyword, on its own) — never a length, a font stack or a shadow — and it is facts, not
+findings: it never moves the exit code. In `--json` it is `unreadColors` — `{theme, token, syntax,
+line, declaration}` rows (plus `importOrigin` for a declaration spliced in over `@import`), always
+present, an empty array at zero. A value that merely does not parse is still left out without a line;
+the section covers the colour syntax the parser documents it does not read.
 
 One file set per audit, one declared composition per file. Reference resolution does not cross files a
 human merely *listed together*: `themeguard a.css b.css` audits two independent sheets, because nothing in
@@ -250,7 +257,8 @@ set-aside: `{finding, rule, reason}` rows, the reason the policy's own marker, v
 `translucent` / `not-a-color` / `absent` / `unresolvable`, and an `absent` row carrying the additive
 `declaredIn` pointer — **absent**, never `null`, on every other reason), `skippedDisabled` (the skipped
 channel's own policy set-aside, `{skipped, rule, reason}` rows carrying the pair whole — empty, not
-absent, wherever no rule is off, exactly like `suppressedDisabled`) and `coverage`. Nothing is
+absent, wherever no rule is off, exactly like `suppressedDisabled`) `coverage` and `unreadColors` (the
+`non-color` tokens whose colour syntax the colour rules do not read — empty, not absent, at zero). Nothing is
 renamed, summarized or dropped. The prose renderer is a lossy projection of that object — sites become
 clause text, evidence becomes sentence fragments, scopes become bracket suffixes — so a caller that
 wanted *which file, which token, which line* had to scrape sentences shaped for people.
@@ -347,6 +355,12 @@ coverage (2 themes, 73 base tokens)
     [inherited] --app-focus-ring-width (non-color)
     … 20 more — every base token each theme inherits, named
 
+unread-colors (8)
+  tokens whose value is colour syntax themeguard does not evaluate (…) — left out of collision, scale-collapse and contrast, not judged either way.
+  root: 8 of 137 tokens not read.
+    [unread] --app-error-toast-surface (color-mix) in theme "root", declared at line 111
+    … 7 more
+
 22 findings: 11 collision, 2 dead-token, 2 scale-collapse, 7 family-consistency, 0 unresolved-reference, 0 cycle-reference, 0 duplicate-declaration, 0 unresolved-import, 0 theme-partial-token.
 ```
 
@@ -379,6 +393,11 @@ transitions are theme-independent on purpose — so the inventory never moves th
 under the same discipline as `skipped` (counted, named, headline even at zero) because a theme that
 silently receives a value is a fact a reader needs before the `family-consistency` findings above it make
 sense; the findings are the judgement, the inventory is what they are judged against.
+
+**`unread-colors` is facts, not findings.** It prints after `coverage`, under the same discipline
+(counted, named, headline even at zero, never an exit code): the tokens whose colour the colour rules
+could not read, so a stylesheet written in `light-dark()` or `color-mix()` does not read as a complete
+audit. A theme that merely inherits an unread token lists it too, marked `inherited from :root`.
 
 **`suppressed` is what you, not the tool, decided.** The section headline prints even at zero, under the
 same discipline as `skipped` and `coverage` — an empty `suppressed` section is the visible proof that

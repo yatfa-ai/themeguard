@@ -321,7 +321,8 @@ import { resolveStylesheet } from "./resolve.js";
 import type { TokenKind } from "./resolve.js";
 import type { Stylesheet } from "./parse.js";
 import type { FindingSite, RuleId } from "./rules/finding.js";
-import { citeSiteList, RULE_IDS } from "./rules/finding.js";
+import { citeSite, citeSiteList, RULE_IDS } from "./rules/finding.js";
+import { themeTokenTotals, type UnreadColorTotals } from "./rules/unread-colors.js";
 import type { SkippedPair } from "./rules/scale-collapse.js";
 
 /** The audit ran and reported nothing. */
@@ -1011,7 +1012,15 @@ function auditStylesheet(path: string, io: CliIo, json = false): number {
   const siblings = siblingAims(report.unmatchedSuppressions, auditedStylesheet);
   if (json) io.out(formatReportJson(path, report, aims, themeless, skipped, siblings));
   else
-    for (const line of formatReport(path, report, aims, themeless, skipped, auditedStylesheet))
+    for (const line of formatReport(
+      path,
+      report,
+      aims,
+      themeless,
+      skipped,
+      auditedStylesheet,
+      themeTokenTotals(resolved),
+    ))
       io.out(line);
 
   // Findings here are the UNSUPPRESSED ones — a finding the user has recorded
@@ -1057,6 +1066,7 @@ export function formatReport(
   themeless: readonly (ThemelessAim | undefined)[] = [],
   skipped: readonly (SkippedAim | undefined)[] = [],
   auditedStylesheet?: string,
+  tokenTotals: readonly UnreadColorTotals[] = [],
 ): string[] {
   const lines: string[] = [`themeguard — ${path}`, ""];
 
@@ -1358,6 +1368,40 @@ export function formatReport(
   }
   lines.push("");
 
+  // Unread colours under the same precedent: the colour-valued tokens the
+  // colour rules did not read, counted, named, printed even at zero, and never
+  // an exit code. Without it a stylesheet written in `light-dark()` or
+  // `color-mix()` prints `skipped (0)` and a coverage line and reads as a
+  // complete audit.
+  lines.push(`unread-colors (${report.unreadColors.length})`);
+  if (report.unreadColors.length === 0) {
+    lines.push("  nothing left out — every colour-valued token was read by the colour rules.");
+  } else {
+    lines.push(
+      "  tokens whose value is colour syntax themeguard does not evaluate (light-dark(), color-mix(), relative colour, color() outside srgb, currentColor, system colours) — left out of collision, scale-collapse and contrast, not judged either way.",
+    );
+    for (const theme of new Set(report.unreadColors.map((row) => row.theme))) {
+      const rows = report.unreadColors.filter((row) => row.theme === theme);
+      const total = tokenTotals.find((t) => t.theme === theme)?.total;
+      lines.push(
+        total === undefined
+          ? `  ${theme}: ${rows.length} ${rows.length === 1 ? "token" : "tokens"} not read.`
+          : `  ${theme}: ${rows.length} of ${total} ${total === 1 ? "token" : "tokens"} not read.`,
+      );
+      for (const row of rows) {
+        const site = citeSite({ line: row.line, origin: row.importOrigin });
+        const where =
+          row.declaration === "inherited"
+            ? `inherited from :root, declared at ${site}`
+            : row.declaration === "theme-inline"
+              ? `declared in @theme inline at ${site}`
+              : `declared at ${site}`;
+        lines.push(`    [unread] ${row.token} (${row.syntax}) in theme "${theme}", ${where}`);
+      }
+    }
+  }
+  lines.push("");
+
   const total = report.findings.length;
   lines.push(
     total === 0
@@ -1393,7 +1437,7 @@ export function formatReport(
  *
  * ⚠️ The key order is the REPORT OBJECT's own insertion order — `findings`,
  * `countsByRule`, `suppressed`, `unmatchedSuppressions`, `suppressedDisabled`,
- * `skipped`, `skippedDisabled`, `coverage` (`audit.ts`'s return literal). That
+ * `skipped`, `skippedDisabled`, `coverage`, `unreadColors` (`audit.ts`'s return literal). That
  * is NOT the prose renderer's
  * section order, which prints `skipped` BEFORE `suppressed`. Follow the
  * object: `JSON.stringify` preserves insertion order, and the project already
