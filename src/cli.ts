@@ -779,13 +779,24 @@ function expandDirectories(paths: readonly string[], io: CliIo): string[] | null
 
   const explicit = new Set(paths.filter((p) => !isDirectory(p)).map((p) => resolve(p)));
   const discovered: string[] = [];
-  for (const path of paths) {
+  const perPath = new Map<number, string[]>();
+  for (const [index, path] of paths.entries()) {
     if (!isDirectory(path)) continue;
-    const files = discoverCss(path);
+    let files: string[];
+    try {
+      files = discoverCss(path);
+    } catch (error) {
+      // A directory the walk cannot read (permissions, removed mid-walk) is a
+      // tool failure, not a finding: exit 2, never the findings code.
+      const reason = error instanceof Error ? error.message : String(error);
+      io.err(`themeguard: cannot read ${path}: ${reason}`);
+      return null;
+    }
     if (files.length === 0) {
       io.err(`themeguard: no *.css files found in ${path}`);
       return null;
     }
+    perPath.set(index, files);
     for (const file of files) {
       const abs = resolve(file);
       if (explicit.has(abs) || discovered.some((d) => resolve(d) === abs)) continue;
@@ -804,12 +815,13 @@ function expandDirectories(paths: readonly string[], io: CliIo): string[] | null
   const keep = new Set(entries.map((e) => resolve(e)));
   const targets: string[] = [];
   const placed = new Set<string>();
-  for (const path of paths) {
-    if (!isDirectory(path)) {
+  for (const [index, path] of paths.entries()) {
+    const files = perPath.get(index);
+    if (files === undefined) {
       targets.push(path);
       continue;
     }
-    for (const file of discoverCss(path)) {
+    for (const file of files) {
       const abs = resolve(file);
       if (keep.has(abs) && !placed.has(abs)) {
         placed.add(abs);

@@ -35,7 +35,11 @@ export function isDirectory(path: string): boolean {
   }
 }
 
-/** Every `*.css` file under `dir`, recursively, as `dir`-prefixed paths, sorted. */
+/**
+ * Every `*.css` file under `dir`, recursively, as `dir`-prefixed paths, sorted.
+ * Throws the underlying fs error when a directory cannot be read; the CLI
+ * turns that into a `cannot read` diagnostic and exit 2.
+ */
 export function discoverCss(dir: string): string[] {
   const found: string[] = [];
   const walk = (current: string): void => {
