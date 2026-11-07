@@ -68,28 +68,19 @@
 
 import { readFileSync, statSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
-import type { RuleId } from "./rules/finding.js";
+import { RULE_IDS, type RuleId } from "./rules/finding.js";
 
 /** The file name, discovered at or above the stylesheet — nearest ancestor wins. */
 export const CONFIG_FILENAME = "themeguard.config.json";
 
 /**
  * Every rule id a suppression entry may name — and every rule id the
- * `suppress-rule` policy may turn off. ONE list is the single source of truth
- * for both spellings of "a rule this package knows", so a rule the entries
- * accept and a rule the policy accepts can never disagree.
+ * `suppress-rule` policy may turn off. ONE list ({@link RULE_IDS}, shared with
+ * the rest of the library) is the single source of truth for both spellings of
+ * "a rule this package knows", so a rule the entries accept and a rule the
+ * policy accepts can never disagree.
  */
-const RULE_IDS: readonly RuleId[] = [
-  "collision",
-  "dead-token",
-  "scale-collapse",
-  "family-consistency",
-  "unresolved-reference",
-  "cycle-reference",
-  "duplicate-declaration",
-  "unresolved-import",
-  "theme-partial-token",
-];
+const KNOWN_RULE_IDS: readonly string[] = RULE_IDS;
 
 /**
  * One deliberate finding: the rule that reported it, the token dimension it
@@ -365,7 +356,7 @@ function parseDisabledRules(value: unknown, path: string): readonly RuleId[] {
     );
   }
   return value.map((element, index) => {
-    if (typeof element !== "string" || !RULE_IDS.includes(element as RuleId)) {
+    if (typeof element !== "string" || !KNOWN_RULE_IDS.includes(element)) {
       throw new ConfigError(
         path,
         `element ${index + 1} of "suppress-rule": unknown rule ${JSON.stringify(
@@ -394,7 +385,7 @@ function parseEntry(item: unknown, index: number, path: string): SuppressionEntr
   }
 
   const rule = item["rule"];
-  if (typeof rule !== "string" || !RULE_IDS.includes(rule as RuleId)) {
+  if (typeof rule !== "string" || !KNOWN_RULE_IDS.includes(rule)) {
     throw new ConfigError(
       path,
       `${where}: unknown rule ${JSON.stringify(rule ?? null)} — expected one of ${RULE_IDS.join(", ")}`,

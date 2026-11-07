@@ -320,7 +320,7 @@ import { resolveStylesheet } from "./resolve.js";
 import type { TokenKind } from "./resolve.js";
 import type { Stylesheet } from "./parse.js";
 import type { FindingSite, RuleId } from "./rules/finding.js";
-import { citeSiteList } from "./rules/finding.js";
+import { citeSiteList, RULE_IDS } from "./rules/finding.js";
 import type { SkippedPair } from "./rules/scale-collapse.js";
 
 /** The audit ran and reported nothing. */
@@ -388,17 +388,7 @@ export const HELP = [
 const JSON_FLAG = "--json";
 
 /** The order groups are printed in — the library's own reading order. */
-const RULE_ORDER: readonly RuleId[] = [
-  "collision",
-  "dead-token",
-  "scale-collapse",
-  "family-consistency",
-  "unresolved-reference",
-  "cycle-reference",
-  "duplicate-declaration",
-  "unresolved-import",
-  "theme-partial-token",
-];
+const RULE_ORDER: readonly RuleId[] = RULE_IDS;
 
 /**
  * The scope a suppression entry declared, printed after its reason so a line

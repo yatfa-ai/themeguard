@@ -8,26 +8,34 @@
  * one.
  */
 
-/** Which of the nine questions a finding answers. */
-export type RuleId =
+/**
+ * Every rule id, in the library's reading order — THE one list.
+ *
+ * {@link RuleId}, the sort order, the config validators, the CLI's report
+ * sections and the report's `countsByRule` are all derived from this tuple, so
+ * a tenth rule is one entry here plus its rule file. Not exported from the
+ * package entry point: it is the library's own vocabulary, and only the
+ * {@link RuleId} type is public.
+ */
+export const RULE_IDS = [
   /** Two token names that must differ hold byte-identical colours. */
-  | "collision"
+  "collision",
   /** A token is declared and referenced by no `var()` anywhere. */
-  | "dead-token"
+  "dead-token",
   /** Two tokens meant to read apart are closer than a visible step in L*. */
-  | "scale-collapse"
+  "scale-collapse",
   /**
    * A theme inherits a token whose family the theme's own declarations tune —
    * at least one sibling sharing the token's declared family head is
    * overridden, so the un-restated member silently keeps the base value.
    */
-  | "family-consistency"
+  "family-consistency",
   /**
    * A `var()` names a custom property that no scope in the stylesheet declares,
    * so it resolves to nothing — the property falls back to unset/inherit, or to
    * whatever fallback was written.
    */
-  | "unresolved-reference"
+  "unresolved-reference",
   /**
    * A `var()` chain returns to a name already on it. Every property in the
    * loop — and every `var()` consuming a member — is invalid at computed-value
@@ -35,7 +43,7 @@ export type RuleId =
    * base declarations (or the alias namespace) author, theme-scoped for one a
    * theme's own declarations close.
    */
-  | "cycle-reference"
+  "cycle-reference",
   /**
    * A custom property is declared more than once in ONE scope with differing
    * values. The cascade keeps the last declaration and silently discards the
@@ -44,7 +52,7 @@ export type RuleId =
    * name, one cascade winner) and `collision` is its mirror, not its
    * population.
    */
-  | "duplicate-declaration"
+  "duplicate-declaration",
   /**
    * A RELATIVE `@import` edge the loader could not follow — the file the
    * specifier names is missing or unreadable. The audit unit is the import
@@ -53,7 +61,7 @@ export type RuleId =
    * theme's document) and the specifier occupies the token dimension, so the
    * ordinary suppression doors aim at it.
    */
-  | "unresolved-import"
+  "unresolved-import",
   /**
    * A token declared in exactly one theme's block is absent from every other
    * theme's view, and a declaration chain in such a view that reaches for it
@@ -62,7 +70,11 @@ export type RuleId =
    * declared ANYWHERE (its population is the typos); this rule reports the
    * name that exists somewhere but not in the view that needs it.
    */
-  | "theme-partial-token";
+  "theme-partial-token",
+] as const;
+
+/** Which of the nine questions a finding answers. */
+export type RuleId = (typeof RULE_IDS)[number];
 
 /**
  * The rules that report `theme: null` BY CONSTRUCTION — each pushes the literal
@@ -279,22 +291,14 @@ export function siteString(site: { selector: string; line: number; origin?: stri
   return site.origin === undefined ? `${site.selector}:${site.line}` : `${site.origin}:${site.line}`;
 }
 
+/** Each rule id's position in {@link RULE_IDS}, built once. */
+const RULE_RANK: ReadonlyMap<RuleId, number> = new Map(RULE_IDS.map((rule, i) => [rule, i]));
+
 /** Sort into a stable reading order: rule, then theme, then tokens. */
 export function sortFindings(findings: readonly Finding[]): Finding[] {
-  const order: Record<RuleId, number> = {
-    collision: 0,
-    "dead-token": 1,
-    "scale-collapse": 2,
-    "family-consistency": 3,
-    "unresolved-reference": 4,
-    "cycle-reference": 5,
-    "duplicate-declaration": 6,
-    "unresolved-import": 7,
-    "theme-partial-token": 8,
-  };
   return [...findings].sort(
     (a, b) =>
-      order[a.rule] - order[b.rule] ||
+      RULE_RANK.get(a.rule)! - RULE_RANK.get(b.rule)! ||
       (a.theme ?? "").localeCompare(b.theme ?? "") ||
       a.tokens.join(",").localeCompare(b.tokens.join(",")),
   );

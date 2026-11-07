@@ -78,6 +78,7 @@ import { themePartialTokenRule } from "./rules/theme-partial-token.js";
 import { scaleCollapseRule, type SkippedPair, type SkipReason } from "./rules/scale-collapse.js";
 import {
   citeSite as citeSiteFromFinding,
+  RULE_IDS,
   sortFindings,
   THEMELESS_RULES,
   type Finding,
@@ -1332,17 +1333,11 @@ export function audit(
 
   return {
     findings: kept,
-    countsByRule: {
-      collision: kept.filter((f) => f.rule === "collision").length,
-      "dead-token": kept.filter((f) => f.rule === "dead-token").length,
-      "scale-collapse": kept.filter((f) => f.rule === "scale-collapse").length,
-      "family-consistency": kept.filter((f) => f.rule === "family-consistency").length,
-      "unresolved-reference": kept.filter((f) => f.rule === "unresolved-reference").length,
-      "cycle-reference": kept.filter((f) => f.rule === "cycle-reference").length,
-      "duplicate-declaration": kept.filter((f) => f.rule === "duplicate-declaration").length,
-      "unresolved-import": kept.filter((f) => f.rule === "unresolved-import").length,
-      "theme-partial-token": kept.filter((f) => f.rule === "theme-partial-token").length,
-    },
+    // Built from the tuple, so key order is declaration order — the CLI
+    // documents `JSON.stringify(report.countsByRule)` as an exact byte string.
+    countsByRule: Object.fromEntries(
+      RULE_IDS.map((rule) => [rule, kept.filter((f) => f.rule === rule).length]),
+    ) as Record<RuleId, number>,
     suppressed,
     // The complement, in declaration order: the caller's slots that no
     // finding claimed. Declared entries arrive as one ordered array at the
