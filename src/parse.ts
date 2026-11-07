@@ -13,6 +13,10 @@
  *                                     into it; the condition travels on the
  *                                     scope ({@link Scope.colorScheme})
  *
+ * A fifth spelling of the dark/light scopes is the class form — `.dark`,
+ * `html.dark`, `body.dark`, `:root.dark` (and `.light`) — read as the `dark` /
+ * `light` theme; see {@link classThemeOf}.
+ *
  * A block's prelude is a selector LIST, so it can name more than one of these
  * at once: `:root, [data-theme="dark"] { … }` — the usual way to write "dark is
  * the default theme" — is genuinely both the base scope and the dark scope, and
@@ -535,6 +539,30 @@ function blankStrings(s: string): string {
 }
 
 /**
+ * The theme a class-based colour-scheme compound names, or `null`.
+ *
+ * `.dark` / `.light` on an otherwise bare, `html`, `body` or `:root` subject —
+ * `.dark`, `html.dark`, `body.dark`, `:root.dark` — is the dark/light scope, the
+ * way Tailwind's `darkMode: "class"` and shadcn write it. The theme names are
+ * the ones `[data-theme="dark"]` and the colour-scheme media query already use,
+ * so every spelling lands in one table.
+ *
+ * Deliberately narrow: only these two class names, and only on those subjects.
+ * Any other class (`.theme-dark`, `.high-contrast`), any second class
+ * (`.dark.card`), an id, or any other element type (`div.dark`) is not a theme
+ * and returns `null`; so does a compound naming both `.dark` and `.light`.
+ * Pseudo-classes (`:hover`) are ignored, exactly as `:root:hover` stays `root`.
+ * A descendant (`.dark .card`) never reaches here: its subject is `.card`.
+ * `rest` has negations and functional arguments already removed and string
+ * contents blanked.
+ */
+function classThemeOf(rest: string): "dark" | "light" | null {
+  const bare = rest.replace(/::?[\w-]+/g, "");
+  const m = bare.match(/^(?:[hH][tT][mM][lL]|[bB][oO][dD][yY])?\.(dark|light)$/);
+  return m ? (m[1] as "dark" | "light") : null;
+}
+
+/**
  * Classify ONE selector (never a list — see {@link classifySelectors}) into the
  * scopes it opens. Usually none or one; `:is(:root, [data-theme="dark"])` opens two.
  *
@@ -566,7 +594,10 @@ function classifyOne(
 
   const found: { kind: Exclude<ScopeKind, "other">; theme: string | null; matched: string }[] = [];
   const themeMatch = rest.match(DATA_THEME);
+  const classTheme = classThemeOf(blankStrings(rest));
   if (themeMatch) found.push({ kind: "theme", theme: themeMatch[1].trim(), matched: raw });
+  // BEFORE the `:root` test: `:root.dark` is the dark scope, not the base.
+  else if (classTheme) found.push({ kind: "theme", theme: classTheme, matched: raw });
   else if (/:root\b/.test(blankStrings(rest)))
     found.push({ kind: "root", theme: null, matched: raw });
 

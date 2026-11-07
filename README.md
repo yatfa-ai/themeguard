@@ -97,8 +97,8 @@ themeguard for the stylesheet; they answer different questions.
 
 ## Scope
 
-Any CSS that declares custom properties — `:root`, `[data-theme="…"]`, and Tailwind v4's
-`@theme inline` alike. No framework required and no browser required. SCSS `$variables` are compiled
+Any CSS that declares custom properties — `:root`, `[data-theme="…"]`, the class forms `.dark` /
+`.light`, and Tailwind v4's `@theme inline` alike. No framework required and no browser required. SCSS `$variables` are compiled
 away before themeguard sees anything: point it at the compiled CSS and it works, but the link back to
 the source names is lost.
 
@@ -113,6 +113,17 @@ setting. The theme is named for the feature value; a stylesheet that *also* decl
 two land in one `dark` table — last declaration in source order winning, exactly as two
 `[data-theme="dark"]` blocks already did. The nested writing works too:
 `:root { @media (prefers-color-scheme: dark) { … } }`.
+
+A class-based theme is a theme too. `.dark` or `.light` on a bare, `html`, `body` or `:root` subject —
+`.dark { … }`, `html.dark { … }`, `body.dark { … }`, `:root.dark { … }`, the way Tailwind's
+`darkMode: "class"` and shadcn write it — resolves as the `dark` / `light` theme, the same names the
+media query and `[data-theme="dark"]` use, so all the spellings land in one table (last declaration in
+source order winning). `:root.dark` is the dark scope, not the base: it no longer overwrites the light
+palette. The boundary is exactly those two class names on those subjects: `.dark .card { … }` (a
+descendant — its subject is `.card`), `:root:not(.dark)` (a negation, still the base scope),
+`:root:hover`, a second class (`.dark.card`), another element (`div.dark`) and any other class name
+(`.theme-dark`, `.high-contrast`) are not themes and keep their current reading. Naming additional
+class themes is not configurable.
 
 Deliberately not taken: a media prelude whose condition is more than the one feature — a comma list
 (an OR of conditions), a second feature (`… and (min-width: …)`), a non-screen type (`print`) — and
