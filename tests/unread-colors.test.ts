@@ -3,9 +3,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { audit } from "../src/audit.js";
-import { EXIT_OK } from "../src/cli.js";
+import { EXIT_OK, formatReport } from "../src/cli.js";
 import { resolveCss } from "../src/resolve.js";
-import { unreadColorSyntax } from "../src/rules/unread-colors.js";
+import { themeTokenTotals, unreadColorSyntax } from "../src/rules/unread-colors.js";
 import { run } from "./run.js";
 
 /**
@@ -203,5 +203,29 @@ body { background: var(--bg); color: var(--ink); }
       unreadColors: { importOrigin?: string; line: number }[];
     };
     expect(json.unreadColors[0]).toMatchObject({ importOrigin: "imported-tokens.css", line: 2 });
+  });
+});
+
+describe("unread-colors branch pins", () => {
+  it("a whole-value call followed by more value is not listed", () => {
+    expect(unreadColorSyntax("color-mix(in srgb, red, blue) 10%")).toBeNull();
+    expect(unreadColorSyntax("light-dark(#fff, #000) !important")).toBeNull();
+  });
+
+  it.each(["hsl", "hsla", "hwb", "lab", "lch", "oklab"])(
+    "%s(from ...) is relative-color",
+    (f) => {
+      expect(unreadColorSyntax(`${f}(from var(--x) h s l)`)).toBe("relative-color");
+    },
+  );
+
+  it("names an @theme inline declaration and the singular token noun", () => {
+    const css = "@theme inline { --bg: light-dark(#fff, #000); }\nbody{background:var(--bg)}";
+    const r = resolveCss(css);
+    const out = formatReport("x.css", audit(r), [], [], [], css, themeTokenTotals(r));
+    expect(out).toContain(
+      '    [unread] --bg (light-dark) in theme "root", declared in @theme inline at line 1',
+    );
+    expect(out).toContain("  root: 1 of 1 token not read.");
   });
 });
