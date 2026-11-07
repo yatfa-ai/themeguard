@@ -695,6 +695,7 @@ describe("the skipped channel — the policy partitions the second output", () =
       "skipped",
       "skippedDisabled",
       "coverage",
+      "unreadColors",
     ]);
     // Additive, not absent: the leg is an empty array wherever no rule is
     // off — the same status `suppressedDisabled` has always had.

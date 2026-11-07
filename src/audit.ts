@@ -69,6 +69,7 @@ import {
   familyConsistencyRule,
   type ThemeCoverage,
 } from "./rules/coverage.js";
+import { unreadColorsReport, type UnreadColor } from "./rules/unread-colors.js";
 import { deadTokenRule } from "./rules/dead-token.js";
 import { cycleReferenceRule } from "./rules/cycle-reference.js";
 import { duplicateDeclarationRule } from "./rules/duplicate-declaration.js";
@@ -204,6 +205,16 @@ export interface AuditReport {
    * informational section; it never moves the exit code.
    */
   readonly coverage: readonly ThemeCoverage[];
+  /**
+   * The `non-color` tokens, per theme, whose value is colour-valued syntax the
+   * colour rules do not read (`light-dark()`, `color-mix()`, relative colour,
+   * `color()` in a non-sRGB space, `currentColor`, system colours) — the
+   * omission made visible. A fact inventory under the `skipped` / `coverage`
+   * precedent: always present, an EMPTY array (not absent) when nothing was
+   * left out, and never an exit code. Appended after `coverage` so no existing
+   * key moves in the report object's insertion order.
+   */
+  readonly unreadColors: readonly UnreadColor[];
 }
 
 /**
@@ -1359,5 +1370,6 @@ export function audit(
     // in the report object's insertion order, which `--json` preserves.
     skippedDisabled,
     coverage: coverageReport(resolved),
+    unreadColors: unreadColorsReport(resolved),
   };
 }

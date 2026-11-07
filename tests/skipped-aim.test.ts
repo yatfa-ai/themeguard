@@ -674,6 +674,7 @@ describe("--json carries the same diagnosis as data", () => {
       "skipped",
       "skippedDisabled",
       "coverage",
+      "unreadColors",
     ]);
     // The pair is still unmeasured in the data, exactly as the prose reports.
     expect(report.skipped).toHaveLength(1);

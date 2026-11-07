@@ -954,6 +954,7 @@ describe("--json — the report as data, one NDJSON line per file", () => {
       "skipped",
       "skippedDisabled",
       "coverage",
+      "unreadColors",
     ]);
     // The path is the string the CALLER named, not a resolved absolute — it
     // is what the caller matches its own argv against.

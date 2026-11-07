@@ -463,6 +463,7 @@ describe("--json carries the same pointer as data", () => {
       "skipped",
       "skippedDisabled",
       "coverage",
+      "unreadColors",
     ]);
     // The finding is still LIVE in the data, exactly as the prose reports it.
     expect(report.findings).toHaveLength(1);

@@ -202,6 +202,7 @@ describe("--json carries the same fate as data", () => {
       "skipped",
       "skippedDisabled",
       "coverage",
+      "unreadColors",
     ]);
     expect(report.unmatchedSuppressions).toHaveLength(1);
     const row = report.unmatchedSuppressions[0] as Record<string, unknown>;
