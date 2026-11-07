@@ -71,7 +71,12 @@
  */
 
 import { parseColor, isTranslucent, toCss, type Color } from "./color.js";
-import { parseStylesheet, type Scope, type Stylesheet } from "./parse.js";
+import {
+  parseStylesheet,
+  registeredInitialValues,
+  type Scope,
+  type Stylesheet,
+} from "./parse.js";
 
 /** The base scope. Every theme falls back to it. */
 export const ROOT_THEME = "root";
@@ -461,6 +466,23 @@ export function resolveStylesheet(sheet: Stylesheet): ResolvedStylesheet {
     return null;
   };
 
+  // `@property` registrations that carry an initial value. A registered
+  // property resolves to that value wherever no scope declares it — in every
+  // theme, since a registration is not theme-scoped — so it is the LAST step of
+  // the lookup a `var()` walk makes, after the theme's own table, `:root` and
+  // the alias layer. It is deliberately not part of `lookup` itself: a
+  // registration is not a declaration, so it must not mint a token row of its
+  // own (the token loop below reads declared names only), only stop a walk that
+  // reaches the name from ending `unresolved`. The initial value is
+  // SUBSTITUTED, so rules 1 and 3 see the colour the browser would use.
+  const registered = registeredInitialValues(sheet.registrations);
+  const lookupOrRegistered = (name: string, theme: string) => {
+    const found = lookup(name, theme);
+    if (found) return found;
+    const reg = registered.get(name);
+    return reg ? { value: reg.value, line: reg.line } : null;
+  };
+
   const resolveValue = (
     startName: string,
     startValue: string,
@@ -527,7 +549,7 @@ export function resolveStylesheet(sheet: Stylesheet): ResolvedStylesheet {
           missingReference: null,
         };
       }
-      const next = lookup(referenced, theme);
+      const next = lookupOrRegistered(referenced, theme);
       if (!next) {
         if (fallback !== undefined && fallback !== "") {
           chain.push(referenced);

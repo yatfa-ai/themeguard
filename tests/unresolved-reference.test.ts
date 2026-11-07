@@ -6,7 +6,8 @@ import { audit } from "../src/audit.js";
 import { EXIT_FINDINGS, EXIT_OK } from "../src/cli.js";
 import { scanIgnoreDirectives } from "../src/directives.js";
 import { unresolvedReferenceRule } from "../src/rules/unresolved-reference.js";
-import { resolveCss } from "../src/resolve.js";
+import { loadStylesheet } from "../src/load.js";
+import { resolveCss, resolveStylesheet } from "../src/resolve.js";
 import { fixtureCss } from "./fixture.js";
 import { run } from "./run.js";
 
@@ -17,8 +18,8 @@ import { run } from "./run.js";
  * no scope — over data the parser already collects. These tests pin the four
  * populations that used to pass silent, the masking shape where the tool's one
  * old signal pointed AWAY from the defect, the one-per-name aggregation, the
- * `@theme inline` lookup subtlety, the known `@property` false positive the
- * rule's docstring names, suppression through BOTH doors (the config
+ * `@theme inline` lookup subtlety, `@property` registrations (an initial-value declares, a
+ * `*` without one does not), suppression through BOTH doors (the config
  * entry and the site-scoped directive, the latter reading the rule's
  * `evidence.usedIn` positions), the exit code, and the preservation of the
  * calibration fixture's census — derived member-by-member, never asserted from
@@ -168,36 +169,133 @@ describe("the unresolved-reference rule — the four silent populations", () => 
     expect(unresolvedReferenceRule(sheet)).toEqual([]);
     expect(audit(sheet).countsByRule["unresolved-reference"]).toBe(0);
   });
+});
 
-  it("an @property registration is invisible to the lookup — the named false positive, pinned as a known state", () => {
-    // The parser emits no scope for an `@property` block (its body carries no
-    // `--`-prefixed declarations), so a name REGISTERED there but declared in
-    // no scope is reported — even though with an `initial-value` it resolves
-    // at runtime and the finding is a false positive. The rule's docstring
-    // names this limit rather than letting it read as a bug; this test pins
-    // the behaviour so the day it changes (a parser that models `@property`
-    // registrations is a deliberate follow-up, fenced out of this rule) the
-    // change is chosen, not accidental. The same sheet also carries the
-    // control: `--app-surface` is declared in a real scope and reported by
-    // nothing.
-    const sheet = resolveCss(`
-@property --brand-ramp {
-  syntax: "<color>";
-  inherits: false;
-  initial-value: #3B82F6;
-}
-:root { --app-surface: #FFFFFF; }
-.hero { background: var(--brand-ramp); color: var(--app-surface); }
-`);
+/**
+ * `@property` registrations. A registration carrying an initial value declares
+ * a name that always resolves; a `syntax: '*'` registration without one is
+ * guaranteed-invalid and declares nothing. The registration is not a scope
+ * declaration, so none of this may leak into the declared-name populations
+ * the other rules read.
+ */
+describe("@property registrations", () => {
+  const BRAND = `@property --brand { syntax: "<color>"; initial-value: #f00; inherits: true }`;
+
+  it("a registered name with an initial-value is declared — no finding", () => {
+    const sheet = resolveCss(`${BRAND}\n.x { color: var(--brand); }\n`);
+    expect(unresolvedReferenceRule(sheet)).toEqual([]);
+    expect(audit(sheet).countsByRule["unresolved-reference"]).toBe(0);
+  });
+
+  it("an unregistered neighbour beside a registered name is still reported, one finding", () => {
+    const sheet = resolveCss(`${BRAND}\n.x { color: var(--brand); gap: var(--gap2, 1px); margin: var(--gap2, 2px); }\n`);
     const findings = unresolvedReferenceRule(sheet);
     expect(findings).toHaveLength(1);
-    expect(findings[0].rule).toBe("unresolved-reference");
-    expect(findings[0].theme).toBe(null);
-    expect(findings[0].tokens).toEqual(["--brand-ramp"]);
+    expect(findings[0].tokens).toEqual(["--gap2"]);
     expect(findings[0].message).toBe(
-      "--brand-ramp is used at .hero:8 and no scope in this stylesheet declares it.",
+      "--gap2 is used at .x:2, .x:2 and no scope in this stylesheet declares it.",
     );
-    expect(audit(sheet).countsByRule["unresolved-reference"]).toBe(1);
+  });
+
+  it("a syntax:'*' registration WITHOUT an initial-value is guaranteed-invalid — still reported", () => {
+    const sheet = resolveCss(`@property --free { syntax: "*"; inherits: false }\n.x { color: var(--free); }\n`);
+    const findings = unresolvedReferenceRule(sheet);
+    expect(findings.map((f) => f.tokens)).toEqual([["--free"]]);
+  });
+
+  it("a syntax:'*' registration WITH an initial-value registers", () => {
+    const sheet = resolveCss(`@property --free { syntax: "*"; inherits: false; initial-value: 4px }\n.x { width: var(--free); }\n`);
+    expect(unresolvedReferenceRule(sheet)).toEqual([]);
+  });
+
+  it("a non-* syntax with no initial-value is invalid CSS and does not register", () => {
+    const sheet = resolveCss(`@property --bad { syntax: "<color>"; inherits: false }\n.x { color: var(--bad); }\n`);
+    expect(unresolvedReferenceRule(sheet).map((f) => f.tokens)).toEqual([["--bad"]]);
+  });
+
+  it("a registration with no syntax is invalid and does not register", () => {
+    const sheet = resolveCss(`@property --bad { inherits: false; initial-value: #f00 }\n.x { color: var(--bad); }\n`);
+    expect(unresolvedReferenceRule(sheet).map((f) => f.tokens)).toEqual([["--bad"]]);
+  });
+
+  it("the last valid registration wins: a later '*' without initial-value withdraws the earlier initial-value", () => {
+    const sheet = resolveCss(`${BRAND}\n@property --brand { syntax: "*"; inherits: true }\n.x { color: var(--brand); }\n`);
+    expect(unresolvedReferenceRule(sheet).map((f) => f.tokens)).toEqual([["--brand"]]);
+  });
+
+  it("a registration nested in @layer / @media is read", () => {
+    const sheet = resolveCss(`
+@layer base {
+  @property --brand { syntax: "<color>"; initial-value: #f00; inherits: true }
+}
+@media (min-width: 1px) {
+  @property --gap { syntax: "<length>"; initial-value: 2px; inherits: false }
+}
+.x { color: var(--brand); padding: var(--gap); }
+`);
+    expect(sheet.stylesheet.registrations?.map((r) => r.name)).toEqual(["--brand", "--gap"]);
+    expect(unresolvedReferenceRule(sheet)).toEqual([]);
+  });
+
+  it("a registration is not a scope declaration — scopes and declared names are unchanged", () => {
+    const sheet = resolveCss(`${BRAND}\n.x { color: var(--brand); }\n`);
+    expect(sheet.stylesheet.scopes).toEqual([]);
+    expect(sheet.tokens).toEqual([]);
+  });
+
+  it("a sheet with no @property carries no registrations key", () => {
+    const sheet = resolveCss(`:root { --a: #111; }\n.x { color: var(--a); }\n`);
+    expect("registrations" in sheet.stylesheet).toBe(false);
+  });
+
+  it("a chain reaching a registered name resolves to its initial value — not kind unresolved", () => {
+    const sheet = resolveCss(`${BRAND}
+:root { --accent: var(--brand); --compound: 1px solid var(--brand); }
+.x { color: var(--accent); border: var(--compound); }
+`);
+    const accent = sheet.token("--accent", "root")!;
+    expect(accent.kind).toBe("color");
+    expect(accent.resolvedValue).toBe("#f00");
+    expect(accent.missingReference).toBe(null);
+    expect(accent.chain).toEqual(["--accent", "--brand"]);
+    expect(sheet.token("--compound", "root")!.kind).toBe("non-color");
+    expect(unresolvedReferenceRule(sheet)).toEqual([]);
+  });
+
+  it("a chain into a '*' registration without an initial-value stays unresolved", () => {
+    const sheet = resolveCss(`@property --free { syntax: "*"; inherits: false }
+:root { --accent: var(--free); }
+.x { color: var(--accent); }
+`);
+    expect(sheet.token("--accent", "root")!.kind).toBe("unresolved");
+  });
+
+  it("a scope declaration of the registered name wins over its initial-value", () => {
+    const sheet = resolveCss(`${BRAND}
+:root { --brand: #00f; --accent: var(--brand); }
+[data-theme="dark"] { --other: #111; }
+.x { color: var(--accent); }
+`);
+    expect(sheet.token("--accent", "root")!.resolvedValue).toBe("#00f");
+    expect(sheet.token("--accent", "dark")!.resolvedValue).toBe("#00f");
+  });
+
+  it("a registration in an imported file registers the name for the whole closure", () => {
+    const d = mkdtempSync(join(tmpdir(), "themeguard-property-"));
+    try {
+      writeFileSync(join(d, "props.css"), `${BRAND}\n`, "utf8");
+      writeFileSync(
+        join(d, "main.css"),
+        `@import "./props.css";\n:root { --accent: var(--brand); }\n.x { color: var(--accent); background: var(--brand); }\n`,
+        "utf8",
+      );
+      const sheet = resolveStylesheet(loadStylesheet(join(d, "main.css")));
+      expect(sheet.stylesheet.registrations?.map((r) => [r.name, r.origin])).toEqual([["--brand", "props.css"]]);
+      expect(unresolvedReferenceRule(sheet)).toEqual([]);
+      expect(sheet.token("--accent", "root")!.kind).toBe("color");
+    } finally {
+      rmSync(d, { recursive: true, force: true });
+    }
   });
 });
 

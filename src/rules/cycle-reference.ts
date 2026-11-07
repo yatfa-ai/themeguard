@@ -79,9 +79,10 @@
  * reports per theme: a loop whose members are spread across the base table
  * and one theme is reported exactly as the theme's own view reports it,
  * which is where the CSS consequence actually bites. No `@property`
- * interplay (the registration is invisible to scope lookup — the named
- * false-positive class of unresolved-reference — and reading it is a parser
- * change). No parse or resolve changes: `kind: "cycle"` and `chain` are this
+ * interplay (a registration is not a scope declaration, so it is not a loop
+ * member; the resolver reads its initial value only to stop a chain ending
+ * `unresolved`, which never creates or hides a loop). No parse or resolve
+ * changes: `kind: "cycle"` and `chain` are this
  * rule's SUBJECT, not something to change. That fence binds the RULE's own
  * discipline — data, not verdicts: the rule must never reach into the
  * resolver to manufacture the facts it judges. It is not a claim that the
