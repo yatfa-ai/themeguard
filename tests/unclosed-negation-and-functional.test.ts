@@ -27,3 +27,12 @@ describe("unclosed functional pseudo argument list", () => {
     expect(kinds(':root:has([data-theme="winter"] { --x: 1px; }')).toEqual([["root", null]]);
   });
 });
+
+describe("nested parens inside a functional pseudo argument list", () => {
+  it("closes a :not() at its matching paren, not at the first one", () => {
+    expect(kinds(':root:not(:not(.a)[data-theme="winter"]) { --x: 1px; }')).toEqual([["root", null]]);
+  });
+  it("closes a :has() at its matching paren, not at the first one", () => {
+    expect(kinds('.card:has(:nth-child(2)[data-theme="winter"]) { --x: 1px; }')).toEqual([["other", null]]);
+  });
+});

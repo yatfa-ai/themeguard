@@ -355,6 +355,22 @@ function splitSelectorList(prelude: string): string[] {
 }
 
 /**
+ * Index of the `)` that closes the `(` at `open`, counting parens only, or -1
+ * when the list never closes.
+ */
+function closingParen(s: string, open: number): number {
+  let depth = 0;
+  for (let i = open; i < s.length; i += 1) {
+    if (s[i] === "(") depth += 1;
+    else if (s[i] === ")") {
+      depth -= 1;
+      if (depth === 0) return i;
+    }
+  }
+  return -1;
+}
+
+/**
  * Remove `:not(…)` arguments before classifying.
  *
  * A negation says what an element is NOT, so the attribute inside it must not
@@ -368,19 +384,7 @@ function stripNegations(selector: string): string {
   for (;;) {
     const at = out.search(/:not\s*\(/i);
     if (at === -1) return out;
-    let depth = 0;
-    let i = out.indexOf("(", at);
-    let end = -1;
-    for (; i < out.length; i += 1) {
-      if (out[i] === "(") depth += 1;
-      else if (out[i] === ")") {
-        depth -= 1;
-        if (depth === 0) {
-          end = i;
-          break;
-        }
-      }
-    }
+    const end = closingParen(out, out.indexOf("(", at));
     if (end === -1) return out.slice(0, at);
     out = out.slice(0, at) + out.slice(end + 1);
   }
@@ -480,20 +484,8 @@ function extractMatchesAny(compound: string): { rest: string; args: string[] } {
   for (;;) {
     const at = findTopLevel(rest, /^:(?:is|where|matches|-webkit-any|-moz-any)\s*\(/i);
     if (at === -1) return { rest, args };
-    let depth = 0;
-    let i = rest.indexOf("(", at);
-    const open = i;
-    let end = -1;
-    for (; i < rest.length; i += 1) {
-      if (rest[i] === "(") depth += 1;
-      else if (rest[i] === ")") {
-        depth -= 1;
-        if (depth === 0) {
-          end = i;
-          break;
-        }
-      }
-    }
+    const open = rest.indexOf("(", at);
+    const end = closingParen(rest, open);
     if (end === -1) {
       args.push(...splitSelectorList(rest.slice(open + 1)));
       return { rest: rest.slice(0, at), args };
@@ -530,19 +522,7 @@ function stripFunctionalArgs(compound: string): string {
   for (;;) {
     const at = out.search(/::?[\w-]+\s*\(/);
     if (at === -1) return out;
-    let depth = 0;
-    let i = out.indexOf("(", at);
-    let end = -1;
-    for (; i < out.length; i += 1) {
-      if (out[i] === "(") depth += 1;
-      else if (out[i] === ")") {
-        depth -= 1;
-        if (depth === 0) {
-          end = i;
-          break;
-        }
-      }
-    }
+    const end = closingParen(out, out.indexOf("(", at));
     // An unclosed argument list runs to the end of the selector: drop the rest.
     if (end === -1) return out.slice(0, at);
     out = out.slice(0, at) + out.slice(end + 1);
