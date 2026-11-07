@@ -129,6 +129,12 @@ descendant — its subject is `.card`), `:root:not(.dark)` (a negation, still th
 (`.theme-dark`, `.high-contrast`) are not themes and keep their current reading. Naming additional
 class themes is not configurable.
 
+The attribute form is recognised under two attribute names, `data-theme` and Bootstrap 5.3's
+`data-bs-theme` (`[data-bs-theme=dark]`, quoted or not): the theme is the attribute value, so `light` /
+`dark` land in the same tables whichever spelling is used, and a compound subject such as
+`.navbar[data-bs-theme=dark]` is classified exactly as `.navbar[data-theme=dark]` is. Other attribute
+names (`data-mode`, `data-color-scheme`, …) are not themes and keep their current reading.
+
 Deliberately not taken: a media prelude whose condition is more than the one feature — a comma list
 (an OR of conditions), a second feature (`… and (min-width: …)`), a non-screen type (`print`) — and
 `@supports`/`@layer` conditions all keep today's reading, folded into the base. A palette selected by
