@@ -157,6 +157,29 @@ describe("directory arguments", () => {
     expect(result.err[0]).toContain("2 files folded into importers");
   });
 
+  it("folds a partial reached through an intermediary the walk does not discover", () => {
+    // `.shared` is skipped by the dot-directory rule, so mid.css is never a candidate.
+    const dir = tree({
+      "app.css": '@import "./.shared/mid.css";\n.x { color: var(--brand); }\n',
+      ".shared/mid.css": '@import "../tokens.css";\n',
+      "tokens.css": ":root { --brand: #fff; }\n",
+    });
+    const result = run(dir);
+    expect(audited(result.out)).toEqual([join(dir, "app.css")]);
+    expect(result.code).toBe(EXIT_OK);
+    expect(result.err[0]).toContain("1 file folded into importers");
+  });
+
+  it("folds a partial imported with a parent-relative specifier", () => {
+    const dir = tree({
+      "tokens.css": ":root { --brand: #fff; }\n",
+      "pages/app.css": '@import "../tokens.css";\n.x { color: var(--brand); }\n',
+    });
+    const result = run(dir);
+    expect(audited(result.out)).toEqual([join(dir, "pages/app.css")]);
+    expect(result.code).toBe(EXIT_OK);
+  });
+
   it("keeps both files of an import cycle as entries", () => {
     const dir = tree({
       "a.css": '@import "./b.css";\n:root { --a: #fff; }\n.x { color: var(--a); }\n',
