@@ -68,6 +68,14 @@ function writeConfig(dir: string, json: string): string {
   return path;
 }
 
+function stylesheetIn(dirName: string, fileName: string, css: string): { dir: string; cssPath: string } {
+  const dir = join(tmp, dirName);
+  mkdirSync(dir);
+  const cssPath = join(dir, fileName);
+  writeFileSync(cssPath, css, "utf8");
+  return { dir, cssPath };
+}
+
 function cssFixture(name: string, css: string): string {
   const path = join(tmp, name);
   writeFileSync(path, css, "utf8");
@@ -376,10 +384,7 @@ describe("loadConfig — discovery is nearest-ancestor (the stylesheet's directo
   });
 
   it("reads the config from the stylesheet's directory — the process CWD (the repo root) has none, and that is not consulted", () => {
-    const dir = join(tmp, "discovery");
-    mkdirSync(dir);
-    const cssPath = join(dir, "sheet.css");
-    writeFileSync(cssPath, ONE_FINDING_CSS, "utf8");
+    const { dir, cssPath } = stylesheetIn("discovery", "sheet.css", ONE_FINDING_CSS);
     writeConfig(dir, JSON.stringify({ suppress: [] }));
     // If lookup were CWD-based this would find nothing (the repo root has no
     // themeguard.config.json); stylesheet-adjacent lookup finds the empty one.
@@ -663,10 +668,7 @@ describe("themeguard <file.css> with themeguard.config.json beside the styleshee
   });
 
   it("suppressing the fixture's two deliberate hovers: scale-collapse (0), a named suppressed section with quoted reasons, and 20 findings on the total line", () => {
-    const dir = join(tmp, "suppress-hover");
-    mkdirSync(dir);
-    const cssPath = join(dir, "fixture.css");
-    writeFileSync(cssPath, fixtureCss(), "utf8");
+    const { dir, cssPath } = stylesheetIn("suppress-hover", "fixture.css", fixtureCss());
     // The copy is faithful: the stub resolves the sheet's own `@import
     // "./actiontext.css";` edge, keeping the census at 22 (20 after the two
     // deliberate hovers below are suppressed).
@@ -706,10 +708,7 @@ describe("themeguard <file.css> with themeguard.config.json beside the styleshee
   });
 
   it("suppressing the ONLY finding flips the exit to 0 — the point of the config", () => {
-    const dir = join(tmp, "suppress-all");
-    mkdirSync(dir);
-    const cssPath = join(dir, "one-finding.css");
-    writeFileSync(cssPath, ONE_FINDING_CSS, "utf8");
+    const { dir, cssPath } = stylesheetIn("suppress-all", "one-finding.css", ONE_FINDING_CSS);
     writeConfig(
       dir,
       JSON.stringify({
@@ -727,10 +726,7 @@ describe("themeguard <file.css> with themeguard.config.json beside the styleshee
   });
 
   it("a valid entry that matches nothing is not an error — the finding it missed is still reported, and still moves the exit", () => {
-    const dir = join(tmp, "unmatched");
-    mkdirSync(dir);
-    const cssPath = join(dir, "one-finding.css");
-    writeFileSync(cssPath, ONE_FINDING_CSS, "utf8");
+    const { dir, cssPath } = stylesheetIn("unmatched", "one-finding.css", ONE_FINDING_CSS);
     writeConfig(
       dir,
       JSON.stringify({
@@ -746,10 +742,7 @@ describe("themeguard <file.css> with themeguard.config.json beside the styleshee
   });
 
   it("an unknown rule id exits 2 naming the entry, and prints no report", () => {
-    const dir = join(tmp, "bad-rule");
-    mkdirSync(dir);
-    const cssPath = join(dir, "one-finding.css");
-    writeFileSync(cssPath, ONE_FINDING_CSS, "utf8");
+    const { dir, cssPath } = stylesheetIn("bad-rule", "one-finding.css", ONE_FINDING_CSS);
     writeConfig(
       dir,
       JSON.stringify({
@@ -765,10 +758,7 @@ describe("themeguard <file.css> with themeguard.config.json beside the styleshee
   });
 
   it("unreadable JSON exits 2 naming the file", () => {
-    const dir = join(tmp, "bad-json");
-    mkdirSync(dir);
-    const cssPath = join(dir, "one-finding.css");
-    writeFileSync(cssPath, ONE_FINDING_CSS, "utf8");
+    const { dir, cssPath } = stylesheetIn("bad-json", "one-finding.css", ONE_FINDING_CSS);
     writeConfig(dir, "{ suppress: ");
     const result = run(cssPath);
     expect(result.code).toBe(EXIT_ERROR);
@@ -778,10 +768,7 @@ describe("themeguard <file.css> with themeguard.config.json beside the styleshee
   });
 
   it("a missing token exits 2 naming the entry — same contract as the other malformed shapes", () => {
-    const dir = join(tmp, "bad-token");
-    mkdirSync(dir);
-    const cssPath = join(dir, "one-finding.css");
-    writeFileSync(cssPath, ONE_FINDING_CSS, "utf8");
+    const { dir, cssPath } = stylesheetIn("bad-token", "one-finding.css", ONE_FINDING_CSS);
     writeConfig(dir, JSON.stringify({ suppress: [{ rule: "scale-collapse", reason: "no token" }] }));
     const result = run(cssPath);
     expect(result.code).toBe(EXIT_ERROR);
@@ -790,10 +777,7 @@ describe("themeguard <file.css> with themeguard.config.json beside the styleshee
   });
 
   it("an ABSOLUTE file exits 2 naming the entry — the checkout-independence rule is validation, not advice", () => {
-    const dir = join(tmp, "absolute-file");
-    mkdirSync(dir);
-    const cssPath = join(dir, "one-finding.css");
-    writeFileSync(cssPath, ONE_FINDING_CSS, "utf8");
+    const { dir, cssPath } = stylesheetIn("absolute-file", "one-finding.css", ONE_FINDING_CSS);
     writeConfig(
       dir,
       JSON.stringify({
@@ -818,10 +802,7 @@ describe("themeguard <file.css> with themeguard.config.json beside the styleshee
   });
 
   it("a theme-scoped entry suppresses only its theme's finding: the other theme's finding still reports and the exit stays 1", () => {
-    const dir = join(tmp, "scoped-theme");
-    mkdirSync(dir);
-    const cssPath = join(dir, "two-theme.css");
-    writeFileSync(cssPath, TWO_THEME_CSS, "utf8");
+    const { dir, cssPath } = stylesheetIn("scoped-theme", "two-theme.css", TWO_THEME_CSS);
     writeConfig(
       dir,
       JSON.stringify({
@@ -840,10 +821,7 @@ describe("themeguard <file.css> with themeguard.config.json beside the styleshee
   });
 
   it("the SAME config without the theme suppresses BOTH findings — the fleet-wide stroke scoped entries exist to narrow, kept as the back-compat pin", () => {
-    const dir = join(tmp, "unscoped-fleet");
-    mkdirSync(dir);
-    const cssPath = join(dir, "two-theme.css");
-    writeFileSync(cssPath, TWO_THEME_CSS, "utf8");
+    const { dir, cssPath } = stylesheetIn("unscoped-fleet", "two-theme.css", TWO_THEME_CSS);
     writeConfig(
       dir,
       JSON.stringify({
@@ -858,10 +836,7 @@ describe("themeguard <file.css> with themeguard.config.json beside the styleshee
   });
 
   it("a tokens-pair entry matches the pair and leaves findings with other partners live", () => {
-    const dir = join(tmp, "scoped-tokens");
-    mkdirSync(dir);
-    const cssPath = join(dir, "two-theme.css");
-    writeFileSync(cssPath, TWO_THEME_CSS, "utf8");
+    const { dir, cssPath } = stylesheetIn("scoped-tokens", "two-theme.css", TWO_THEME_CSS);
     writeConfig(
       dir,
       JSON.stringify({
@@ -882,10 +857,7 @@ describe("themeguard <file.css> with themeguard.config.json beside the styleshee
   });
 
   it("a scoped entry says so where its finding is printed: [theme: …] and [tokens: …] after the reason; an unscoped line is byte-identical to before", () => {
-    const dir = join(tmp, "scope-disclosure");
-    mkdirSync(dir);
-    const cssPath = join(dir, "two-theme.css");
-    writeFileSync(cssPath, TWO_THEME_CSS, "utf8");
+    const { dir, cssPath } = stylesheetIn("scope-disclosure", "two-theme.css", TWO_THEME_CSS);
     writeConfig(
       dir,
       JSON.stringify({
@@ -933,10 +905,7 @@ describe("node dist/cli.js — the built artifact honours the config too", () =>
   beforeAll(buildCli, 120_000);
 
   it("suppresses beside the built binary: one finding moved, exit flips 1 → 0", () => {
-    const dir = join(tmp, "built");
-    mkdirSync(dir);
-    const cssPath = join(dir, "one-finding.css");
-    writeFileSync(cssPath, ONE_FINDING_CSS, "utf8");
+    const { dir, cssPath } = stylesheetIn("built", "one-finding.css", ONE_FINDING_CSS);
     // Absent config, through the built file: the finding stands, exit 1.
     expect(spawnBuilt(cssPath).code).toBe(EXIT_FINDINGS);
     writeConfig(
@@ -952,10 +921,7 @@ describe("node dist/cli.js — the built artifact honours the config too", () =>
   }, 120_000);
 
   it("a malformed config is exit 2 through the built file, naming the entry", () => {
-    const dir = join(tmp, "built-bad");
-    mkdirSync(dir);
-    const cssPath = join(dir, "one-finding.css");
-    writeFileSync(cssPath, ONE_FINDING_CSS, "utf8");
+    const { dir, cssPath } = stylesheetIn("built-bad", "one-finding.css", ONE_FINDING_CSS);
     writeConfig(
       dir,
       JSON.stringify({ suppress: [{ rule: "no-such-rule", token: "--panel-hover", reason: "r" }] }),
