@@ -1123,7 +1123,7 @@ describe("--json — the report as data, one NDJSON line per file", () => {
   });
 
   it("names the option in the usage line", () => {
-    expect(USAGE).toBe("usage: themeguard [--json] <file.css> [file.css…]");
+    expect(USAGE).toBe("usage: themeguard [--json] <file.css|dir> [file.css|dir…]");
   });
 
   it("leaves the prose default byte-identical — no flag, no change", () => {

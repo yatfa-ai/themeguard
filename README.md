@@ -135,7 +135,7 @@ npm install --save-dev themeguard
 
 ## Usage
 
-One command, one option — point it at a CSS file.
+One command, one option — point it at a CSS file, or at a directory of them (see [Directories](#directories--themeguard-dir)).
 
 ```bash
 npx themeguard path/to/application.css
@@ -144,7 +144,7 @@ npx themeguard path/to/application.css
 `themeguard --help` (or `-h`) prints the usage, the exit-code contract and a pointer to this README, and
 `themeguard --version` prints the installed version; both exit `0` without auditing anything, wherever they
 appear among the arguments (help wins over version). They are the only arguments besides `--json` that are not
-stylesheet paths.
+stylesheet paths (or directories).
 
 Several stylesheets take one invocation — the positionals repeat:
 
@@ -166,6 +166,36 @@ invocation**, precedence `2 > 1 > 0` — any file errored, `2`; else any file re
 findings, `1`; else `0`. A pipeline or pre-commit hook gets one invocation and one verdict over a
 whole project's stylesheets, instead of N runs and a hand-ORed aggregate that one mistyped path
 silently poisons.
+
+### Directories — `themeguard <dir>`
+
+A positional that is a **directory** stands for the `*.css` files under it, so a CI job or a pre-commit
+hook does not depend on shell glob expansion (which cmd.exe and PowerShell do not do, and which quoted
+CI globs deliver literally):
+
+```bash
+npx themeguard src/styles
+npx themeguard --json web/ admin/panel.css
+```
+
+- Discovery is **recursive** and the files are audited in **sorted** order (a plain string sort of the
+  paths, independent of locale); positionals keep their argument order. `*.css` only — `.pcss` and `.scss`
+  are not discovered.
+- `node_modules` and dot-directories (`.git`, `.cache`, …) are skipped, at any depth.
+- Symlinked **directories are not followed**, which rules out cycles; a symlink to a `*.css` file is
+  discovered like the file it points at.
+- Each discovered file is audited exactly as a named file is: its own import closure, its own nearest
+  config, the same `themeguard — <path>` header (or NDJSON line), and the same `2 > 1 > 0` aggregate.
+- A directory with no `*.css` file is a **usage error**: exit `2` with `themeguard: no *.css files found
+  in <dir>` on stderr, before anything is audited — never a silent green.
+- **Imported partials are folded.** A discovered file that another discovered file `@import`s (directly or
+  through the closure) is not audited as an entry of its own: its findings already arrive through the
+  importer's closure, and auditing it alone reports the false dead-token / unresolved-reference findings
+  the closure exists to prevent. One note on stderr states how many files were folded (stdout stays pure
+  prose or pure NDJSON). Two files that import each other are peers and both stay. There is no opt-out
+  flag; to audit a partial on its own, name it on the command line.
+- **Files named explicitly are never folded** and behave exactly as before; a file named explicitly and
+  also discovered is audited once, at its named position.
 
 ### `--json` — the report as data
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * The command — `themeguard [--json] <file.css> [file.css…]`.
+ * The command — `themeguard [--json] <file.css|dir> [file.css|dir…]`.
  *
  * One command, ONE option; the positionals repeat. The sentence this replaces
  * — "one command, zero options" — was written at 0.1.2, when the command took
@@ -315,6 +315,7 @@ import {
   type SuppressionEntry,
 } from "./config.js";
 import { DirectiveError } from "./directives.js";
+import { discoverCss, foldPartials, isDirectory } from "./discover.js";
 import { loadStylesheet } from "./load.js";
 import { resolveStylesheet } from "./resolve.js";
 import type { TokenKind } from "./resolve.js";
@@ -352,7 +353,7 @@ function packageField(field: "version" | "homepage"): string {
   return typeof value === "string" ? value : "";
 }
 
-export const USAGE = "usage: themeguard [--json] <file.css> [file.css…]";
+export const USAGE = "usage: themeguard [--json] <file.css|dir> [file.css|dir…]";
 
 /**
  * The `--help` / `-h` text. Short on purpose: the usage line, the three
@@ -363,6 +364,9 @@ export const HELP = [
   USAGE,
   "",
   "Audits the colour custom properties of CSS stylesheets.",
+  "A directory argument stands for the *.css files under it (recursive, sorted;",
+  "node_modules, dot-directories and symlinked directories are skipped); a file",
+  "another discovered file @imports is audited through its importer, not alone.",
   "",
   "options:",
   "  --json       print one NDJSON report object per stylesheet instead of prose",
@@ -739,7 +743,10 @@ export function runCli(args: readonly string[], io: CliIo): number {
   // is what survives the loop and turns into the aggregated exit.
   let anyFindings = false;
 
-  for (const path of paths) {
+  const targets = expandDirectories(paths, io);
+  if (targets === null) return EXIT_ERROR;
+
+  for (const path of targets) {
     const outcome = auditStylesheet(path, io, json);
     if (outcome === EXIT_ERROR) {
       // Fail-fast: the first file that cannot be audited ends the invocation
@@ -755,6 +762,62 @@ export function runCli(args: readonly string[], io: CliIo): number {
   // fail-fast above, so what remains is 1 if ANY file reported unsuppressed
   // findings, else 0.
   return anyFindings ? EXIT_FINDINGS : EXIT_OK;
+}
+
+/**
+ * Expand directory positionals into the stylesheets under them, in argument
+ * order (a directory's files sorted), or `null` after a diagnostic when a
+ * directory holds no `*.css` at all — a usage error, never a silent green.
+ * Positionals that are not directories pass through untouched, so named files
+ * (and paths that do not exist) behave byte-for-byte as before. A file named
+ * explicitly is never folded and is audited once even if a directory also
+ * discovers it; discovered partials are folded into their importers (see
+ * {@link foldPartials}) and counted in one note on `io.err`.
+ */
+function expandDirectories(paths: readonly string[], io: CliIo): string[] | null {
+  if (!paths.some(isDirectory)) return [...paths];
+
+  const explicit = new Set(paths.filter((p) => !isDirectory(p)).map((p) => resolve(p)));
+  const discovered: string[] = [];
+  for (const path of paths) {
+    if (!isDirectory(path)) continue;
+    const files = discoverCss(path);
+    if (files.length === 0) {
+      io.err(`themeguard: no *.css files found in ${path}`);
+      return null;
+    }
+    for (const file of files) {
+      const abs = resolve(file);
+      if (explicit.has(abs) || discovered.some((d) => resolve(d) === abs)) continue;
+      discovered.push(file);
+    }
+  }
+
+  const { entries, folded } = foldPartials(discovered);
+  if (folded > 0) {
+    io.err(
+      `themeguard: ${folded} ${folded === 1 ? "file" : "files"} folded into importers ` +
+        "(imported by another discovered stylesheet, audited through it)",
+    );
+  }
+
+  const keep = new Set(entries.map((e) => resolve(e)));
+  const targets: string[] = [];
+  const placed = new Set<string>();
+  for (const path of paths) {
+    if (!isDirectory(path)) {
+      targets.push(path);
+      continue;
+    }
+    for (const file of discoverCss(path)) {
+      const abs = resolve(file);
+      if (keep.has(abs) && !placed.has(abs)) {
+        placed.add(abs);
+        targets.push(file);
+      }
+    }
+  }
+  return targets;
 }
 
 /**
