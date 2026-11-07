@@ -352,7 +352,15 @@ export interface Stylesheet {
   readonly directives?: readonly IgnoreDirective[];
 }
 
-const DATA_THEME = /\[\s*data-theme\s*=\s*["']?([^"'\]]+)["']?\s*\]/;
+/**
+ * The attribute selector that names a theme by its VALUE. A closed set of two
+ * attribute names: `data-theme` (the common convention) and `data-bs-theme`
+ * (Bootstrap 5.3 colour modes). Both go through the one rule, so a compound
+ * subject (`.navbar[data-bs-theme=dark]`) behaves exactly as `[data-theme]`
+ * does. Other attribute names (`data-mode`, `data-color-scheme`, …) are not
+ * themes. Quoted and unquoted values are both read.
+ */
+const DATA_THEME = /\[\s*data-(?:bs-)?theme\s*=\s*["']?([^"'\]]+)["']?\s*\]/;
 
 /**
  * Blank out `/* … *\/` comments, preserving every byte position and newline so
