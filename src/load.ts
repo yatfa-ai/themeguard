@@ -113,9 +113,9 @@
  *
  * One stamp per directive, same as the items above: a child's entries arrive
  * already stamped by the frame that scanned them, and the splice re-stamps
- * nothing (the `origin === undefined` guard below is the same belt the
- * scopes and references wear). And an unhonourable directive is NOT a failed
- * edge: the edge-classifying catch below rethrows {@link DirectiveError}
+ * nothing ({@link stampOrigin} is the one belt every spliced item type
+ * wears). And an unhonourable directive is NOT a failed edge: the
+ * edge-classifying catch below rethrows {@link DirectiveError}
  * untouched, so a malformed comment in any member exits 2 naming ITS file
  * and line — config's never-silently-ignored discipline, one edge wider —
  * instead of wearing an `unresolved-import` finding's clothes.
@@ -136,6 +136,23 @@ import {
   type Registration,
   type UnresolvedImport,
 } from "./parse.js";
+
+/**
+ * Stamp `origin` onto the items of a child's closure that lack one, leaving
+ * the rest untouched. `items` is the child's ENTIRE closure — items spliced
+ * in from the child's OWN imports already carry their correct entry-relative
+ * origins, stamped by their own recursive frame, and an unconditional spread
+ * would overwrite every deeper one with THIS edge's target, citing any item
+ * two or more hops in with the wrong file. `parse` sets no origin and nothing
+ * else stamps one, so a missing origin selects exactly the child's own items:
+ * one stamp per item, naming the file the item was written in.
+ */
+function stampOrigin<T extends { readonly origin?: string }>(
+  items: readonly T[] | undefined,
+  origin: string,
+): T[] {
+  return (items ?? []).map((item) => (item.origin === undefined ? { ...item, origin } : item));
+}
 
 /**
  * Read `entryPath`, follow the `@import` edges its text declares, and return
@@ -234,46 +251,21 @@ export function loadStylesheet(entryPath: string): Stylesheet {
       // shares one coordinate system: `tokens.css`, `shared/props.css`, from
       // however many hops deep the statement was written.
       const origin = relative(entryDir, target);
-      // Stamp ONLY what lacks an origin. `child` is the child's ENTIRE
-      // closure — scopes spliced in from the child's OWN imports already
-      // carry their correct entry-relative origins, stamped by their own
-      // recursive frame, and an unconditional spread would overwrite every
-      // deeper one with THIS edge's target, citing any item two or more hops
-      // in with the wrong file. `parse` sets no origin and nothing else
-      // stamps one, so `origin === undefined` selects exactly the child's
-      // own items: one stamp per item, naming the file the item was written
-      // in.
-      scopes.push(
-        ...child.scopes.map((s) => (s.origin === undefined ? { ...s, origin } : s)),
-      );
-      references.push(
-        ...child.references.map((r) => (r.origin === undefined ? { ...r, origin } : r)),
-      );
-      // `@property` registrations travel with the child under the same
-      // one-stamp discipline, so a registration in an imported file registers
-      // the property for the whole closure (registration is global in CSS).
-      registrations.push(
-        ...(child.registrations ?? []).map((r) =>
-          r.origin === undefined ? { ...r, origin } : r,
-        ),
-      );
+      // Every spliced item type is stamped by the one-stamp helper below.
+      scopes.push(...stampOrigin(child.scopes, origin));
+      references.push(...stampOrigin(child.references, origin));
+      // `@property` registrations travel with the child, so a registration in
+      // an imported file registers the property for the whole closure
+      // (registration is global in CSS).
+      registrations.push(...stampOrigin(child.registrations, origin));
       // The child's own failed edges travel with the child: they are failures
       // of THIS closure too, and merging here keeps the final list in
       // statement order — a child's breakage lands where its edge was
-      // written, this frame's own failures where theirs were.
+      // written, this frame's own failures where theirs were. Not stamped:
+      // `from` is set at record time.
       unresolvedImports.push(...(child.unresolvedImports ?? []));
-      // The child's directives travel with the child, under the same
-      // one-stamp discipline as the scopes and references above: the map
-      // touches only entries still missing an origin. Every frame stamps its
-      // own text at scan time, so nothing arrives unstamped today and the
-      // map is a pass-through — it is the guard that keeps any future
-      // change from re-stamping a deeper frame's directive with THIS edge's
-      // target.
-      directives.push(
-        ...(child.directives ?? []).map((d) =>
-          d.origin === undefined ? { ...d, origin } : d,
-        ),
-      );
+      // The child's directives travel with the child, stamped like the rest.
+      directives.push(...stampOrigin(child.directives, origin));
     }
 
     scopes.push(...sheet.scopes);
