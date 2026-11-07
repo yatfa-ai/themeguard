@@ -15,6 +15,7 @@ import { formatReport, formatReportJson, EXIT_FINDINGS, EXIT_OK } from "../src/c
 import { loadStylesheet } from "../src/load.js";
 import { resolveStylesheet } from "../src/resolve.js";
 import { run, unmatchedRow } from "./run.js";
+import { soleUnmatchedRow } from "./unmatched-json.js";
 
 /**
  * The CROSS-FILE arm of the `unmatched` section's advice (0.1.24).
@@ -494,11 +495,7 @@ describe("--json carries the same pointer as data", () => {
         ".b { color: var(--success); }",
       ].join("\n"),
     );
-    const report = JSON.parse(run("--json", entry).out[0] as string) as {
-      unmatchedSuppressions: Record<string, unknown>[];
-    };
-    expect(report.unmatchedSuppressions).toHaveLength(1);
-    expect("crossFileAim" in (report.unmatchedSuppressions[0] as object)).toBe(false);
+    expect("crossFileAim" in soleUnmatchedRow(run("--json", entry))).toBe(false);
   });
 });
 

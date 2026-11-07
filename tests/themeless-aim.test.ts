@@ -13,6 +13,7 @@ import {
 import { loadStylesheet } from "../src/load.js";
 import { resolveStylesheet } from "../src/resolve.js";
 import { run, unmatchedRow } from "./run.js";
+import { soleUnmatchedRow } from "./unmatched-json.js";
 
 /**
  * The THEME-SCOPE DEAD ARM of the `unmatched` section's advice (0.1.26).
@@ -650,11 +651,7 @@ describe("--json carries the same diagnosis as data", () => {
         reason: "cross-theme scope",
       },
     ]);
-    const report = JSON.parse(run("--json", entry).out[0] as string) as {
-      unmatchedSuppressions: Record<string, unknown>[];
-    };
-    expect(report.unmatchedSuppressions).toHaveLength(1);
-    expect("themelessAim" in (report.unmatchedSuppressions[0] as object)).toBe(false);
+    expect("themelessAim" in soleUnmatchedRow(run("--json", entry))).toBe(false);
   });
 
   it("carries the key on a `file`-scoped row NOT AT ALL — no machine-readable self-contradiction", () => {
@@ -674,11 +671,7 @@ describe("--json carries the same diagnosis as data", () => {
         reason: "beyond home",
       },
     ]);
-    const report = JSON.parse(run("--json", entry).out[0] as string) as {
-      unmatchedSuppressions: Record<string, unknown>[];
-    };
-    expect(report.unmatchedSuppressions).toHaveLength(1);
-    const row = report.unmatchedSuppressions[0] as Record<string, unknown>;
+    const row = soleUnmatchedRow(run("--json", entry));
     expect(row.fileBeyondConfigHome).toBe(true);
     expect("themelessAim" in row).toBe(false);
   });

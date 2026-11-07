@@ -13,6 +13,7 @@ import {
 import { loadStylesheet } from "../src/load.js";
 import { resolveStylesheet, resolveCss } from "../src/resolve.js";
 import { run, unmatchedRow } from "./run.js";
+import { soleUnmatchedRow } from "./unmatched-json.js";
 
 /**
  * THE KEPT-SKIPPED ARM of the `unmatched` section's advice (the sixth tellable
@@ -576,11 +577,7 @@ describe("a file scope naming the AUDITED stylesheet itself EARNS the clause —
         },
       ],
     });
-    const report = JSON.parse(run("--json", entry).out[0] as string) as {
-      unmatchedSuppressions: Record<string, unknown>[];
-    };
-    expect(report.unmatchedSuppressions).toHaveLength(1);
-    const row = report.unmatchedSuppressions[0] as Record<string, unknown>;
+    const row = soleUnmatchedRow(run("--json", entry));
     expect(row.file).toBe("a.css");
     expect(row.skippedAim).toEqual({
       theme: "root",
@@ -714,11 +711,7 @@ describe("--json carries the same diagnosis as data", () => {
         },
       ],
     });
-    const report = JSON.parse(run("--json", entry).out[0] as string) as {
-      unmatchedSuppressions: Record<string, unknown>[];
-    };
-    expect(report.unmatchedSuppressions).toHaveLength(1);
-    expect("skippedAim" in (report.unmatchedSuppressions[0] as object)).toBe(false);
+    expect("skippedAim" in soleUnmatchedRow(run("--json", entry))).toBe(false);
   });
 
   it("carries the key on the policy fixture's rows NOT AT ALL — no machine-readable self-contradiction", () => {
@@ -737,11 +730,7 @@ describe("--json carries the same diagnosis as data", () => {
         },
       ],
     });
-    const report = JSON.parse(run("--json", entry).out[0] as string) as {
-      unmatchedSuppressions: Record<string, unknown>[];
-    };
-    expect(report.unmatchedSuppressions).toHaveLength(1);
-    const row = report.unmatchedSuppressions[0] as Record<string, unknown>;
+    const row = soleUnmatchedRow(run("--json", entry));
     expect("skippedAim" in row).toBe(false);
   });
 });

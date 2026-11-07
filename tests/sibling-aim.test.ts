@@ -17,6 +17,7 @@ import {
 import { loadStylesheet } from "../src/load.js";
 import { resolveCss, resolveStylesheet } from "../src/resolve.js";
 import { run, unmatchedRow } from "./run.js";
+import { soleUnmatchedRow } from "./unmatched-json.js";
 
 /**
  * THE FILE-SIBLING ARM of the `unmatched` section's advice — its OLDEST tell,
@@ -236,11 +237,7 @@ describe("--json carries the same fate as data", () => {
         },
       ],
     });
-    const report = JSON.parse(run("--json", entry).out[0] as string) as {
-      unmatchedSuppressions: Record<string, unknown>[];
-    };
-    expect(report.unmatchedSuppressions).toHaveLength(1);
-    const row = report.unmatchedSuppressions[0] as Record<string, unknown>;
+    const row = soleUnmatchedRow(run("--json", entry));
     expect(row.file).toBe("a.css");
     expect("siblingAim" in row).toBe(false);
   });
@@ -335,11 +332,7 @@ describe("--json carries the same fate as data", () => {
     );
     const result = run("--json", entry);
     expect(result.code).toBe(EXIT_FINDINGS); // the collision prints, live
-    const report = JSON.parse(result.out[0] as string) as {
-      unmatchedSuppressions: Record<string, unknown>[];
-    };
-    expect(report.unmatchedSuppressions).toHaveLength(1);
-    const row = report.unmatchedSuppressions[0] as Record<string, unknown>;
+    const row = soleUnmatchedRow(result);
     expect(row.line).toBe(6);
     expect("siblingAim" in row).toBe(false);
     expect("crossFileAim" in row).toBe(false);
