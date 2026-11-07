@@ -133,6 +133,7 @@ import {
   type Scope,
   type Stylesheet,
   type Reference,
+  type Registration,
   type UnresolvedImport,
 } from "./parse.js";
 
@@ -165,6 +166,7 @@ export function loadStylesheet(entryPath: string): Stylesheet {
     // the LAST declaration in array order.
     const scopes: Scope[] = [];
     const references: Reference[] = [];
+    const registrations: Registration[] = [];
     const unresolvedImports: UnresolvedImport[] = [];
     const directives: IgnoreDirective[] = [];
     const fileDir = dirname(filePath);
@@ -247,6 +249,14 @@ export function loadStylesheet(entryPath: string): Stylesheet {
       references.push(
         ...child.references.map((r) => (r.origin === undefined ? { ...r, origin } : r)),
       );
+      // `@property` registrations travel with the child under the same
+      // one-stamp discipline, so a registration in an imported file registers
+      // the property for the whole closure (registration is global in CSS).
+      registrations.push(
+        ...(child.registrations ?? []).map((r) =>
+          r.origin === undefined ? { ...r, origin } : r,
+        ),
+      );
       // The child's own failed edges travel with the child: they are failures
       // of THIS closure too, and merging here keeps the final list in
       // statement order — a child's breakage lands where its edge was
@@ -268,6 +278,7 @@ export function loadStylesheet(entryPath: string): Stylesheet {
 
     scopes.push(...sheet.scopes);
     references.push(...sheet.references);
+    registrations.push(...(sheet.registrations ?? []));
 
     // The entry's OWN import list travels with the sheet: it is what the file
     // declares, even where a statement was skipped — the record of the edges
@@ -280,6 +291,7 @@ export function loadStylesheet(entryPath: string): Stylesheet {
       imports: sheet.imports,
       unresolvedImports,
       directives,
+      ...(registrations.length > 0 ? { registrations } : {}),
     };
   };
 

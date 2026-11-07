@@ -70,16 +70,20 @@
  * 9's to answer, at the per-theme grain the resolver's theme-keyed `lookup`
  * already models.
  *
- * One KNOWN FALSE POSITIVE, named rather than left for a user to discover: an
- * `@property` block registers a custom property at the CSS level, but the
- * block carries no `--`-prefixed declarations, so the parser emits no scope
- * for it and this rule's lookup — which reads scope declarations — cannot see
- * the registration. A name registered there and declared in no scope IS
- * reported; with an `initial-value` the property resolves to that value at
- * runtime, nothing falls back, and the finding is a false positive. The
- * standing remedy is the ordinary one — declare the name in a scope, or
- * suppress the finding — because reading `@property` registrations into the
- * lookup is a parser change this rule deliberately does not make.
+ * An `@property` registration counts as declaring, when it can resolve: a
+ * `@property --brand { syntax: "<color>"; initial-value: #f00; inherits: true }`
+ * block registers the name at the CSS level and `var(--brand)` always resolves
+ * to the initial value, so nothing falls back and nothing is reported. The
+ * parser reads registrations ({@link Stylesheet.registrations}, anywhere in the
+ * `@import` closure — a registration is global in CSS) and `TokenNames.resolves`
+ * applies CSS's validity rule: a registration needs a `syntax`, a non-`*` syntax
+ * needs an `initial-value`, and a `syntax: '*'` registration with NO initial
+ * value is guaranteed-invalid until something declares the name — so it is still
+ * reported, as is any unregistered neighbour. The registration is not a scope
+ * declaration (`names.declared` is unchanged), and the resolver substitutes the
+ * initial value for a chain that reaches it, so a declaration built on a
+ * registered name resolves instead of ending `unresolved`. Not modelled: whether
+ * the initial value actually parses against the syntax.
  *
  * Deliberately NOT reported:
  * `kind: "cycle"` chains (a var() loop is a different defect shape), and no
@@ -114,8 +118,9 @@ export function unresolvedReferenceRule(
   const findings: Finding[] = [];
   for (const [name, sites] of [...usedAt.entries()].sort(([a], [b]) => a.localeCompare(b))) {
     // Declared in ANY scope counts — `names.declared` is every scope's
-    // declarations, `@theme inline` included (see the header above).
-    if (names.declared.has(name)) continue;
+    // declarations, `@theme inline` included — and so does an `@property`
+    // registration carrying an initial value (see the header above).
+    if (names.resolves(name)) continue;
     findings.push({
       rule: "unresolved-reference",
       theme: null,

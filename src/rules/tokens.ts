@@ -15,6 +15,7 @@
  */
 
 import type { ResolvedStylesheet } from "../resolve.js";
+import { registeredInitialValues } from "../parse.js";
 
 /**
  * Suffixes that name an INTERACTION STATE of the token they are attached to.
@@ -59,6 +60,15 @@ export class TokenNames {
    */
   readonly aliasLayer: ReadonlySet<string>;
 
+  /**
+   * The names an `@property` registration gives an initial value (see
+   * {@link registeredInitialValues}). Deliberately NOT part of
+   * {@link declared}: a registration is not a scope declaration, so it joins no
+   * family, pair or collision population. It counts only for the question
+   * "does this name resolve?", which is rule 5's — see {@link resolves}.
+   */
+  readonly registered: ReadonlySet<string>;
+
   private readonly heads = new Map<string, string>();
 
   constructor(resolved: ResolvedStylesheet) {
@@ -72,6 +82,16 @@ export class TokenNames {
     }
     this.declared = declared;
     this.aliasLayer = alias;
+    this.registered = new Set(registeredInitialValues(resolved.stylesheet.registrations).keys());
+  }
+
+  /**
+   * True when a `var()` naming `name` can resolve: a scope declares it, or an
+   * `@property` registration gives it an initial value. A `syntax: '*'`
+   * registration with no initial value is guaranteed-invalid and does not count.
+   */
+  resolves(name: string): boolean {
+    return this.declared.has(name) || this.registered.has(name);
   }
 
   /** True for a name in the `@theme inline` alias namespace. */

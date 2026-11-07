@@ -133,8 +133,11 @@ export {
 
 export {
   parseStylesheet,
+  registeredInitialValues,
   type Declaration,
   type Reference,
+  type Registration,
+  type RegisteredInitial,
   type Scope,
   type ScopeKind,
   type Stylesheet,

@@ -235,10 +235,89 @@ export interface UnresolvedImport {
   readonly code: "missing" | "unreadable";
 }
 
+/**
+ * An `@property --name { … }` registration, as written — the CSS Properties
+ * and Values API's way of giving a custom property a type and, optionally, an
+ * initial value. Collected where {@link parseStylesheet} finds the block: top
+ * level, or nested in `@layer` / `@media` / `@supports`.
+ *
+ * A registration is NOT a scope: its body carries `syntax:` / `inherits:` /
+ * `initial-value:` descriptors, not `--` declarations, so it contributes no
+ * {@link Scope} and no token row. What it contributes is one fact the rules
+ * need — a registered property WITH an initial value always resolves — read
+ * through {@link registeredInitialValues}, which also applies CSS's own
+ * validity rule. Every field here is the descriptor as written (quotes stripped
+ * from `syntax`), so a malformed registration is recorded faithfully and
+ * judged in one place.
+ */
+export interface Registration {
+  /** The registered custom property, e.g. `--brand`. */
+  readonly name: string;
+  /** 1-based line of the `@property` prelude. */
+  readonly line: number;
+  /** The `syntax` descriptor with its quotes stripped (`<color>`, `*`), if written and non-empty. */
+  readonly syntax?: string;
+  /** The `inherits` descriptor (`true` / `false`), if written. */
+  readonly inherits?: string;
+  /** The `initial-value` descriptor, if written and non-empty. */
+  readonly initialValue?: string;
+  /**
+   * The imported file the block was spliced from — same spelling as
+   * {@link Scope.origin}. Absent on an entry-file registration.
+   */
+  readonly origin?: string;
+}
+
+/** A name's effective initial value, as {@link registeredInitialValues} reads it. */
+export interface RegisteredInitial {
+  readonly value: string;
+  readonly line: number;
+  readonly origin?: string;
+}
+
+/**
+ * The names a stylesheet's `@property` registrations give a usable initial
+ * value, each with that value — the lookup the resolver and rule 5 share.
+ *
+ * Applies CSS's validity rule, conservatively: a registration with no `syntax`
+ * is invalid and ignored (a browser drops the whole rule); a non-`*` syntax
+ * with no `initial-value` is invalid and ignored; a `*` registration with no
+ * initial value is VALID but gives the property none — it is
+ * guaranteed-invalid until something declares it, so it overrides an earlier
+ * valid registration's initial value rather than adding to it. Registrations
+ * are read in array (document) order and the last valid one wins, as in CSS.
+ * Not modelled: checking that the initial value actually parses against the
+ * syntax — any non-empty value counts.
+ */
+export function registeredInitialValues(
+  registrations: readonly Registration[] | undefined,
+): ReadonlyMap<string, RegisteredInitial> {
+  const out = new Map<string, RegisteredInitial>();
+  for (const r of registrations ?? []) {
+    if (r.syntax === undefined) continue;
+    if (r.initialValue === undefined) {
+      if (r.syntax === "*") out.delete(r.name);
+      continue;
+    }
+    out.set(r.name, {
+      value: r.initialValue,
+      line: r.line,
+      ...(r.origin !== undefined ? { origin: r.origin } : {}),
+    });
+  }
+  return out;
+}
+
 export interface Stylesheet {
   readonly scopes: readonly Scope[];
   /** Every `var()` use in the stylesheet, in source order. */
   readonly references: readonly Reference[];
+  /**
+   * Every `@property` registration, in source order (see {@link Registration}).
+   * Absent when the sheet has none, so a sheet without `@property` is
+   * byte-identical to what it was before registrations were read.
+   */
+  readonly registrations?: readonly Registration[];
   /**
    * The `@import` statements in the CSS-legal position — top level, before the
    * first qualified rule — in source order. A later `@import` is dead text by
@@ -921,6 +1000,7 @@ export function parseStylesheet(source: string): Stylesheet {
   const lines = lineIndex(css);
   const scopes: Scope[] = [];
   const references: Reference[] = [];
+  const registrations: Registration[] = [];
   // `@import` preludes, collected where CSS makes them live. `sawQualifiedRule`
   // ends the legal region: the first top-level `selector { … }` block is the
   // point past which every browser ignores an `@import`, so collecting one
@@ -973,6 +1053,21 @@ export function parseStylesheet(source: string): Stylesheet {
           const isNestingAtRule =
             selector.startsWith("@") && matches[0].kind !== "theme-inline";
           if (isNestingAtRule) {
+            // `@property --name { … }` registers a custom property; its body
+            // is descriptors, not declarations, so it yields a registration
+            // and no scope. Only where CSS allows it: not inside a style rule.
+            if (parent === null) {
+              const rawPrelude = css.slice(preludeStart, blockStart);
+              const lead = rawPrelude.length - rawPrelude.trimStart().length;
+              const reg = readRegistration(
+                rawSelector,
+                body,
+                bodyStart,
+                lines,
+                lines[preludeStart + lead] ?? 1,
+              );
+              if (reg !== null) registrations.push(reg);
+            }
             // An at-rule is transparent to nesting: its children still resolve
             // against the at-rule's own parent, not against the at-rule. NOT
             // transparent to palette context: a colour-scheme media query is
@@ -1094,7 +1189,46 @@ export function parseStylesheet(source: string): Stylesheet {
   };
 
   walk(0, css.length, null, null, true);
-  return { scopes, references, imports };
+  return {
+    scopes,
+    references,
+    imports,
+    ...(registrations.length > 0 ? { registrations } : {}),
+  };
+}
+
+const PROPERTY_PRELUDE = /^@property\s+(--[\w-]+)$/i;
+
+/**
+ * The registration an `@property` prelude and body describe, or `null` when the
+ * prelude is not a well-formed `@property --name`. Descriptor names are
+ * case-insensitive; a descriptor written twice keeps the last, as a browser's
+ * declaration list does. Empty `syntax` / `initial-value` are treated as not
+ * written.
+ */
+function readRegistration(
+  prelude: string,
+  body: string,
+  bodyStart: number,
+  lines: number[],
+  line: number,
+): Registration | null {
+  const m = prelude.match(PROPERTY_PRELUDE);
+  if (!m) return null;
+  const descriptors = new Map<string, string>();
+  for (const p of readPairs(body, bodyStart, lines)) {
+    descriptors.set(p.property.toLowerCase(), p.value);
+  }
+  const syntaxRaw = descriptors.get("syntax")?.trim().replace(/^(["'])([\s\S]*)\1$/, "$2").trim();
+  const initial = descriptors.get("initial-value")?.trim();
+  const inherits = descriptors.get("inherits")?.trim();
+  return {
+    name: m[1] as string,
+    line,
+    ...(syntaxRaw ? { syntax: syntaxRaw } : {}),
+    ...(inherits ? { inherits } : {}),
+    ...(initial ? { initialValue: initial } : {}),
+  };
 }
 
 /**
