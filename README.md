@@ -135,7 +135,10 @@ spelled, on exactly the subjects `.dark`/`.light` accept. The value is the theme
 without its dot — never a selector, and the built-in spellings need no entry. When a stylesheet
 declares a palette variant under a class nothing spells and no configuration names one, the audit
 refuses (exit `2`) naming the class and this key, rather than report success on a half-read palette; a
-stylesheet with no palette variant in any class audits exactly as before, configured or not.
+stylesheet with no palette variant in any class audits exactly as before, configured or not. A
+"palette variant" is a class that restates the base palette — at least half of the base tokens, and at
+least three — so a component overriding a token or two (`.card-compact { --radius: 2px; }`) is
+ordinary and never refuses.
 
 The attribute form is recognised under two attribute names, `data-theme` and Bootstrap 5.3's
 `data-bs-theme` (`[data-bs-theme=dark]`, quoted or not): the theme is the attribute value, so `light` /
@@ -756,7 +759,7 @@ themes (or by none at all), exits `2` naming the class, the built-in channels an
 [data-theme=…], [data-bs-theme=…], prefers-color-scheme) — name the class themes in
 themeguard.config.json: {"themes": ["theme-dark"]}` — riding the same fast-fail an unhonourable config
 already takes. A stylesheet with no palette variant in any class — a single-theme sheet, a component
-library declaring fresh names — never refuses, configured or not: the refusal targets the half-read
+library declaring fresh names or overriding a token or two — never refuses, configured or not: the refusal targets the half-read
 palette, not the themeless sheet.
 
 ### Marking it at the site — `/* themeguard-ignore … */`

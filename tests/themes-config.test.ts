@@ -206,6 +206,23 @@ describe("unrecognisedClassTheme — the loader's detection half", () => {
     ).toBeNull();
   });
 
+  it("a component overriding one or two root tokens is not a palette variant", () => {
+    // The ordinary component-override idiom: a themeless sheet has these.
+    const base = `:root { --radius: 4px; --bg: #fff; --fg: #111; }\n`;
+    expect(unrecognisedClassTheme(parseStylesheet(`${base}.card-compact { --radius: 2px; }`).scopes)).toBeNull();
+    expect(
+      unrecognisedClassTheme(parseStylesheet(`${base}.btn-danger { --bg: #f00; --fg: #fff; }`).scopes),
+    ).toBeNull();
+    expect(unrecognisedClassTheme(parseStylesheet(`${base}:root.compact { --radius: 2px; }`).scopes)).toBeNull();
+  });
+
+  it("a variant restating the palette still names a candidate, bare or :root-prefixed", () => {
+    const base = `:root { --radius: 4px; --bg: #fff; --fg: #111; }\n`;
+    const dark = `{ --radius: 4px; --bg: #000; --fg: #eee; }`;
+    expect(unrecognisedClassTheme(parseStylesheet(`${base}.high-contrast ${dark}`).scopes)).toBe("high-contrast");
+    expect(unrecognisedClassTheme(parseStylesheet(`${base}:root.theme-dark ${dark}`).scopes)).toBe("theme-dark");
+  });
+
   it("a bare class without base-palette overlap stays silent", () => {
     // A dark palette of entirely fresh names, no :root to tune: still
     // unrecognised, but not the palette-variant shape the refusal targets.
@@ -356,6 +373,20 @@ describe("load — the refusal and the recognition", () => {
     );
     expect(() => loadStylesheet(component)).not.toThrow();
     expect(loadStylesheet(component).themes).toBeUndefined();
+  });
+
+  it("a themeless sheet with a component overriding a root token loads and audits as before", () => {
+    const css = `:root { --radius: 4px; --bg: #fff; --fg: #111; }\n.btn { background: var(--bg); color: var(--fg); }\n.card-compact { --radius: 2px; }`;
+    const path = write("override.css", css);
+    expect(() => loadStylesheet(path)).not.toThrow();
+    expect(loadStylesheet(path).themes).toBeUndefined();
+    const via = (themes?: string[]) =>
+      JSON.stringify(
+        audit(resolveStylesheet(loadStylesheet(path, themes === undefined ? undefined : { themes }))).findings,
+      );
+    // Byte-identical to the unconfigured run, and to a parse with no options.
+    expect(via(["theme-dark"])).toBe(via());
+    expect(JSON.stringify(audit(resolveStylesheet(parseStylesheet(css))).findings)).toBe(via());
   });
 
   it("recognition anywhere in the closure counts; themes merge across members", () => {

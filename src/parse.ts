@@ -710,36 +710,50 @@ function classThemeOf(rest: string, configured: readonly string[]): string | nul
  * `html`, `body` or `:root` subject — the exact shape {@link classThemeOf}
  * accepts, read here with the same preprocessing `classifyOne` applies
  * (negations and functional arguments stripped, string contents blanked) so
- * `:root:not(.dark)` and `.dark .card` never read as candidates. Two kinds of
- * scope qualify, each with its own harm:
+ * `:root:not(.dark)` and `.dark .card` never read as candidates. Such a scope
+ * is only a CANDIDATE when it re-tunes the sheet's own base palette, because
+ * the ordinary component-override idiom (`.btn-danger { --accent: … }`,
+ * `.card-compact { --radius: … }`) has the same shape and lives in plenty of
+ * sheets with no themes at all — the refusal must never fire on those. Two
+ * kinds of scope qualify, each with its own harm:
  *
- *   - a `root`-kind scope (`:root.theme-dark`): `classifyOne` fell through to
- *     the base test, so the block's declarations fold last-wins into the base
- *     table — the dark palette overwrites the light one;
- *   - an `other`-kind scope that re-declares at least one name the sheet's
- *     own `root` scopes declare: a component would declare fresh names, so a
- *     bare class re-tuning the base palette is a palette variant — a theme —
- *     and its declarations never reach any theme table.
+ *   - a `root`-kind scope (`:root.theme-dark`) that re-declares at least half
+ *     of the base palette's names: `classifyOne` fell through to the base
+ *     test, so the dark palette overwrites the light one;
+ *   - an `other`-kind scope (`.theme-dark`, `html.high-contrast`) that
+ *     re-declares at least half of the base palette's names AND at least
+ *     {@link PALETTE_VARIANT_MIN_OVERLAP} of them. A component overrides a
+ *     name or two; a palette variant restates the palette. Its declarations
+ *     never reach any theme table.
  *
- * A scope whose subject is one class declaring only fresh names (`.btn {
- * --btn-bg: … }`) is a component, not a palette variant, and never
- * qualifies — the refusal must not fire on an ordinary themeless stylesheet.
+ * A scope declaring only fresh names, or overriding a token or two, is a
+ * component, not a palette variant, and never qualifies. The bar errs toward
+ * silence: a variant too small to clear it audits as it always has.
  */
 export function unrecognisedClassTheme(scopes: readonly Scope[]): string | null {
   const rootNames = new Set<string>();
   for (const scope of scopes) {
-    if (scope.kind !== "root") continue;
+    // The BASE palette: root scopes that are not themselves a class-spelled
+    // candidate, so `:root.theme-dark` is never measured against itself.
+    if (scope.kind !== "root" || classThemeSubject(scope.matchedSelector) !== null) continue;
     for (const d of scope.declarations) rootNames.add(d.name);
   }
   for (const scope of scopes) {
     if (scope.kind !== "root" && scope.kind !== "other") continue;
     const name = classThemeSubject(scope.matchedSelector);
     if (name === null) continue;
-    if (scope.kind === "root") return name;
-    if (scope.declarations.some((d) => rootNames.has(d.name))) return name;
+    const overlap = new Set(scope.declarations.map((d) => d.name).filter((n) => rootNames.has(n)));
+    if (overlap.size === 0 || overlap.size * 2 < rootNames.size) continue;
+    // A `:root`-prefixed spelling is theme-shaped enough to need no floor
+    // beyond "restates half the palette"; a bare/html/body class, which is
+    // also the component idiom, additionally needs the absolute floor.
+    if (scope.kind === "root" || overlap.size >= PALETTE_VARIANT_MIN_OVERLAP) return name;
   }
   return null;
 }
+
+/** Fewest base-palette names a bare class must re-declare to read as a palette variant. */
+const PALETTE_VARIANT_MIN_OVERLAP = 3;
 
 /**
  * The single class a selector's subject names as a CLASS THEME candidate, or
@@ -1136,7 +1150,8 @@ export function parseStylesheet(source: string, options?: ParseOptions): Stylesh
   const imports: StylesheetImport[] = [];
   let sawQualifiedRule = false;
 
-  const walk = (from: number, to: number, parent: string | null, scheme: "dark" | "light" | null, topLevel = false): void => {    let i = from;
+  const walk = (from: number, to: number, parent: string | null, scheme: "dark" | "light" | null, topLevel = false): void => {
+    let i = from;
     let preludeStart = from;
     let depth = 0;
     let inString: string | null = null;
