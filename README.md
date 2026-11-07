@@ -127,7 +127,7 @@ descendant — its subject is `.card`), `:root:not(.dark)` (a negation, still th
 (`.theme-dark`, `.high-contrast`) are not themes and keep their current reading. Naming additional
 class themes is not configurable.
 
-Since 0.1.27 the attribute form is recognised under two attribute names, `data-theme` and Bootstrap 5.3's
+The attribute form is recognised under two attribute names, `data-theme` and Bootstrap 5.3's
 `data-bs-theme` (`[data-bs-theme=dark]`, quoted or not): the theme is the attribute value, so `light` /
 `dark` land in the same tables whichever spelling is used, and a compound subject such as
 `.navbar[data-bs-theme=dark]` is classified exactly as `.navbar[data-theme=dark]` is. Other attribute
