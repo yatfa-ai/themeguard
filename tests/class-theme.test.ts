@@ -152,3 +152,20 @@ describe("class, attribute and media spellings are one dark table", () => {
     expect(resolveCss(`${ROOT}\nbody.dark { --card: #262626; }`).themes).toEqual(["root", "dark"]);
   });
 });
+
+const themesOf = (selector: string) =>
+  resolveCss(`:root { --card: #ffffff; }\n${selector} { --card: #262626; }\n`).themes;
+
+describe("class-based themes: element names fold case, class names do not", () => {
+  it("HTML.dark, BODY.dark and Html.light name the dark/light theme", () => {
+    expect(themesOf("HTML.dark")).toEqual(["root", "dark"]);
+    expect(themesOf("BODY.dark")).toEqual(["root", "dark"]);
+    expect(themesOf("Html.light")).toEqual(["root", "light"]);
+  });
+
+  it(".Dark, .DARK and html.Light are not themes (class names are case-sensitive)", () => {
+    for (const selector of [".Dark", ".DARK", "html.Light", "body.LIGHT"]) {
+      expect(themesOf(selector), selector).toEqual(["root"]);
+    }
+  });
+});
