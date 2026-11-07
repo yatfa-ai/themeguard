@@ -11,13 +11,12 @@ import {
 import {
   formatReport,
   formatReportJson,
-  runCli,
   EXIT_FINDINGS,
   EXIT_OK,
-  type CliIo,
 } from "../src/cli.js";
 import { loadStylesheet } from "../src/load.js";
 import { resolveCss, resolveStylesheet } from "../src/resolve.js";
+import { run, unmatchedRow } from "./run.js";
 
 /**
  * THE FILE-SIBLING ARM of the `unmatched` section's advice — its OLDEST tell,
@@ -77,24 +76,6 @@ function write(rel: string, contents: string): string {
 
 function config(dir: string, document: Record<string, unknown>): void {
   write(`${dir}/themeguard.config.json`, JSON.stringify(document));
-}
-
-interface Run {
-  readonly code: number;
-  readonly out: string[];
-  readonly stdout: string;
-}
-
-function run(...args: string[]): Run {
-  const out: string[] = [];
-  const io: CliIo = { out: (l) => out.push(l), err: () => {} };
-  const code = runCli(args, io);
-  return { code, out, stdout: out.join("\n") };
-}
-
-/** The one `[unmatched]` row of a report, or `undefined` when there is none. */
-function unmatchedRow(result: Run): string | undefined {
-  return result.out.find((l) => l.startsWith("  [unmatched] "));
 }
 
 /** The fate line, quoted by its opening — the prose this key is the form of. */

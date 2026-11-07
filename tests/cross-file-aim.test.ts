@@ -11,9 +11,10 @@ import {
   matchesEntryIdentity,
   siteLineCovers,
 } from "../src/audit.js";
-import { formatReport, formatReportJson, runCli, EXIT_FINDINGS, EXIT_OK, type CliIo } from "../src/cli.js";
+import { formatReport, formatReportJson, EXIT_FINDINGS, EXIT_OK } from "../src/cli.js";
 import { loadStylesheet } from "../src/load.js";
 import { resolveStylesheet } from "../src/resolve.js";
+import { run, unmatchedRow } from "./run.js";
 
 /**
  * The CROSS-FILE arm of the `unmatched` section's advice (0.1.24).
@@ -47,24 +48,6 @@ function write(rel: string, css: string): string {
   mkdirSync(join(path, ".."), { recursive: true });
   writeFileSync(path, css, "utf8");
   return path;
-}
-
-interface Run {
-  readonly code: number;
-  readonly out: string[];
-  readonly stdout: string;
-}
-
-function run(...args: string[]): Run {
-  const out: string[] = [];
-  const io: CliIo = { out: (l) => out.push(l), err: () => {} };
-  const code = runCli(args, io);
-  return { code, out, stdout: out.join("\n") };
-}
-
-/** The one `[unmatched]` row of a report, or `undefined` when there is none. */
-function unmatchedRow(result: Run): string | undefined {
-  return result.out.find((l) => l.startsWith("  [unmatched] "));
 }
 
 /** The imported member of the ticket's probe: one collision, two lines. */

@@ -2,9 +2,10 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { EXIT_ERROR, EXIT_FINDINGS, EXIT_OK, runCli, type CliIo } from "../src/cli.js";
+import { EXIT_ERROR, EXIT_FINDINGS, EXIT_OK, runCli } from "../src/cli.js";
 import { loadStylesheet } from "../src/load.js";
 import { parseStylesheet } from "../src/parse.js";
+import { run } from "./run.js";
 
 /**
  * `themeguard-ignore` directives across an IMPORT CLOSURE (0.1.19).
@@ -36,21 +37,6 @@ function write(rel: string, css: string): string {
   mkdirSync(join(path, ".."), { recursive: true });
   writeFileSync(path, css, "utf8");
   return path;
-}
-
-interface Run {
-  readonly code: number;
-  readonly out: string[];
-  readonly stderr: string;
-  readonly stdout: string;
-}
-
-function run(...args: string[]): Run {
-  const out: string[] = [];
-  const err: string[] = [];
-  const io: CliIo = { out: (l) => out.push(l), err: (l) => err.push(l) };
-  const code = runCli(args, io);
-  return { code, out, stderr: err.join("\n"), stdout: out.join("\n") };
 }
 
 /** A composing sheet over an imported card whose two roles hold one colour. */

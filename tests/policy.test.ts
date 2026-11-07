@@ -15,6 +15,7 @@ import {
   type CliIo,
 } from "../src/cli.js";
 import { fixtureCss, fixtureStubCss, FIXTURE_PATH } from "./fixture.js";
+import { run } from "./run.js";
 
 /**
  * The project-level RULE POLICY — the `suppress-rule` config key (YATFA-8490).
@@ -64,21 +65,6 @@ function write(rel: string, contents: string): string {
 
 function config(dir: string, document: object): void {
   write(`${dir}/themeguard.config.json`, JSON.stringify(document));
-}
-
-interface Run {
-  readonly code: number;
-  readonly out: string[];
-  readonly err: string[];
-  readonly stdout: string;
-}
-
-function run(...args: string[]): Run {
-  const out: string[] = [];
-  const err: string[] = [];
-  const io: CliIo = { out: (l) => out.push(l), err: (l) => err.push(l) };
-  const code = runCli(args, io);
-  return { code, out, err, stdout: out.join("\n") };
 }
 
 /** The one dead-token finding, the cheapest kind to summon deterministically. */

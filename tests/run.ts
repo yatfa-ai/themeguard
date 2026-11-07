@@ -15,3 +15,8 @@ export function run(...args: string[]): Run {
   const code = runCli(args, io);
   return { code, out, err, stdout: out.join("\n"), stderr: err.join("\n") };
 }
+
+/** The one `[unmatched]` row of a report, or `undefined` when there is none. */
+export function unmatchedRow(result: Run): string | undefined {
+  return result.out.find((l) => l.startsWith("  [unmatched] "));
+}
