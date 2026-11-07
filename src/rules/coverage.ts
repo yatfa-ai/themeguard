@@ -32,6 +32,25 @@
  *      union every theme's names would change every theme's headline count
  *      and answer a question no reader asked; the gap this paragraph names
  *      is claimed by rule 9 instead.
+ *
+ *      REGISTRATIONS ARE BASE-LEVEL BY CSS SEMANTICS, so they join the
+ *      population. An `@property` registration with a usable initial value is
+ *      not theme-scoped: its name resolves to that value in every theme that
+ *      declares nothing over it, `:root` included. A sheet that declares
+ *      tokens only through `@property` therefore has base tokens, and an
+ *      inventory that counted "0 base tokens" for it would contradict rule 5,
+ *      which already treats the name as declared. The population is the
+ *      declared `:root` names UNION the registered names
+ *      ({@link ResolvedStylesheet.registeredTokens}); a registered name that
+ *      a theme (or `:root`) declares takes the ordinary `overridden` path, and
+ *      one nothing declares in that theme is `registered` — the initial value
+ *      flows in. This is NOT the widening to theme-block-only names the
+ *      paragraph above refuses (that question is rule 9's): a theme-only name
+ *      with no registration stays outside, and a registered name is in
+ *      because the registration makes it base-level, not because some theme
+ *      declares it. A registration mints no token row, so nothing else about
+ *      the resolver's populations moves; a sheet with no registrations
+ *      reports exactly what it did before.
  *   2. THE FINDING (the evidence-bearing half, exit-code-active like the other
  *      rules). {@link familyConsistencyRule} reports an inherited token when
  *      the theme's OWN declarations prove per-theme tuning of its family: at
@@ -96,7 +115,13 @@ export type CoverageStatus =
   /** The theme declares the token in its own scope. */
   | "overridden"
   /** The theme declares nothing; the value comes from `:root`. */
-  | "inherited";
+  | "inherited"
+  /**
+   * The name is an `@property` registration no scope in this theme's view
+   * declares; its `initial-value` flows in. Only a registered name can have
+   * this status — there is no `:root` declaration to inherit it from.
+   */
+  | "registered";
 
 /** One base-theme token, as one theme receives it. */
 export interface CoverageEntry {
@@ -125,32 +150,60 @@ export interface ThemeCoverage {
    * here by design, which is why this is a listing and not a defect set.
    */
   readonly inherited: readonly CoverageEntry[];
+  /**
+   * The registered names no scope in this theme's view declares, sorted by
+   * name: the `@property` initial value flows in. Present ONLY when non-empty,
+   * so a sheet without registrations reports (and serialises) exactly what it
+   * did before registrations were inventoried.
+   */
+  readonly registered?: readonly CoverageEntry[];
 }
 
 /**
  * Per theme, every base-theme token marked overridden or inherited.
  *
  * A fact inventory over the resolver's own output — `tokensFor(ROOT_THEME)`
- * for the population, `absences`/`origin` for the split, `token()` for the
- * per-theme kind. No rule runs here and nothing is judged.
+ * and `registeredTokens` for the population, `absences`/`origin` for the
+ * split, `token()` for the per-theme kind. No rule runs here and nothing is
+ * judged.
  */
 export function coverageReport(
   resolved: ResolvedStylesheet,
 ): readonly ThemeCoverage[] {
-  const baseNames = resolved
+  const declaredBase = resolved
     .tokensFor(ROOT_THEME)
     .filter((t) => t.origin === "declared")
-    .map((t) => t.name)
-    .sort();
+    .map((t) => t.name);
+  // Registered names join the population unless the sheet already speaks for
+  // them: a name declared at `:root` is in already, and one the `@theme inline`
+  // alias layer carries (a root row that is not `declared`) is an alias — the
+  // layer this inventory has always left out, which the alias wins over a
+  // registration in the resolver's lookup anyway.
+  const inPopulation = new Set(declaredBase);
+  const registeredFact = new Map(resolved.registeredTokens.map((r) => [r.name, r] as const));
+  const registeredOnly = new Set<string>();
+  for (const r of resolved.registeredTokens) {
+    if (inPopulation.has(r.name)) continue;
+    if (resolved.token(r.name, ROOT_THEME) !== undefined) continue;
+    registeredOnly.add(r.name);
+  }
+  const baseNames = [...declaredBase, ...registeredOnly].sort();
 
   return resolved.themes.map((theme) => {
     const overridden: CoverageEntry[] = [];
     const inherited: CoverageEntry[] = [];
+    const registered: CoverageEntry[] = [];
     for (const name of baseNames) {
-      // Every base name resolves in every theme — own scope first, then the
-      // base — so this is type-narrowing, not a case the data can produce.
       const token = resolved.token(name, theme);
-      if (token === undefined) continue;
+      if (token === undefined) {
+        // Only a registered-only name can be missing from a theme's rows: every
+        // declared base name resolves in every theme (own scope, then `:root`).
+        // Nothing in this theme declares it, so the initial value flows in.
+        const fact = registeredFact.get(name);
+        if (fact === undefined) continue;
+        registered.push({ name, status: "registered", kind: fact.kind });
+        continue;
+      }
       const entry: CoverageEntry = {
         name,
         status: token.origin === "declared" ? "overridden" : "inherited",
@@ -159,7 +212,13 @@ export function coverageReport(
       if (entry.status === "inherited") inherited.push(entry);
       else overridden.push(entry);
     }
-    return { theme, baseTokens: baseNames.length, overridden, inherited };
+    return {
+      theme,
+      baseTokens: baseNames.length,
+      overridden,
+      inherited,
+      ...(registered.length > 0 ? { registered } : {}),
+    };
   });
 }
 

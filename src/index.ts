@@ -153,6 +153,7 @@ export {
   ROOT_THEME,
   type ResolvedStylesheet,
   type ResolvedToken,
+  type RegisteredToken,
   type ThemeAbsence,
   type TokenKind,
   type TokenOrigin,

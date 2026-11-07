@@ -144,6 +144,29 @@ export interface ThemeAbsence {
   readonly inheritedValue: string;
 }
 
+/**
+ * One `@property` registration that gives a name a usable initial value
+ * ({@link registeredInitialValues}'s validity rule), as a FACT about the
+ * sheet — not a token row. A registration is not a declaration and mints no
+ * {@link ResolvedToken}, so every rule that iterates token rows (collision,
+ * dead-token, duplicate-declaration, family-consistency, scale-collapse,
+ * cycle-reference, theme-partial-token, unresolved-reference) is untouched by
+ * it; the two fact inventories (`coverage`, `unread-colors`) read this list so
+ * a sheet that declares tokens only through `@property` is not inventoried as
+ * declaring nothing.
+ */
+export interface RegisteredToken {
+  readonly name: string;
+  /** The `initial-value` as written. */
+  readonly value: string;
+  /** What the initial value classifies as — the walk substitution's own classifier. */
+  readonly kind: TokenKind;
+  /** 1-based line of the `@property` prelude. */
+  readonly line: number;
+  /** The imported file the registration was spliced from; absent for the entry file. */
+  readonly importOrigin?: string;
+}
+
 export interface ValueGroup {
   readonly theme: string;
   /** Canonical colour text shared by every member (`#RRGGBB` or `rgba(...)`). */
@@ -163,6 +186,13 @@ export interface ResolvedStylesheet {
   /** Per theme, the `:root` tokens that theme does not override. */
   readonly absences: readonly ThemeAbsence[];
   readonly stylesheet: Stylesheet;
+  /**
+   * The `@property` registrations carrying a usable initial value, sorted by
+   * name — one per name, the last valid registration winning (see
+   * {@link registeredInitialValues}). Empty, never absent, for a sheet with no
+   * registrations. These are NOT in {@link tokens}: see {@link RegisteredToken}.
+   */
+  readonly registeredTokens: readonly RegisteredToken[];
   tokensFor(theme: string): ResolvedToken[];
   token(name: string, theme: string): ResolvedToken | undefined;
   /**
@@ -775,6 +805,15 @@ export function resolveStylesheet(sheet: Stylesheet): ResolvedStylesheet {
     tokens,
     absences,
     stylesheet: sheet,
+    registeredTokens: [...registered.entries()]
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      .map(([name, reg]) => ({
+        name,
+        value: reg.value,
+        kind: classifyValue(reg.value),
+        line: reg.line,
+        ...(reg.origin !== undefined ? { importOrigin: reg.origin } : {}),
+      })),
     tokensFor(theme) {
       return byTheme.get(theme) ?? [];
     },

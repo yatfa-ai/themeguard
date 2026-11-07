@@ -28,7 +28,11 @@
  * colour rules would have judged had they understood the syntax.
  */
 
-import { type ResolvedStylesheet, type TokenOrigin } from "../resolve.js";
+import {
+  type RegisteredToken,
+  type ResolvedStylesheet,
+  type TokenOrigin,
+} from "../resolve.js";
 
 /** One `non-color` token whose value is colour-valued syntax the parser does not read. */
 export interface UnreadColor {
@@ -41,8 +45,14 @@ export interface UnreadColor {
   readonly syntax: string;
   /** 1-based line of the declaration the token resolves from. */
   readonly line: number;
-  /** How this theme comes by the token. */
-  readonly declaration: TokenOrigin;
+  /**
+   * How this theme comes by the token. `registered` — the token is an
+   * `@property` registration no scope in this theme declares, so the
+   * initial value is what flows in (`line` is the `@property` prelude's).
+   * It is a value of THIS field, not of {@link TokenOrigin}: a registration
+   * mints no token row, so no resolved token ever carries it.
+   */
+  readonly declaration: TokenOrigin | "registered";
   /** The imported file the declaration was spliced from; absent for the entry file. */
   readonly importOrigin?: string;
 }
@@ -120,19 +130,22 @@ export function unreadColorSyntax(value: string): string | null {
  * the colour rules do not read. Themes in the resolver's order, tokens by name
  * within a theme. A token a theme inherits from `:root` is listed under that
  * theme too: the theme receives it, and the colour rules did not read it there
- * either.
+ * either. So is an `@property` registration whose `initial-value` is
+ * colour-valued unreadable syntax and which no scope in the theme declares
+ * (`declaration: "registered"`): without this a sheet that registers
+ * `initial-value: light-dark(#000, #fff)` and declares nothing would read as
+ * "every colour-valued token was read". A registration with no usable initial
+ * value (`syntax: "*"`, or an invalid one) has no value to name and is absent.
  */
 export function unreadColorsReport(resolved: ResolvedStylesheet): readonly UnreadColor[] {
   const rows: UnreadColor[] = [];
   for (const theme of resolved.themes) {
-    const tokens = [...resolved.tokensFor(theme)].sort((a, b) =>
-      a.name < b.name ? -1 : a.name > b.name ? 1 : 0,
-    );
-    for (const token of tokens) {
+    const themeRows: UnreadColor[] = [];
+    for (const token of resolved.tokensFor(theme)) {
       if (token.kind !== "non-color" || token.resolvedValue === null) continue;
       const syntax = unreadColorSyntax(token.resolvedValue);
       if (syntax === null) continue;
-      rows.push({
+      themeRows.push({
         theme,
         token: token.name,
         syntax,
@@ -141,15 +154,48 @@ export function unreadColorsReport(resolved: ResolvedStylesheet): readonly Unrea
         ...(token.importOrigin !== undefined ? { importOrigin: token.importOrigin } : {}),
       });
     }
+    // A registration no scope in this theme's view declares: its initial value
+    // is what the theme receives, so a colour-valued syntax there is exactly
+    // what this inventory exists to name. A name the theme DOES carry a row
+    // for was handled above, from the row.
+    for (const reg of registeredWithoutRow(resolved, theme)) {
+      if (reg.kind !== "non-color") continue;
+      const syntax = unreadColorSyntax(reg.value);
+      if (syntax === null) continue;
+      themeRows.push({
+        theme,
+        token: reg.name,
+        syntax,
+        line: reg.line,
+        declaration: "registered",
+        ...(reg.importOrigin !== undefined ? { importOrigin: reg.importOrigin } : {}),
+      });
+    }
+    themeRows.sort((a, b) => (a.token < b.token ? -1 : a.token > b.token ? 1 : 0));
+    rows.push(...themeRows);
   }
   return rows;
 }
 
-/** Each theme's token total, for the report's per-theme headline. */
+/** The registrations a theme receives without any scope declaring the name there. */
+function registeredWithoutRow(
+  resolved: ResolvedStylesheet,
+  theme: string,
+): readonly RegisteredToken[] {
+  if (resolved.registeredTokens.length === 0) return [];
+  const have = new Set(resolved.tokensFor(theme).map((t) => t.name));
+  return resolved.registeredTokens.filter((r) => !have.has(r.name));
+}
+
+/**
+ * Each theme's token total, for the report's per-theme headline. A registered
+ * token the theme receives counts toward its total, so "N of M tokens not read"
+ * never reads a row against a denominator that left it out.
+ */
 export function themeTokenTotals(resolved: ResolvedStylesheet): readonly UnreadColorTotals[] {
   return resolved.themes.map((theme) => ({
     theme,
-    total: resolved.tokensFor(theme).length,
+    total: resolved.tokensFor(theme).length + registeredWithoutRow(resolved, theme).length,
   }));
 }
 
