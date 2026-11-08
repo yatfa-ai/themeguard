@@ -301,6 +301,7 @@ import { fileURLToPath } from "node:url";
 import {
   audit,
   crossFileAims,
+  entryFileScope,
   skippedAims,
   siblingAims,
   themelessAims,
@@ -1293,13 +1294,12 @@ export function formatReport(
         // A scope naming the AUDITED stylesheet itself does not aim elsewhere:
         // "that file's report" is the report in the reader's hands, so the
         // advice is circular there and such an entry stops vouching the line
-        // into existence. Read exactly as `matches` reads the scope
-        // (`fileResolved` once the CLI has resolved one, the entry's own
-        // spelling otherwise), compared against the same resolved path the
-        // file conjunct compares; a caller that passed no audited stylesheet
+        // into existence. Read via `entryFileScope` (the same helper
+        // `matches` uses), compared against the same resolved path the file
+        // conjunct compares; a caller that passed no audited stylesheet
         // cannot resolve the comparison and keeps the carve-out for every
         // scoped entry — the gate is byte-identical there.
-        const scope = "fileResolved" in entry ? entry.fileResolved : entry.file;
+        const scope = entryFileScope(entry);
         return scope !== auditedStylesheet;
       })
     ) {
