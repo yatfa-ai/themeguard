@@ -8,7 +8,7 @@ import { EXIT_FINDINGS, EXIT_OK } from "../src/cli.js";
 import { scanIgnoreDirectives } from "../src/directives.js";
 import { cycleReferenceRule } from "../src/rules/cycle-reference.js";
 import { resolveCss } from "../src/resolve.js";
-import { fixtureCss } from "./fixture.js";
+import { fixtureCss, fixtureWriter } from "./fixture.js";
 import { run } from "./run.js";
 
 /**
@@ -33,11 +33,7 @@ import { run } from "./run.js";
 const tmp = mkdtempSync(join(tmpdir(), "themeguard-cycle-"));
 afterAll(() => rmSync(tmp, { recursive: true, force: true }));
 
-function cssFixture(name: string, css: string): string {
-  const path = join(tmp, name);
-  writeFileSync(path, css, "utf8");
-  return path;
-}
+const cssFixture = fixtureWriter(tmp);
 
 describe("rule 6 — cycle reference, the shapes that used to pass silent", () => {
   it("a root loop with a consumer is ONE finding naming the loop as written, its declaration lines, and the consequence", () => {

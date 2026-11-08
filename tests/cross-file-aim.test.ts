@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
@@ -17,6 +17,7 @@ import { resolveStylesheet } from "../src/resolve.js";
 import { expectReportKeyOrder } from "./report-keys.js";
 import { run, unmatchedRow } from "./run.js";
 import { soleUnmatchedRow } from "./unmatched-json.js";
+import { fixtureWriter } from "./fixture.js";
 
 /**
  * The CROSS-FILE arm of the `unmatched` section's advice (0.1.24).
@@ -45,12 +46,7 @@ import { soleUnmatchedRow } from "./unmatched-json.js";
 const tmp = mkdtempSync(join(tmpdir(), "themeguard-cross-file-aim-"));
 afterAll(() => rmSync(tmp, { recursive: true, force: true }));
 
-function write(rel: string, css: string): string {
-  const path = join(tmp, rel);
-  mkdirSync(join(path, ".."), { recursive: true });
-  writeFileSync(path, css, "utf8");
-  return path;
-}
+const write = fixtureWriter(tmp);
 
 /** The imported member of the ticket's probe: one collision, two lines. */
 const TOKENS = [":root {", "  --accent: #22C55E;", "  --success: #22C55E;", "}"].join("\n");

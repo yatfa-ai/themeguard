@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
@@ -14,7 +14,7 @@ import {
   runCli,
   type CliIo,
 } from "../src/cli.js";
-import { fixtureCss, fixtureStubCss, FIXTURE_PATH } from "./fixture.js";
+import { fixtureCss, fixtureStubCss, FIXTURE_PATH, fixtureWriter } from "./fixture.js";
 import { expectReportKeyOrder } from "./report-keys.js";
 import { run } from "./run.js";
 
@@ -57,12 +57,7 @@ import { run } from "./run.js";
 const tmp = mkdtempSync(join(tmpdir(), "themeguard-policy-"));
 afterAll(() => rmSync(tmp, { recursive: true, force: true }));
 
-function write(rel: string, contents: string): string {
-  const path = join(tmp, rel);
-  mkdirSync(join(path, ".."), { recursive: true });
-  writeFileSync(path, contents, "utf8");
-  return path;
-}
+const write = fixtureWriter(tmp);
 
 function config(dir: string, document: object): void {
   write(`${dir}/themeguard.config.json`, JSON.stringify(document));

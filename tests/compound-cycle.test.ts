@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
@@ -6,7 +6,7 @@ import { audit } from "../src/audit.js";
 import { EXIT_FINDINGS, EXIT_OK } from "../src/cli.js";
 import { ROOT_THEME, resolveCss } from "../src/resolve.js";
 import { parseStylesheet } from "../src/parse.js";
-import { CENSUS, fixtureCss, FIXTURE_PATH } from "./fixture.js";
+import { CENSUS, fixtureCss, FIXTURE_PATH, fixtureWriter } from "./fixture.js";
 import { run } from "./run.js";
 
 /**
@@ -95,11 +95,7 @@ import { run } from "./run.js";
 const tmp = mkdtempSync(join(tmpdir(), "themeguard-compound-cycle-"));
 afterAll(() => rmSync(tmp, { recursive: true, force: true }));
 
-function cssFixture(name: string, css: string): string {
-  const path = join(tmp, name);
-  writeFileSync(path, css, "utf8");
-  return path;
-}
+const cssFixture = fixtureWriter(tmp);
 
 describe("U1 — a two-member loop whose closing edge is embedded in a compound value", () => {
   // The ticket's live probe on 0.1.9: "No findings." EXIT=0, and the coverage

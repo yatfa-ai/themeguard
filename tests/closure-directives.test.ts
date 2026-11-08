@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
@@ -6,6 +6,7 @@ import { EXIT_ERROR, EXIT_FINDINGS, EXIT_OK, runCli } from "../src/cli.js";
 import { loadStylesheet } from "../src/load.js";
 import { parseStylesheet } from "../src/parse.js";
 import { run } from "./run.js";
+import { fixtureWriter } from "./fixture.js";
 
 /**
  * `themeguard-ignore` directives across an IMPORT CLOSURE (0.1.19).
@@ -32,12 +33,7 @@ import { run } from "./run.js";
 const tmp = mkdtempSync(join(tmpdir(), "themeguard-closure-directives-"));
 afterAll(() => rmSync(tmp, { recursive: true, force: true }));
 
-function write(rel: string, css: string): string {
-  const path = join(tmp, rel);
-  mkdirSync(join(path, ".."), { recursive: true });
-  writeFileSync(path, css, "utf8");
-  return path;
-}
+const write = fixtureWriter(tmp);
 
 /** A composing sheet over an imported card whose two roles hold one colour. */
 const CARD_WITH_DIRECTIVE = [

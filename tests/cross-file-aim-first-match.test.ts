@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
@@ -6,16 +6,12 @@ import { audit, crossFileAims } from "../src/audit.js";
 import { runCli, EXIT_FINDINGS, type CliIo } from "../src/cli.js";
 import { loadStylesheet } from "../src/load.js";
 import { resolveStylesheet } from "../src/resolve.js";
+import { fixtureWriter } from "./fixture.js";
 
 const tmp = mkdtempSync(join(tmpdir(), "themeguard-aim-first-match-"));
 afterAll(() => rmSync(tmp, { recursive: true, force: true }));
 
-function write(rel: string, css: string): string {
-  const path = join(tmp, rel);
-  mkdirSync(join(path, ".."), { recursive: true });
-  writeFileSync(path, css, "utf8");
-  return path;
-}
+const write = fixtureWriter(tmp);
 
 const TOKENS = [":root {", "  --alpha: #111111;", "  --beta: #222222;", "}"].join("\n");
 

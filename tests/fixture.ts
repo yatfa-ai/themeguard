@@ -1,4 +1,5 @@
-import { readFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 /** The vendored calibration stylesheet (yatfa @ 961eef3). See fixtures/README.md. */
@@ -45,3 +46,13 @@ export const CENSUS = {
   /** `:root` tokens with no `[data-theme="winter"]` override. */
   winterAbsences: 22,
 } as const;
+
+/** A writer over one scratch directory: `write(rel, contents)` creates `rel`'s parent directories, writes the file and returns its absolute path. */
+export function fixtureWriter(root: string): (rel: string, contents: string) => string {
+  return (rel, contents) => {
+    const path = join(root, rel);
+    mkdirSync(join(path, ".."), { recursive: true });
+    writeFileSync(path, contents, "utf8");
+    return path;
+  };
+}
