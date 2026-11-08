@@ -136,12 +136,14 @@ import {
   type Reference,
   type Registration,
   type UnresolvedImport,
+  unrecognisedAttributeThemes,
   unrecognisedClassThemes,
 } from "./parse.js";
 
 /**
- * Optional input to {@link loadStylesheet}: the class theme names a caller's
- * convention stands for (`themeguard.config.json`'s `themes` key, handed over
+ * Optional input to {@link loadStylesheet}: the class theme names (and
+ * attribute theme names) a caller's
+ * convention stands for (`themeguard.config.json`'s `themes` and `themeAttributes` keys, handed over
  * by whoever discovered the config — the loader itself discovers nothing),
  * and the governing config's path so the unrecognised-theme refusal can cite
  * the file that governs. Both absent is the byte-identical behaviour the
@@ -152,6 +154,12 @@ import {
 export interface LoadOptions {
   /** Class names (without the dot) that name a theme in the caller's convention. */
   readonly themes?: readonly string[];
+  /**
+   * Attribute names (`data-md-color-scheme`, no brackets) that name a theme by
+   * value in the caller's convention — `themeguard.config.json`'s
+   * `themeAttributes` key, handed over the same way `themes` is.
+   */
+  readonly themeAttributes?: readonly string[];
   /** The governing config's path, cited by the unrecognised-theme refusal. */
   readonly configPath?: string;
 }
@@ -176,6 +184,36 @@ function unrecognisedThemeError(
   return new ConfigError(
     path,
     `theme block themeguard cannot recognise: ${listed} (none of .dark/.light on bare/html/body/:root, [data-theme=…], [data-bs-theme=…], prefers-color-scheme) — name the class themes in themeguard.config.json: {"themes": [${quoted}]}. The value is the theme NAME the class stands for, not a selector; today a :root-prefixed block folds its declarations last-wins into the root scope, and any other spelling keeps them out of every theme table.`,
+  );
+}
+
+/**
+ * The attribute twin of {@link unrecognisedThemeError}: palette-variant
+ * ATTRIBUTES (`[data-md-color-scheme=slate]`) that neither the built-ins nor
+ * the configured `themeAttributes` name. When the closure ALSO holds unnamed
+ * class themes, `classNames` is non-empty and the one error names both keys,
+ * so a single fix covers the whole config.
+ */
+function unrecognisedAttributeThemeError(
+  names: readonly string[],
+  configuredAttributes: readonly string[],
+  classNames: readonly string[],
+  configuredClasses: readonly string[],
+  path: string,
+): ConfigError {
+  const listed = names.map((n) => `[${n}=…]`).join(", ");
+  const quoted = [...new Set([...configuredAttributes, ...names])].map((n) => `"${n}"`).join(", ");
+  const classPart =
+    classNames.length === 0
+      ? ""
+      : ` Also unrecognised: the class themes ${classNames.map((n) => `.${n}`).join(", ")} — name them too: "themes": [${[
+          ...new Set([...configuredClasses, ...classNames]),
+        ]
+          .map((n) => `"${n}"`)
+          .join(", ")}].`;
+  return new ConfigError(
+    path,
+    `theme block themeguard cannot recognise: ${listed} (none of [data-theme=…], [data-bs-theme=…], .dark/.light on bare/html/body/:root, prefers-color-scheme) — name the attribute themes in themeguard.config.json: {"themeAttributes": [${quoted}]}. The value is the attribute NAME the theme is written under, not a selector; today a :root-prefixed block folds its declarations last-wins into the root scope, and any other spelling keeps them out of every theme table.${classPart}`,
   );
 }
 
@@ -216,6 +254,7 @@ export function loadStylesheet(entryPath: string, options?: LoadOptions): Styles
   // loader discovers no config of its own (the caller's nearest-ancestor walk
   // is the one discovery), it only carries the names.
   const configured = options?.themes ?? [];
+  const configuredAttributes = options?.themeAttributes ?? [];
   // Resolved ABSOLUTE paths, not specifiers: `./x.css` and `../dir/x.css` can
   // name one file, and the guard must not splice it twice — and a cycle must
   // terminate on the FILE, whatever route the statements take to reach it.
@@ -223,7 +262,7 @@ export function loadStylesheet(entryPath: string, options?: LoadOptions): Styles
 
   const load = (filePath: string): Stylesheet => {
     const text = readFileSync(filePath, "utf8");
-    const sheet = parseStylesheet(text, { themes: configured });
+    const sheet = parseStylesheet(text, { themes: configured, themeAttributes: configuredAttributes });
     // Imported content FIRST, the file's own second. Every collected `@import`
     // precedes the first qualified rule (the parser collects nothing later),
     // so browser order — imported rules, then the author's — is exactly this
@@ -370,13 +409,23 @@ export function loadStylesheet(entryPath: string, options?: LoadOptions): Styles
   // silence-reads-as-a-pass this loader's other bookkeeping exists against.
   // A TRULY themeless sheet, or one whose class scopes are components below
   // the qualifying bar, yields no candidate and never refuses.
+  // The attribute analogue — the same palette written under an attribute name
+  // nothing spells (`[data-md-color-scheme=slate]`) — is refused by the same
+  // rule at the same bar; see {@link unrecognisedAttributeThemes}.
   const unrecognised = unrecognisedClassThemes(sheet.scopes);
-  if (unrecognised.length > 0) {
-    throw unrecognisedThemeError(
+  const unrecognisedAttributes = unrecognisedAttributeThemes(sheet.scopes);
+  const configPath = options?.configPath ?? join(entryDir, CONFIG_FILENAME);
+  if (unrecognisedAttributes.length > 0) {
+    throw unrecognisedAttributeThemeError(
+      unrecognisedAttributes,
+      configuredAttributes,
       unrecognised,
       configured,
-      options?.configPath ?? join(entryDir, CONFIG_FILENAME),
+      configPath,
     );
+  }
+  if (unrecognised.length > 0) {
+    throw unrecognisedThemeError(unrecognised, configured, configPath);
   }
   return sheet;
 }

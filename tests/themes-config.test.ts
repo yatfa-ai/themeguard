@@ -269,11 +269,13 @@ describe("parseConfigDocument — the themes key validates with the house discip
       suppress: [],
       disabledRules: [],
       themes: ["theme-dark"],
+      themeAttributes: [],
     });
     expect(parseConfigDocument('{"themes": ["a", "a"]}', "mem/config.json")).toEqual({
       suppress: [],
       disabledRules: [],
       themes: ["a", "a"],
+      themeAttributes: [],
     });
   });
 
@@ -283,6 +285,7 @@ describe("parseConfigDocument — the themes key validates with the house discip
         suppress: [],
         disabledRules: [],
         themes: [],
+        themeAttributes: [],
       });
     }
   });
@@ -320,9 +323,9 @@ describe("parseConfigDocument — the themes key validates with the house discip
     ]);
   });
 
-  it("an unknown key still refuses, naming all three keys it knows", () => {
+  it("an unknown key still refuses, naming all four keys it knows", () => {
     expect(() => parseConfigDocument('{"theme": ["dark"]}', "mem/config.json")).toThrowError(
-      /unknown key "theme" — expected "suppress", "suppress-rule" or "themes"/,
+      /unknown key "theme" — expected "suppress", "suppress-rule", "themes" or "themeAttributes"/,
     );
   });
 });
