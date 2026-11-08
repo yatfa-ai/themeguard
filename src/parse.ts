@@ -450,16 +450,17 @@ function lineIndex(css: string): number[] {
 }
 
 /**
- * Split a selector LIST on its top-level commas, respecting `(`, `[` and
- * strings so `:is(a, b)` and `[title="x,y"]` stay in one piece.
+ * Split `s` on every TOP-LEVEL character for which `isSeparator` holds —
+ * outside every paren, bracket and quoted string — then trim the pieces and
+ * drop the empty ones.
  */
-function splitSelectorList(prelude: string): string[] {
+function splitTopLevel(s: string, isSeparator: (ch: string) => boolean): string[] {
   const out: string[] = [];
   let depth = 0;
   let inString: string | null = null;
   let start = 0;
-  for (let i = 0; i < prelude.length; i += 1) {
-    const ch = prelude[i];
+  for (let i = 0; i < s.length; i += 1) {
+    const ch = s[i] as string;
     if (inString) {
       if (ch === "\\") i += 1;
       else if (ch === inString) inString = null;
@@ -468,13 +469,21 @@ function splitSelectorList(prelude: string): string[] {
     if (ch === '"' || ch === "'") inString = ch;
     else if (ch === "(" || ch === "[") depth += 1;
     else if (ch === ")" || ch === "]") depth = Math.max(0, depth - 1);
-    else if (ch === "," && depth === 0) {
-      out.push(prelude.slice(start, i).trim());
+    else if (depth === 0 && isSeparator(ch)) {
+      out.push(s.slice(start, i));
       start = i + 1;
     }
   }
-  out.push(prelude.slice(start).trim());
-  return out.filter((s) => s.length > 0);
+  out.push(s.slice(start));
+  return out.map((piece) => piece.trim()).filter((piece) => piece.length > 0);
+}
+
+/**
+ * Split a selector LIST on its top-level commas, respecting `(`, `[` and
+ * strings so `:is(a, b)` and `[title="x,y"]` stay in one piece.
+ */
+function splitSelectorList(prelude: string): string[] {
+  return splitTopLevel(prelude, (ch) => ch === ",");
 }
 
 /**
@@ -522,27 +531,7 @@ function stripNegations(selector: string): string {
  * means the selector is not a scope but something INSIDE one.
  */
 function splitCombinators(selector: string): string[] {
-  const out: string[] = [];
-  let depth = 0;
-  let inString: string | null = null;
-  let start = 0;
-  for (let i = 0; i < selector.length; i += 1) {
-    const ch = selector[i];
-    if (inString) {
-      if (ch === "\\") i += 1;
-      else if (ch === inString) inString = null;
-      continue;
-    }
-    if (ch === '"' || ch === "'") inString = ch;
-    else if (ch === "(" || ch === "[") depth += 1;
-    else if (ch === ")" || ch === "]") depth = Math.max(0, depth - 1);
-    else if (depth === 0 && (ch === " " || ch === ">" || ch === "+" || ch === "~")) {
-      out.push(selector.slice(start, i));
-      start = i + 1;
-    }
-  }
-  out.push(selector.slice(start));
-  return out.map((s) => s.trim()).filter((s) => s.length > 0);
+  return splitTopLevel(selector, (ch) => ch === " " || ch === ">" || ch === "+" || ch === "~");
 }
 
 /**
