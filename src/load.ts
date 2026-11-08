@@ -136,7 +136,7 @@ import {
   type Reference,
   type Registration,
   type UnresolvedImport,
-  unrecognisedClassTheme,
+  unrecognisedClassThemes,
 } from "./parse.js";
 
 /**
@@ -158,16 +158,24 @@ export interface LoadOptions {
 
 /**
  * The refusal {@link loadStylesheet} throws when the closure it loaded names
- * a class theme nothing recognises and no configuration names one either: the
- * alternative is auditing a half-read palette and calling it a pass. It rides
+ * palette-variant classes that neither a recognised theme nor the configured
+ * `themes` names (however many other themes it reads): the alternative is auditing a half-read palette and calling it a pass. It rides
  * the config file's own error shape — the CLI's exit-2 fast-fail — and its
  * path is the governing config when one exists, the candidate beside the
  * stylesheet when none does, which is where creating one fixes the audit.
  */
-function unrecognisedThemeError(name: string, path: string): ConfigError {
+function unrecognisedThemeError(
+  names: readonly string[],
+  configured: readonly string[],
+  path: string,
+): ConfigError {
+  const listed = names.map((n) => `.${n}`).join(", ");
+  // The suggested value keeps what the config already names: a partial list
+  // is extended, never replaced.
+  const quoted = [...new Set([...configured, ...names])].map((n) => `"${n}"`).join(", ");
   return new ConfigError(
     path,
-    `theme block themeguard cannot recognise: .${name} (none of .dark/.light on bare/html/body/:root, [data-theme=…], [data-bs-theme=…], prefers-color-scheme) — name the class themes in themeguard.config.json: {"themes": ["${name}"]}. The value is the theme NAME the class stands for, not a selector; today a :root-prefixed block folds its declarations last-wins into the root scope, and any other spelling keeps them out of every theme table.`,
+    `theme block themeguard cannot recognise: ${listed} (none of .dark/.light on bare/html/body/:root, [data-theme=…], [data-bs-theme=…], prefers-color-scheme) — name the class themes in themeguard.config.json: {"themes": [${quoted}]}. The value is the theme NAME the class stands for, not a selector; today a :root-prefixed block folds its declarations last-wins into the root scope, and any other spelling keeps them out of every theme table.`,
   );
 }
 
@@ -349,19 +357,24 @@ export function loadStylesheet(entryPath: string, options?: LoadOptions): Styles
 
   const sheet = load(entryAbsolute);
   // The unrecognised-theme refusal, the one place the whole closure is in
-  // hand. Three conditions, and the third is what keeps an ordinary
-  // themeless stylesheet audit-able: the closure names NO theme at all, no
-  // configuration names one either, and the closure DECLARES a palette
-  // variant under a class name nothing spells. The alternative to refusing is
-  // today's half-read — a dark palette folded into the base scope, every
-  // dark-only defect invisible — reported as success, which is the exact
+  // hand. It fires whenever the closure DECLARES a palette variant under a
+  // class name that neither a recognised theme nor the configured `themes`
+  // names — whatever else the sheet reads. A recognised theme beside an
+  // unnamed palette (`[data-theme="dark"]` plus `.high-contrast`) is the
+  // commonest real shape of the gap, and a `themes` list that misses one of
+  // several classes is its second face. Classes already classified as theme
+  // scopes (built-in or configured) are never candidates, so naming a class
+  // is exactly what turns its refusal off. The alternative to refusing is a
+  // half-read palette — an unnamed palette folded out of the audit, every
+  // defect in it invisible — reported as success, which is the exact
   // silence-reads-as-a-pass this loader's other bookkeeping exists against.
-  // A TRULY themeless sheet (no palette variant in any class) never refuses.
-  const closureThemes = sheet.themes ?? [];
-  const unrecognised = unrecognisedClassTheme(sheet.scopes);
-  if (closureThemes.length === 0 && configured.length === 0 && unrecognised !== null) {
+  // A TRULY themeless sheet, or one whose class scopes are components below
+  // the qualifying bar, yields no candidate and never refuses.
+  const unrecognised = unrecognisedClassThemes(sheet.scopes);
+  if (unrecognised.length > 0) {
     throw unrecognisedThemeError(
       unrecognised,
+      configured,
       options?.configPath ?? join(entryDir, CONFIG_FILENAME),
     );
   }

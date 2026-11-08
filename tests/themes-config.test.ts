@@ -6,7 +6,7 @@ import { audit } from "../src/audit.js";
 import { parseConfigDocument, type ConfigDocument } from "../src/config.js";
 import { EXIT_ERROR, EXIT_FINDINGS, EXIT_OK, runCli, type CliIo } from "../src/cli.js";
 import { loadStylesheet } from "../src/load.js";
-import { parseStylesheet, unrecognisedClassTheme } from "../src/parse.js";
+import { parseStylesheet, unrecognisedClassTheme, unrecognisedClassThemes } from "../src/parse.js";
 import { resolveStylesheet } from "../src/resolve.js";
 import { FIXTURE_PATH, fixtureCss } from "./fixture.js";
 
@@ -234,6 +234,35 @@ describe("unrecognisedClassTheme — the loader's detection half", () => {
   });
 });
 
+describe("unrecognisedClassThemes — every qualifying name", () => {
+  const base = `:root { --radius: 4px; --bg: #fff; --fg: #111; }\n`;
+  const variant = (sel: string) => `${sel} { --radius: 4px; --bg: #000; --fg: #eee; }\n`;
+
+  it("lists all unnamed palettes in scope order, deduplicated", () => {
+    const css = `${base}${variant(".high-contrast")}${variant(".sepia")}${variant("html.sepia")}`;
+    expect(unrecognisedClassThemes(parseStylesheet(css).scopes)).toEqual(["high-contrast", "sepia"]);
+    expect(unrecognisedClassTheme(parseStylesheet(css).scopes)).toBe("high-contrast");
+  });
+
+  it("names a palette beside a recognised theme, and skips configured and built-in classes", () => {
+    const css = `${base}${variant('[data-theme="dark"]')}${variant(".high-contrast")}${variant(".dark")}${variant(".sepia")}`;
+    expect(unrecognisedClassThemes(parseStylesheet(css).scopes)).toEqual(["high-contrast", "sepia"]);
+    expect(
+      unrecognisedClassThemes(parseStylesheet(css, { themes: ["sepia"] }).scopes),
+    ).toEqual(["high-contrast"]);
+    expect(
+      unrecognisedClassThemes(parseStylesheet(css, { themes: ["sepia", "high-contrast"] }).scopes),
+    ).toEqual([]);
+  });
+
+  it("is empty for a themeless or component-only sheet", () => {
+    expect(unrecognisedClassThemes(parseStylesheet(base).scopes)).toEqual([]);
+    expect(
+      unrecognisedClassThemes(parseStylesheet(`${base}.btn-danger { --bg: #f00; }`).scopes),
+    ).toEqual([]);
+  });
+});
+
 describe("parseConfigDocument — the themes key validates with the house discipline", () => {
   it("reads the names verbatim; duplicates are harmless", () => {
     expect(parseConfigDocument('{"themes": ["theme-dark"]}', "mem/config.json")).toEqual({
@@ -356,9 +385,12 @@ describe("load — the refusal and the recognition", () => {
       err = e;
     }
     expect((err as Error).message).toContain(governing);
-    // A caller naming themes turns the refusal off, whatever the sheet uses —
-    // the arm fires only when NOTHING names a theme.
-    expect(() => loadStylesheet(path, { themes: ["high-contrast"] })).not.toThrow();
+    // Naming the class turns its refusal off; naming a DIFFERENT class does
+    // not — the refusal is per unnamed palette, not "nothing is named".
+    expect(() => loadStylesheet(path, { themes: ["theme-dark"] })).not.toThrow();
+    expect(() => loadStylesheet(path, { themes: ["high-contrast"] })).toThrowError(
+      /cannot recognise: \.theme-dark/,
+    );
     rmSync(governing);
   });
 
@@ -387,6 +419,69 @@ describe("load — the refusal and the recognition", () => {
     // Byte-identical to the unconfigured run, and to a parse with no options.
     expect(via(["theme-dark"])).toBe(via());
     expect(JSON.stringify(audit(resolveStylesheet(parseStylesheet(css))).findings)).toBe(via());
+  });
+
+  const HC = `
+  .high-contrast {
+    --line: #000000;
+    --surface: #000000;
+    --raised: #000000;
+    --bg: #000000;
+  }
+`;
+  const DATA_DARK = `[data-theme="dark"] { --line: #333333; --surface: #222222; --raised: #2a2a2a; --bg: #111111; }\n`;
+
+  it("a recognised theme plus an unnamed palette class refuses, naming the class", () => {
+    const path = write("mixed.css", `${ROOT}${DATA_DARK}${HC}`);
+    let err: unknown;
+    try {
+      loadStylesheet(path);
+    } catch (e) {
+      err = e;
+    }
+    expect((err as Error).name).toBe("ConfigError");
+    expect((err as Error).message).toMatch(/cannot recognise: \.high-contrast/);
+    expect((err as Error).message).toMatch(/\{"themes": \["high-contrast"\]\}/);
+    // Naming it audits, with the third theme counted.
+    expect(loadStylesheet(path, { themes: ["high-contrast"] }).themes).toEqual([
+      "dark",
+      "high-contrast",
+    ]);
+  });
+
+  it("a partial themes list refuses naming the unnamed class and keeps the configured one", () => {
+    const sheet = `${ROOT}${THEME_DARK}${HC}`;
+    const path = write("partial.css", sheet);
+    let err: unknown;
+    try {
+      loadStylesheet(path, { themes: ["theme-dark"] });
+    } catch (e) {
+      err = e;
+    }
+    expect((err as Error).message).toMatch(/cannot recognise: \.high-contrast \(/);
+    expect((err as Error).message).not.toMatch(/cannot recognise: [^(]*\.theme-dark/);
+    expect((err as Error).message).toMatch(/\{"themes": \["theme-dark", "high-contrast"\]\}/);
+    expect(loadStylesheet(path, { themes: ["theme-dark", "high-contrast"] }).themes).toEqual([
+      "theme-dark",
+      "high-contrast",
+    ]);
+  });
+
+  it("several unnamed palettes are all named in one refusal", () => {
+    const sepia = HC.replace(".high-contrast", ".sepia");
+    const path = write("several.css", `${ROOT}${DATA_DARK}${HC}${sepia}`);
+    expect(() => loadStylesheet(path)).toThrowError(
+      /cannot recognise: \.high-contrast, \.sepia \(.*\{"themes": \["high-contrast", "sepia"\]\}/,
+    );
+  });
+
+  it("a recognised theme plus a small component override still audits", () => {
+    const path = write(
+      "mixed-component.css",
+      `${ROOT}${DATA_DARK}.btn-danger { --bg: #f00; --line: #a00; }\n.btn-danger:hover { --bg: #c00; }`,
+    );
+    expect(() => loadStylesheet(path)).not.toThrow();
+    expect(loadStylesheet(path).themes).toEqual(["dark"]);
   });
 
   it("recognition anywhere in the closure counts; themes merge across members", () => {
