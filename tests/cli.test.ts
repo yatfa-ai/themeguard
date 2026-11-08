@@ -15,6 +15,7 @@ import {
 import { loadStylesheet } from "../src/load.js";
 import { resolveStylesheet } from "../src/resolve.js";
 import { FIXTURE_PATH } from "./fixture.js";
+import { expectReportKeyOrder } from "./report-keys.js";
 import { REPO_ROOT, buildCli, run, spawnBuilt } from "./run.js";
 
 /**
@@ -944,18 +945,7 @@ describe("--json — the report as data, one NDJSON line per file", () => {
     // renderer's section order (which prints `skipped` before `suppressed`).
     // `JSON.stringify` preserves insertion order and the project already pins
     // that order as a compatibility surface for `countsByRule`.
-    expect(Object.keys(report)).toEqual([
-      "path",
-      "findings",
-      "countsByRule",
-      "suppressed",
-      "unmatchedSuppressions",
-      "suppressedDisabled",
-      "skipped",
-      "skippedDisabled",
-      "coverage",
-      "unreadColors",
-    ]);
+    expectReportKeyOrder(report);
     // The path is the string the CALLER named, not a resolved absolute — it
     // is what the caller matches its own argv against.
     expect(report.path).toBe(MIXED_PATH);

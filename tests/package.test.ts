@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { FIXTURE_PATH } from "./fixture.js";
+import { expectReportKeyOrder } from "./report-keys.js";
 
 /**
  * Success criteria 3 and 4 — THE PACKAGE, exercised the way a consumer gets it.
@@ -196,18 +197,7 @@ describe("a project that has installed the package", () => {
     const lines = result.stdout.trimEnd().split("\n");
     expect(lines).toHaveLength(1);
     const report = JSON.parse(lines[0]!) as { path: string; countsByRule: Record<string, number> };
-    expect(Object.keys(report)).toEqual([
-      "path",
-      "findings",
-      "countsByRule",
-      "suppressed",
-      "unmatchedSuppressions",
-      "suppressedDisabled",
-      "skipped",
-      "skippedDisabled",
-      "coverage",
-      "unreadColors",
-    ]);
+    expectReportKeyOrder(report);
     expect(report.path).toBe(FIXTURE_PATH);
     expect(JSON.stringify(report.countsByRule)).toBe(
       '{"collision":11,"dead-token":2,"scale-collapse":2,"family-consistency":7,"unresolved-reference":0,"cycle-reference":0,"duplicate-declaration":0,"unresolved-import":0,"theme-partial-token":0}',

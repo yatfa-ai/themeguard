@@ -16,6 +16,7 @@ import {
 } from "../src/cli.js";
 import { loadStylesheet } from "../src/load.js";
 import { resolveCss, resolveStylesheet } from "../src/resolve.js";
+import { expectReportKeyOrder } from "./report-keys.js";
 import { run, unmatchedRow } from "./run.js";
 import { soleUnmatchedRow } from "./unmatched-json.js";
 
@@ -192,18 +193,7 @@ describe("--json carries the same fate as data", () => {
     };
     // The key order of the OBJECT is a compatibility surface and the additive
     // field must not move it: `unmatchedSuppressions` keeps its slot.
-    expect(Object.keys(report)).toEqual([
-      "path",
-      "findings",
-      "countsByRule",
-      "suppressed",
-      "unmatchedSuppressions",
-      "suppressedDisabled",
-      "skipped",
-      "skippedDisabled",
-      "coverage",
-      "unreadColors",
-    ]);
+    expectReportKeyOrder(report);
     expect(report.unmatchedSuppressions).toHaveLength(1);
     const row = report.unmatchedSuppressions[0] as Record<string, unknown>;
     // Every existing key is untouched, and the diagnosis rides beside them.
