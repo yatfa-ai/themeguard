@@ -15,6 +15,7 @@ import {
   type CliIo,
 } from "../src/cli.js";
 import { fixtureCss, fixtureStubCss, FIXTURE_PATH } from "./fixture.js";
+import { expectReportKeyOrder } from "./report-keys.js";
 import { run } from "./run.js";
 
 /**
@@ -691,18 +692,7 @@ describe("the skipped channel — the policy partitions the second output", () =
     const code = runCli(["--json", plainPath], io);
     expect(code).toBe(EXIT_OK);
     const report = JSON.parse(out.join("\n")) as Record<string, unknown>;
-    expect(Object.keys(report)).toEqual([
-      "path",
-      "findings",
-      "countsByRule",
-      "suppressed",
-      "unmatchedSuppressions",
-      "suppressedDisabled",
-      "skipped",
-      "skippedDisabled",
-      "coverage",
-      "unreadColors",
-    ]);
+    expectReportKeyOrder(report);
     // Additive, not absent: the leg is an empty array wherever no rule is
     // off — the same status `suppressedDisabled` has always had.
     expect(report.skippedDisabled).toEqual([]);
