@@ -18,7 +18,10 @@
  * `light` theme; see {@link classThemeOf}. Class names beyond that pair are
  * themes only when a caller configures them ({@link ParseOptions.themes} —
  * `themeguard.config.json`'s `themes` key); see {@link unrecognisedClassTheme}
- * for the loader's half of that story.
+ * for the loader's half of that story. Likewise attribute names beyond
+ * `data-theme` / `data-bs-theme` are theme attributes only when configured
+ * ({@link ParseOptions.themeAttributes}, the `themeAttributes` key); see
+ * {@link unrecognisedAttributeThemes}.
  *
  * A block's prelude is a selector LIST, so it can name more than one of these
  * at once: `:root, [data-theme="dark"] { … }` — the usual way to write "dark is
@@ -382,17 +385,37 @@ export interface Stylesheet {
 export interface ParseOptions {
   /** Class names (without the dot) that name a theme in the caller's convention. */
   readonly themes?: readonly string[];
+  /**
+   * Attribute names (`data-md-color-scheme`, never `[data-md-color-scheme]`
+   * and never a selector) that name a theme BY VALUE in the caller's
+   * convention, beside the built-in `data-theme` / `data-bs-theme`: the theme
+   * is the attribute's value (`slate`, `dark`), on exactly the subjects the
+   * built-ins accept. Absent (or empty) is the byte-identical behaviour: the
+   * built-in pair only.
+   */
+  readonly themeAttributes?: readonly string[];
+}
+
+/** What the parser recognises as a theme: the configured class names and the attribute-theme matcher. */
+interface Recognition {
+  readonly classes: readonly string[];
+  readonly attributeTheme: RegExp;
 }
 
 /**
- * The attribute selector that names a theme by its VALUE. A closed set of two
+ * The attribute selector that names a theme by its VALUE. Two built-in
  * attribute names: `data-theme` (the common convention) and `data-bs-theme`
- * (Bootstrap 5.3 colour modes). Both go through the one rule, so a compound
+ * (Bootstrap 5.3 colour modes), plus any name a caller configured
+ * ({@link ParseOptions.themeAttributes}: `data-md-color-scheme`,
+ * `data-mantine-color-scheme`, …). All go through the one rule, so a compound
  * subject (`.navbar[data-bs-theme=dark]`) behaves exactly as `[data-theme]`
- * does. Other attribute names (`data-mode`, `data-color-scheme`, …) are not
- * themes. Quoted and unquoted values are both read.
+ * does. Any other attribute name (`data-mode`, `data-color-scheme`, …) is not a
+ * theme. Quoted and unquoted values are both read.
  */
-const DATA_THEME = /\[\s*data-(?:bs-)?theme\s*=\s*["']?([^"'\]]+)["']?\s*\]/;
+function attributeThemePattern(configured: readonly string[]): RegExp {
+  const names = ["data-(?:bs-)?theme", ...configured.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))];
+  return new RegExp(`\\[\\s*(?:${names.join("|")})\\s*=\\s*["']?([^"'\\]]+)["']?\\s*\\]`);
+}
 
 /**
  * Blank out `/* … *\/` comments, preserving every byte position and newline so
@@ -733,13 +756,7 @@ export function unrecognisedClassTheme(scopes: readonly Scope[]): string | null 
  */
 export function unrecognisedClassThemes(scopes: readonly Scope[]): string[] {
   const found: string[] = [];
-  const rootNames = new Set<string>();
-  for (const scope of scopes) {
-    // The BASE palette: root scopes that are not themselves a class-spelled
-    // candidate, so `:root.theme-dark` is never measured against itself.
-    if (scope.kind !== "root" || classThemeSubject(scope.matchedSelector) !== null) continue;
-    for (const d of scope.declarations) rootNames.add(d.name);
-  }
+  const rootNames = basePaletteNames(scopes);
   for (const scope of scopes) {
     if (scope.kind !== "root" && scope.kind !== "other") continue;
     const name = classThemeSubject(scope.matchedSelector);
@@ -758,8 +775,95 @@ export function unrecognisedClassThemes(scopes: readonly Scope[]): string[] {
   return found;
 }
 
+/**
+ * The names the BASE palette declares: the `root`-kind scopes that are not
+ * themselves a class- or attribute-spelled candidate, so `:root.theme-dark`
+ * and `:root[data-md-color-scheme=slate]` are never measured against
+ * themselves (nor inflate the palette the other kind is measured against).
+ */
+function basePaletteNames(scopes: readonly Scope[]): Set<string> {
+  const names = new Set<string>();
+  for (const scope of scopes) {
+    if (scope.kind !== "root") continue;
+    if (classThemeSubject(scope.matchedSelector) !== null) continue;
+    if (attributeThemeSubject(scope.matchedSelector) !== null) continue;
+    for (const d of scope.declarations) names.add(d.name);
+  }
+  return names;
+}
+
 /** Fewest base-palette names a bare class must re-declare to read as a palette variant. */
 const PALETTE_VARIANT_MIN_OVERLAP = 3;
+
+/**
+ * The attribute NAME of the first scope in `scopes` that names an attribute
+ * theme the recognised set does not spell, or `null` — the attribute twin of
+ * {@link unrecognisedClassTheme}.
+ */
+export function unrecognisedAttributeTheme(scopes: readonly Scope[]): string | null {
+  return unrecognisedAttributeThemes(scopes)[0] ?? null;
+}
+
+/**
+ * EVERY attribute name {@link unrecognisedAttributeTheme} would name, in scope
+ * order, deduplicated; `[]` when none qualifies. The loader's refusal for the
+ * palette written under an attribute nothing spells (`[data-md-color-scheme=
+ * slate]`, `[data-mantine-color-scheme=dark]`, `:root[data-color-mode=dark]`)
+ * and no configuration names ({@link ParseOptions.themeAttributes}).
+ *
+ * A scope "names an attribute theme" when its subject is one `[attr=value]`
+ * on a bare, `html`, `body` or `:root` subject, read with the same
+ * preprocessing {@link classifyOne} applies. The bar is the class bar, for the
+ * same reason (`[data-size=lg] { --pad: … }` is a component, not a palette):
+ *
+ *   - a `root`-kind scope (`:root[attr=v]`) that re-declares at least half of
+ *     the base palette's names — its values would overwrite the base;
+ *   - an `other`-kind scope (`[attr=v]`, `html[attr=v]`) that re-declares at
+ *     least half of them AND at least {@link PALETTE_VARIANT_MIN_OVERLAP}.
+ *
+ * Attributes the parser recognises (the built-ins and the configured names)
+ * classify as `theme` scopes and are never candidates. The bar errs toward
+ * silence: a smaller variant audits as it always has.
+ */
+export function unrecognisedAttributeThemes(scopes: readonly Scope[]): string[] {
+  const found: string[] = [];
+  const rootNames = basePaletteNames(scopes);
+  for (const scope of scopes) {
+    if (scope.kind !== "root" && scope.kind !== "other") continue;
+    const name = attributeThemeSubject(scope.matchedSelector);
+    if (name === null) continue;
+    const overlap = new Set(scope.declarations.map((d) => d.name).filter((n) => rootNames.has(n)));
+    if (overlap.size === 0 || overlap.size * 2 < rootNames.size) continue;
+    if (
+      (scope.kind === "root" || overlap.size >= PALETTE_VARIANT_MIN_OVERLAP) &&
+      !found.includes(name)
+    )
+      found.push(name);
+  }
+  return found;
+}
+
+/**
+ * The attribute name a selector's subject names as an ATTRIBUTE THEME
+ * candidate, or `null`: exactly one `[name=value]` on a bare, `html`, `body`
+ * or `:root` subject (pseudo-classes ignored), after the SAME preprocessing
+ * {@link classThemeSubject} runs. The name check is the caller's: recognised
+ * names never reach it as `root`/`other` scopes, since they classify as themes.
+ */
+function attributeThemeSubject(selector: string): string | null {
+  const raw = selector.trim();
+  const compounds = splitCombinators(raw);
+  if (compounds.length !== 1) return null;
+  const subject = stripNegations(compounds[0]);
+  const { rest: grouped } = extractMatchesAny(subject);
+  const rest = blankStrings(stripFunctionalArgs(grouped));
+  const attributes = rest.match(/\[[^\]]*\]/g) ?? [];
+  if (attributes.length !== 1) return null;
+  const m = (attributes[0] as string).match(/^\[\s*([\w-]+)\s*=\s*["']?[^"'\]]+["']?\s*\]$/);
+  if (!m) return null;
+  const remainder = rest.replace(attributes[0] as string, "").replace(/::?[\w-]+/g, "");
+  return /^(?:[hH][tT][mM][lL]|[bB][oO][dD][yY])?$/.test(remainder) ? (m[1] as string) : null;
+}
 
 /**
  * The single class a selector's subject names as a CLASS THEME candidate, or
@@ -798,7 +902,7 @@ function classThemeSubject(selector: string): string | null {
  */
 function classifyOne(
   selector: string,
-  configured: readonly string[],
+  recognition: Recognition,
 ): { kind: Exclude<ScopeKind, "other">; theme: string | null; matched: string }[] {
   const raw = selector.trim();
   if (/^@theme\b/i.test(raw)) return [{ kind: "theme-inline", theme: null, matched: raw }];
@@ -814,8 +918,8 @@ function classifyOne(
   const rest = stripFunctionalArgs(grouped);
 
   const found: { kind: Exclude<ScopeKind, "other">; theme: string | null; matched: string }[] = [];
-  const themeMatch = rest.match(DATA_THEME);
-  const classTheme = classThemeOf(blankStrings(rest), configured);
+  const themeMatch = rest.match(recognition.attributeTheme);
+  const classTheme = classThemeOf(blankStrings(rest), recognition.classes);
   if (themeMatch) found.push({ kind: "theme", theme: themeMatch[1].trim(), matched: raw });
   // BEFORE the `:root` test: `:root.dark` is the dark scope, not the base.
   else if (classTheme) found.push({ kind: "theme", theme: classTheme, matched: raw });
@@ -823,7 +927,7 @@ function classifyOne(
     found.push({ kind: "root", theme: null, matched: raw });
 
   for (const arg of args)
-    found.push(...classifyOne(arg, configured).map((f) => ({ ...f, matched: arg })));
+    found.push(...classifyOne(arg, recognition).map((f) => ({ ...f, matched: arg })));
   return found;
 }
 
@@ -842,13 +946,13 @@ function classifyOne(
  */
 function classifySelectors(
   prelude: string,
-  configured: readonly string[],
+  recognition: Recognition,
 ): { kind: ScopeKind; theme: string | null; matchedSelector: string }[] {
   const selectors = splitSelectorList(prelude);
   const matched: { kind: ScopeKind; theme: string | null; matchedSelector: string }[] = [];
   const seen = new Set<string>();
   for (const selector of selectors) {
-    for (const { kind, theme, matched: matchedSelector } of classifyOne(selector, configured)) {
+    for (const { kind, theme, matched: matchedSelector } of classifyOne(selector, recognition)) {
       const key = `${kind}\u0000${theme ?? ""}`;
       if (seen.has(key)) continue;
       seen.add(key);
@@ -1140,7 +1244,10 @@ function colorSchemeOf(prelude: string): "dark" | "light" | null {
  * nothing is filed under a subject that did not declare it.
  */
 export function parseStylesheet(source: string, options?: ParseOptions): Stylesheet {
-  const configured = options?.themes ?? [];
+  const recognition: Recognition = {
+    classes: options?.themes ?? [],
+    attributeTheme: attributeThemePattern(options?.themeAttributes ?? []),
+  };
   const css = blankComments(source);
   const lines = lineIndex(css);
   const scopes: Scope[] = [];
@@ -1194,7 +1301,7 @@ export function parseStylesheet(source: string, options?: ParseOptions): Stylesh
               : rawSelector;
           const bodyStart = blockStart + 1;
           const body = css.slice(bodyStart, i);
-          const matches = classifySelectors(selector, configured);
+          const matches = classifySelectors(selector, recognition);
           const isNestingAtRule =
             selector.startsWith("@") && matches[0].kind !== "theme-inline";
           if (isNestingAtRule) {
@@ -1229,7 +1336,7 @@ export function parseStylesheet(source: string, options?: ParseOptions): Stylesh
             // this file's header promises against.
             if (parent !== null) {
               const conditional = readDeclarations(body, bodyStart, lines);
-              const parentMatches = classifySelectors(parent, configured);
+              const parentMatches = classifySelectors(parent, recognition);
               references.push(
                 ...readReferences(
                   body,

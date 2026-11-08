@@ -922,6 +922,7 @@ function auditStylesheet(path: string, io: CliIo, json = false): number {
   try {
     sheet = loadStylesheet(path, {
       themes: configDocument?.themes,
+      themeAttributes: configDocument?.themeAttributes,
       configPath: configHome ?? undefined,
     });
   } catch (error) {

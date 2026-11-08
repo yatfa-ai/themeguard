@@ -142,12 +142,22 @@ stylesheet with no palette variant in any class audits exactly as before, config
 least three — so a component overriding a token or two (`.card-compact { --radius: 2px; }`) is
 ordinary and never refuses.
 
-The attribute form is recognised under two attribute names, `data-theme` and Bootstrap 5.3's
+The attribute form is recognised under two built-in attribute names, `data-theme` and Bootstrap 5.3's
 `data-bs-theme` (`[data-bs-theme=dark]`, quoted or not): the theme is the attribute value, so `light` /
 `dark` land in the same tables whichever spelling is used, and a compound subject such as
 `.navbar[data-bs-theme=dark]` is classified exactly as `.navbar[data-theme=dark]` is. Other attribute
-names (`data-mode`, `data-color-scheme`, …) are not themes and keep their current reading — the
-`themes` key covers CLASS themes only and cannot teach the parser an attribute name.
+names (`data-mode`, `data-color-scheme`, …) are not themes by default, and a palette written under one is
+half-read in the same way an unnamed class is (a bare `[attr=value]` block never reaches a theme table;
+`:root[attr=value]` folds last-wins into the base). That is configurable too: name the attributes your
+convention writes themes under in `themeguard.config.json` — `{"themeAttributes": ["data-md-color-scheme"]}`
+for mkdocs-material's `[data-md-color-scheme=slate]`, `data-mantine-color-scheme` for Mantine,
+`data-color-mode` for GitHub Primer, `data-mui-color-scheme` for MUI — and each attribute's VALUE becomes a
+theme (`slate`, `dark`) on exactly the subjects `data-theme` accepts. The entry is the attribute NAME,
+never a selector (`[data-md-color-scheme]` is an error). When a stylesheet declares a palette variant
+under an attribute nothing names — a bare `[attr=value]` or `html[attr=value]` restating at least half of
+the base tokens and at least three, or a `:root[attr=value]` restating at least half — the audit refuses
+(exit `2`) naming every such attribute and the `themeAttributes` key, on the same bar as the class
+refusal, so a component override such as `[data-size=lg] { --pad: 2rem; }` never refuses.
 
 Deliberately not taken: a media prelude whose condition is more than the one feature — a comma list
 (an OR of conditions), a second feature (`… and (min-width: …)`), a non-screen type (`print`) — and
@@ -727,7 +737,7 @@ project's own policy set aside are not findings the report stands behind.
 
 ### Naming your class themes — `themes`
 
-Suppression judges findings; the config's third top-level key does something no entry or policy can —
+Suppression judges findings; the config's `themes` key does something no entry or policy can —
 it teaches the parser what a THEME is. The built-in recognition spells four channels: `.dark`/`.light`
 on a bare, `html`, `body` or `:root` subject, `[data-theme=…]`, Bootstrap 5.3's `[data-bs-theme=…]`, and
 `prefers-color-scheme`. A palette written in any other class — `.theme-dark`, `.high-contrast` — is a
@@ -747,8 +757,9 @@ own, named as spelled, on exactly the subjects `.dark`/`.light` accept (a descen
 component, a second class is not one class, and class names stay case-sensitive). The theme count,
 every cross-theme rule and suppression's `theme` scope simply see more; the built-in spellings need no
 entry, and naming a class the sheet never writes changes nothing — the key adds recognition, it never
-mints a theme. The key covers CLASS themes only: it cannot teach the parser an attribute name, so
-`data-mode` and its cousins stay unrecognised whatever it names.
+mints a theme. The key covers CLASS themes only: an attribute theme (`[data-md-color-scheme=slate]`) is
+named by the sibling `themeAttributes` key below, and `data-mode` and its cousins stay unrecognised
+until it names them.
 
 Two halves travel with the key. Validation is the house discipline: the key must be an array and every
 element a non-empty string — a non-string or empty element exits `2` naming it (`element 1 of "themes":
@@ -763,6 +774,36 @@ themeguard.config.json: {"themes": ["theme-dark"]}` — riding the same fast-fai
 already takes. A stylesheet with no palette variant in any class — a single-theme sheet, a component
 library declaring fresh names or overriding a token or two — never refuses, configured or not: the refusal targets the half-read
 palette, not the themeless sheet.
+
+### Naming your attribute themes — `themeAttributes`
+
+The attribute twin of `themes`. The built-in recognition spells two attribute names, `data-theme` and
+`data-bs-theme`; a palette written under another — mkdocs-material's `[data-md-color-scheme=slate]`,
+Mantine's `[data-mantine-color-scheme=dark]`, Primer's `[data-color-mode=dark]`, MUI's
+`[data-mui-color-scheme=dark]` — is half-read: a bare `[attr=value]` block never reaches a theme table, and
+`:root[attr=value]` folds its values last-wins into the base. Name the attributes:
+
+```json
+{
+  "themeAttributes": ["data-md-color-scheme", "data-color-mode"]
+}
+```
+
+Each entry is the attribute NAME (letters, digits, `-` and `_`) — never a selector, never bracketed — and
+the theme is the attribute's VALUE: `[data-md-color-scheme=slate]` is the theme `slate`, on exactly the
+subjects `[data-theme]` accepts (a compound such as `.navbar[attr=v]` included; a descendant's subject is a
+component). The built-in names need no entry, and naming an attribute the sheet never writes changes
+nothing. Validation is the house discipline: the key must be an array and every element a bare attribute
+name — anything else exits `2` naming the element (`element 1 of "themeAttributes": must be an attribute
+name …`).
+
+The loader's refusal mirrors the class one: a stylesheet that DECLARES a palette variant under an
+attribute nothing names — a `:root[attr=v]` block restating at least half of the base palette's tokens, or
+a bare/`html` `[attr=v]` block restating at least half and at least three — exits `2` with `theme block
+themeguard cannot recognise: [data-md-color-scheme=…] (…) — name the attribute themes in
+themeguard.config.json: {"themeAttributes": ["data-md-color-scheme"]}`, whatever other themes the sheet
+reads. A sheet whose attribute blocks are components below that bar (`[data-size=lg] { --pad: 2rem; }`)
+never refuses. When both an attribute and a class palette are unnamed, one refusal names both keys.
 
 ### Marking it at the site — `/* themeguard-ignore … */`
 

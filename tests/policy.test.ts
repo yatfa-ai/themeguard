@@ -113,13 +113,14 @@ describe("parseConfigDocument — the policy key validates with suppress's own d
       suppress: [],
       disabledRules: ["dead-token"],
       themes: [],
+      themeAttributes: [],
     });
     expect(
       parseConfigDocument(
         '{"suppress-rule": ["dead-token", "collision"]}',
         "mem/config.json",
       ),
-    ).toEqual({ suppress: [], disabledRules: ["dead-token", "collision"], themes: [] });
+    ).toEqual({ suppress: [], disabledRules: ["dead-token", "collision"], themes: [], themeAttributes: [] });
   });
 
   it("reads both keys from one document — each half whole", () => {
@@ -135,6 +136,7 @@ describe("parseConfigDocument — the policy key validates with suppress's own d
       suppress: [{ rule: "collision", token: "--a", reason: "deliberate" }],
       disabledRules: ["dead-token"],
       themes: [],
+      themeAttributes: [],
     });
   });
 
@@ -143,11 +145,13 @@ describe("parseConfigDocument — the policy key validates with suppress's own d
       suppress: [],
       disabledRules: [],
       themes: [],
+      themeAttributes: [],
     });
     expect(parseConfigDocument("{}", "mem/config.json")).toEqual({
       suppress: [],
       disabledRules: [],
       themes: [],
+      themeAttributes: [],
     });
   });
 
@@ -174,11 +178,11 @@ describe("parseConfigDocument — the policy key validates with suppress's own d
     ).toThrowError(/"suppress-rule" must be an array of rule ids, got "dead-token"/);
   });
 
-  it("an unknown top-level key still refuses, now naming all three keys it knows", () => {
+  it("an unknown top-level key still refuses, now naming all four keys it knows", () => {
     expect(() =>
       parseConfigDocument('{"rules": ["dead-token"]}', "mem/config.json"),
     ).toThrowError(
-      /unknown key "rules" — expected "suppress", "suppress-rule" or "themes"/,
+      /unknown key "rules" — expected "suppress", "suppress-rule", "themes" or "themeAttributes"/,
     );
   });
 

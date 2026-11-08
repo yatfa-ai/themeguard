@@ -5,8 +5,9 @@ import { resolveCss } from "../src/resolve.js";
 
 /**
  * Bootstrap 5.3 colour modes — `[data-bs-theme=dark]` — are themes exactly as
- * `[data-theme=dark]` is: the theme is the attribute VALUE. The attribute-name
- * set is closed (`data-theme`, `data-bs-theme`); anything else is not a theme.
+ * `[data-theme=dark]` is: the theme is the attribute VALUE. The built-in
+ * attribute-name set is `data-theme`, `data-bs-theme`; any other name is a theme only when
+ * `themeAttributes` configures it (see attribute-theme.test.ts).
  */
 
 const ROOT = `

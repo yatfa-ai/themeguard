@@ -134,6 +134,8 @@ export {
 export {
   parseStylesheet,
   registeredInitialValues,
+  unrecognisedAttributeTheme,
+  unrecognisedAttributeThemes,
   unrecognisedClassTheme,
   unrecognisedClassThemes,
   type Declaration,

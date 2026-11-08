@@ -88,6 +88,18 @@
  * (a palette variant under a name nothing spells) and is governed by a config
  * naming no themes exits 2 telling the user exactly this key exists for it —
  * see {@link loadStylesheet}.
+ *
+ * ── The attribute twin: `themeAttributes` ────────────────────────────────
+ * The same palette written under another ATTRIBUTE name — mkdocs-material's
+ * `[data-md-color-scheme=slate]`, Mantine's `[data-mantine-color-scheme=dark]`,
+ * Primer's `[data-color-mode=dark]` — is half-read for the same reason, and
+ * `themes` (class names) cannot teach the parser it. The optional
+ * `themeAttributes` key names the attributes: `"themeAttributes":
+ * ["data-md-color-scheme"]` turns `[data-md-color-scheme=slate]` into the
+ * theme `slate` (the attribute VALUE), on the subjects the built-in
+ * `data-theme`/`data-bs-theme` accept. Validation, the never-invents rule, the
+ * absent-key byte-identity and the loader's exit-2 refusal all mirror
+ * `themes`.
  */
 
 import { readFileSync, statSync } from "node:fs";
@@ -247,6 +259,15 @@ export interface ConfigDocument {
    * recognition, it never mints a theme.
    */
   readonly themes: readonly string[];
+  /**
+   * The attribute names the user's convention writes themes under — the
+   * `themeAttributes` key, each element the attribute NAME
+   * (`data-md-color-scheme`, no brackets) whose VALUE names a theme. Empty
+   * when the key is absent or an empty array; the loader hands the names to
+   * the parser beside `themes`. Naming an attribute the sheet never writes
+   * changes nothing: the key adds recognition, it never mints a theme.
+   */
+  readonly themeAttributes: readonly string[];
 }
 
 /**
@@ -336,12 +357,12 @@ export function parseConfigDocument(raw: string, path: string): ConfigDocument {
     throw new ConfigError(path, `expected a JSON object with a "suppress" key`);
   }
 
-  const allowed = ["suppress", "suppress-rule", "themes"];
+  const allowed = ["suppress", "suppress-rule", "themes", "themeAttributes"];
   for (const key of Object.keys(parsed)) {
     if (!allowed.includes(key)) {
       throw new ConfigError(
         path,
-        `unknown key "${key}" — expected "suppress", "suppress-rule" or "themes". A key this package does not know would otherwise do nothing, silently.`,
+        `unknown key "${key}" — expected "suppress", "suppress-rule", "themes" or "themeAttributes". A key this package does not know would otherwise do nothing, silently.`,
       );
     }
   }
@@ -354,7 +375,12 @@ export function parseConfigDocument(raw: string, path: string): ConfigDocument {
       : parseDisabledRules(parsed["suppress-rule"], path);
   const themes = parsed["themes"] === undefined ? [] : parseThemeNames(parsed["themes"], path);
 
-  return { suppress, disabledRules, themes };
+  const themeAttributes =
+    parsed["themeAttributes"] === undefined
+      ? []
+      : parseThemeAttributeNames(parsed["themeAttributes"], path);
+
+  return { suppress, disabledRules, themes, themeAttributes };
 }
 
 /**
@@ -431,6 +457,37 @@ function parseThemeNames(value: unknown, path: string): readonly string[] {
       throw new ConfigError(
         path,
         `element ${index + 1} of "themes": must be a non-empty theme name — the class name the theme stands for, not a selector — got ${JSON.stringify(
+          element ?? null,
+        )}`,
+      );
+    }
+    return element;
+  });
+}
+
+/**
+ * `themeAttributes`: the attribute twin of {@link parseThemeNames}, with the
+ * same never-silently-ignored discipline. Each element is the attribute NAME
+ * whose value names a theme — `"data-md-color-scheme"`, not
+ * `"[data-md-color-scheme]"`, not `"[data-md-color-scheme=slate]"` and not a
+ * class: an element that does not read as a bare attribute name (letters,
+ * digits, `-`, `_`; not starting with a digit or `-`) is an ERROR naming the
+ * element, because a selector-shaped spelling the matcher can never find is a
+ * user who believes a palette was audited when it was not. A duplicated name
+ * is harmless.
+ */
+function parseThemeAttributeNames(value: unknown, path: string): readonly string[] {
+  if (!Array.isArray(value)) {
+    throw new ConfigError(
+      path,
+      `"themeAttributes" must be an array of attribute names, got ${JSON.stringify(value)}`,
+    );
+  }
+  return value.map((element, index) => {
+    if (typeof element !== "string" || !/^[A-Za-z_][A-Za-z0-9_-]*$/.test(element)) {
+      throw new ConfigError(
+        path,
+        `element ${index + 1} of "themeAttributes": must be an attribute name — the bare name whose value names the theme, like "data-md-color-scheme", not a selector — got ${JSON.stringify(
           element ?? null,
         )}`,
       );
