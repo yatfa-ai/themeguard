@@ -9,7 +9,7 @@ import { scanIgnoreDirectives } from "../src/directives.js";
 import { loadStylesheet } from "../src/load.js";
 import { duplicateDeclarationRule } from "../src/rules/duplicate-declaration.js";
 import { resolveCss, resolveStylesheet } from "../src/resolve.js";
-import { fixtureCss } from "./fixture.js";
+import { fixtureCss, fixtureWriter } from "./fixture.js";
 import { run } from "./run.js";
 
 /**
@@ -35,11 +35,7 @@ import { run } from "./run.js";
 const tmp = mkdtempSync(join(tmpdir(), "themeguard-duplicate-"));
 afterAll(() => rmSync(tmp, { recursive: true, force: true }));
 
-function cssFixture(name: string, css: string): string {
-  const path = join(tmp, name);
-  writeFileSync(path, css, "utf8");
-  return path;
-}
+const cssFixture = fixtureWriter(tmp);
 
 describe("rule 7 — duplicate declaration, the shapes that used to pass silent", () => {
   it("a referenced duplicate in :root is ONE finding naming both sites, both values, and that the later wins", () => {

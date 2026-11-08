@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
@@ -19,6 +19,7 @@ import { resolveCss, resolveStylesheet } from "../src/resolve.js";
 import { expectReportKeyOrder } from "./report-keys.js";
 import { run, unmatchedRow } from "./run.js";
 import { soleUnmatchedRow } from "./unmatched-json.js";
+import { fixtureWriter } from "./fixture.js";
 
 /**
  * THE FILE-SIBLING ARM of the `unmatched` section's advice — its OLDEST tell,
@@ -69,12 +70,7 @@ import { soleUnmatchedRow } from "./unmatched-json.js";
 const tmp = mkdtempSync(join(tmpdir(), "themeguard-sibling-aim-"));
 afterAll(() => rmSync(tmp, { recursive: true, force: true }));
 
-function write(rel: string, contents: string): string {
-  const path = join(tmp, rel);
-  mkdirSync(join(path, ".."), { recursive: true });
-  writeFileSync(path, contents, "utf8");
-  return path;
-}
+const write = fixtureWriter(tmp);
 
 function config(dir: string, document: Record<string, unknown>): void {
   write(`${dir}/themeguard.config.json`, JSON.stringify(document));

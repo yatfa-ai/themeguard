@@ -9,7 +9,7 @@ import { scanIgnoreDirectives } from "../src/directives.js";
 import { loadStylesheet } from "../src/load.js";
 import { themePartialTokenRule } from "../src/rules/theme-partial-token.js";
 import { resolveCss, resolveStylesheet } from "../src/resolve.js";
-import { fixtureCss } from "./fixture.js";
+import { fixtureCss, fixtureWriter } from "./fixture.js";
 import { run } from "./run.js";
 
 /**
@@ -37,11 +37,7 @@ import { run } from "./run.js";
 const tmp = mkdtempSync(join(tmpdir(), "themeguard-theme-partial-"));
 afterAll(() => rmSync(tmp, { recursive: true, force: true }));
 
-function cssFixture(name: string, css: string): string {
-  const path = join(tmp, name);
-  writeFileSync(path, css, "utf8");
-  return path;
-}
+const cssFixture = fixtureWriter(tmp);
 
 describe("rule 9 — the shapes that used to pass silent", () => {
   it("U1, the flagship: a token declared only in dark, consumed by an unscoped chain — exactly one finding naming all four halves", () => {

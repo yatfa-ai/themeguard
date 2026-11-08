@@ -7,6 +7,7 @@ import { DirectiveError, scanIgnoreDirectives } from "../src/directives.js";
 import { audit } from "../src/audit.js";
 import { resolveCss } from "../src/resolve.js";
 import { run } from "./run.js";
+import { fixtureWriter } from "./fixture.js";
 
 /**
  * `/* themeguard-ignore … *\/` — the site-scoped suppression slice.
@@ -331,11 +332,7 @@ describe("audit — the site conjunct, on top of entry matching that has not cha
 describe("runCli — the site-scoped suppression, end to end", () => {
   const tmp = mkdtempSync(join(tmpdir(), "themeguard-directives-"));
 
-  function cssFixture(name: string, css: string): string {
-    const path = join(tmp, name);
-    writeFileSync(path, css, "utf8");
-    return path;
-  }
+  const cssFixture = fixtureWriter(tmp);
 
   afterAll(() => rmSync(tmp, { recursive: true, force: true }));
 

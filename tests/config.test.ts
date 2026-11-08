@@ -12,7 +12,7 @@ import {
 } from "../src/config.js";
 import { audit } from "../src/audit.js";
 import { resolveCss } from "../src/resolve.js";
-import { FIXTURE_PATH, fixtureCss, fixtureStubCss } from "./fixture.js";
+import { FIXTURE_PATH, fixtureCss, fixtureStubCss, fixtureWriter } from "./fixture.js";
 import { BUILT_CLI, buildCli, run, spawnBuilt } from "./run.js";
 
 /**
@@ -76,11 +76,7 @@ function stylesheetIn(dirName: string, fileName: string, css: string): { dir: st
   return { dir, cssPath };
 }
 
-function cssFixture(name: string, css: string): string {
-  const path = join(tmp, name);
-  writeFileSync(path, css, "utf8");
-  return path;
-}
+const cssFixture = fixtureWriter(tmp);
 
 /** The vendored fixture, copied out beside the repo — so a config can sit next to a copy of it without touching `tests/fixtures/` (whose census every other suite pins). The copy is FAITHFUL: the stub that resolves the sheet's own `@import "./actiontext.css";` edge travels with it, or the copy's census gains an `unresolved-import` finding and stops being the 22-finding calibration report. */
 const FIXTURE_COPY = cssFixture("fixture-copy.css", fixtureCss());

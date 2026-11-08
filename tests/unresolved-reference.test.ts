@@ -9,7 +9,7 @@ import { unresolvedReferenceRule } from "../src/rules/unresolved-reference.js";
 import { loadStylesheet } from "../src/load.js";
 import { parseStylesheet } from "../src/parse.js";
 import { resolveCss, resolveStylesheet } from "../src/resolve.js";
-import { fixtureCss } from "./fixture.js";
+import { fixtureCss, fixtureWriter } from "./fixture.js";
 import { run } from "./run.js";
 
 /**
@@ -59,11 +59,7 @@ const HOSTILE_CSS = `
 const tmp = mkdtempSync(join(tmpdir(), "themeguard-unresolved-"));
 afterAll(() => rmSync(tmp, { recursive: true, force: true }));
 
-function cssFixture(name: string, css: string): string {
-  const path = join(tmp, name);
-  writeFileSync(path, css, "utf8");
-  return path;
-}
+const cssFixture = fixtureWriter(tmp);
 
 describe("the unresolved-reference rule — the four silent populations", () => {
   const resolved = resolveCss(HOSTILE_CSS);
