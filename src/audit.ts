@@ -609,6 +609,39 @@ export function matchesEntryIdentity(
 }
 
 /**
+ * WHERE an entry's file scope aims — the one-line read every file-scope
+ * comparison shares: `fileResolved` when the CLI has resolved one onto the
+ * entry, the entry's own spelling otherwise.
+ *
+ * Split out of {@link audit}'s file conjunct so the conjunct and the aim
+ * derivations read the scope through ONE named read rather than a
+ * hand-pasted expression each: five copies (the conjunct, the
+ * {@link themelessAims} and {@link skippedAims} declines, the CLI fate-line
+ * gate, {@link siblingAims}) meant the next change to how a scope is spelled
+ * was a five-way lockstep edit, and a miss silently made an aim derivation
+ * disagree with what suppression does. Delegated rather than re-spelled, the
+ * same move {@link citeSite} made.
+ *
+ * NOT read here, deliberately: {@link siblingAims} keeps its inline
+ * expression. Its earlier `if (entry.file === undefined) return undefined;`
+ * guard narrows `entry.file` to `string`, so the inline read is typed
+ * `string` and `return { file: scope }` (`SiblingAim.file: string`) requires
+ * it — this helper returns `string | undefined` and substituting would need
+ * a non-null assertion or a second overload, noise for no gain.
+ *
+ * @param entry a suppression entry of any scope shape — an unscoped config
+ *   entry, a site-scoped directive, or a file-scoped one.
+ * @returns the resolved scope when the CLI supplied one, the entry's own
+ *   spelling otherwise — `undefined` when the entry carries no `file` scope
+ *   at all.
+ */
+export function entryFileScope(
+  entry: SuppressionEntry | SiteScopedSuppressionEntry | FileScopedSuppressionEntry,
+): string | undefined {
+  return "fileResolved" in entry ? entry.fileResolved : entry.file;
+}
+
+/**
  * WHAT an unmatched site-scoped judgement would have governed one `@import`
  * edge away — the cross-file aim, and the one reading the `unmatched`
  * section's retirement dichotomy gets FLATLY WRONG.
@@ -843,13 +876,12 @@ export function themelessAims(
     // be the very false promise this arm exists to remove. The whole entry
     // disqualifies there, the same move `crossFileAims` makes for a same-file
     // identity match; a scope naming the audited stylesheet itself is not a
-    // second dead conjunct and earns the clause. The scope is read exactly as
-    // `matches` reads it (`fileResolved` once the CLI has resolved one, the
-    // entry's own spelling otherwise) and compared against the same resolved
-    // path the file conjunct compares; with the audited stylesheet unknown
-    // the comparison cannot resolve and the entry declines — the
-    // `options.stylesheet` precedent.
-    const scope = "fileResolved" in entry ? entry.fileResolved : entry.file;
+    // second dead conjunct and earns the clause. The scope is read via
+    // `entryFileScope` (the same helper `matches` uses) and compared against
+    // the same resolved path the file conjunct compares; with the audited
+    // stylesheet unknown the comparison cannot resolve and the entry
+    // declines — the `options.stylesheet` precedent.
+    const scope = entryFileScope(entry);
     if (scope !== undefined && scope !== auditedStylesheet) {
       return undefined;
     }
@@ -996,12 +1028,12 @@ export function skippedAims(
     // pairs, which this report holds none of — the aim here proves the
     // identity conjuncts match, not that the entry's author meant this pair.
     // A scope naming the audited stylesheet itself names a pair one section
-    // up, so it earns the clause. Read exactly as `matches` reads it
-    // (`fileResolved` once the CLI has resolved one, the entry's own spelling
-    // otherwise), compared against the same resolved path the file conjunct
-    // compares; with the audited stylesheet unknown the comparison cannot
-    // resolve and the entry declines — the `options.stylesheet` precedent.
-    const scope = "fileResolved" in entry ? entry.fileResolved : entry.file;
+    // up, so it earns the clause. Read via `entryFileScope` (the same helper
+    // `matches` uses), compared against the same resolved path the file
+    // conjunct compares; with the audited stylesheet unknown the comparison
+    // cannot resolve and the entry declines — the `options.stylesheet`
+    // precedent.
+    const scope = entryFileScope(entry);
     if (scope !== undefined && scope !== auditedStylesheet) {
       return undefined;
     }
@@ -1234,12 +1266,12 @@ export function audit(
     // CLI's cross-file diagnosis asks alone, so the two readings cannot drift.
     if (!matchesEntryIdentity(entry, finding)) return false;
     if ("file" in entry) {
-      // The resolved scope when the CLI supplied one, the entry's own
-      // spelling otherwise — a library caller passing a scope hands the
-      // spelling it wants compared. Against `options.stylesheet` this is the
-      // one conjunct: defined and different ⇒ the entry aims at another
-      // stylesheet and matches nothing here.
-      const scope = "fileResolved" in entry ? entry.fileResolved : entry.file;
+      // The scope read via `entryFileScope` — the resolved scope when the
+      // CLI supplied one, the entry's own spelling otherwise; a library
+      // caller passing a scope hands the spelling it wants compared. Against
+      // `options.stylesheet` this is the one conjunct: defined and different
+      // ⇒ the entry aims at another stylesheet and matches nothing here.
+      const scope = entryFileScope(entry);
       if (scope !== undefined && scope !== options.stylesheet) return false;
     }
     if ("line" in entry) {
