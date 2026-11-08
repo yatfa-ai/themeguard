@@ -184,6 +184,14 @@ describe("unrecognisedAttributeThemes — the loader's detection half", () => {
     expect(names(`${base}[data-x=y] { --fresh-1: 1; --fresh-2: 2; --fresh-3: 3; }`)).toEqual([]);
   });
 
+  it("body and case-folded html/body subjects name the candidate, like the class twin", () => {
+    for (const sel of ["body[data-x=dark]", "HTML[data-x=dark]", "BODY[data-x=dark]", "Html[data-x=dark]"]) {
+      expect(names(`${base}${variant(sel)}`), sel).toEqual(["data-x"]);
+    }
+    // Contrast arm: an element that is not html/body is still not a theme subject.
+    expect(names(`${base}${variant("section[data-x=dark]")}`)).toEqual([]);
+  });
+
   it("stays silent for shapes outside the single-attribute subject", () => {
     expect(names(`${base}${variant("[data-a=x][data-b=y]")}`)).toEqual([]);
     expect(names(`${base}${variant("[data-a=x] .card")}`)).toEqual([]);
