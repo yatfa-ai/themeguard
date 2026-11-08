@@ -731,6 +731,19 @@ function classThemeOf(rest: string, configured: readonly string[]): string | nul
  * silence: a variant too small to clear it audits as it always has.
  */
 export function unrecognisedClassTheme(scopes: readonly Scope[]): string | null {
+  return unrecognisedClassThemes(scopes)[0] ?? null;
+}
+
+/**
+ * EVERY class name {@link unrecognisedClassTheme} would name, in scope order,
+ * deduplicated; `[]` when none qualifies. The loader's refusal reads this
+ * form so a sheet declaring several unnamed palettes (`.high-contrast`,
+ * `.sepia`) is told about all of them at once. Same qualifying bar, same
+ * preprocessing: a class already classified as a theme scope (`.dark`, or a
+ * configured name) has kind `theme` and is never a candidate.
+ */
+export function unrecognisedClassThemes(scopes: readonly Scope[]): string[] {
+  const found: string[] = [];
   const rootNames = new Set<string>();
   for (const scope of scopes) {
     // The BASE palette: root scopes that are not themselves a class-spelled
@@ -747,9 +760,13 @@ export function unrecognisedClassTheme(scopes: readonly Scope[]): string | null 
     // A `:root`-prefixed spelling is theme-shaped enough to need no floor
     // beyond "restates half the palette"; a bare/html/body class, which is
     // also the component idiom, additionally needs the absolute floor.
-    if (scope.kind === "root" || overlap.size >= PALETTE_VARIANT_MIN_OVERLAP) return name;
+    if (
+      (scope.kind === "root" || overlap.size >= PALETTE_VARIANT_MIN_OVERLAP) &&
+      !found.includes(name)
+    )
+      found.push(name);
   }
-  return null;
+  return found;
 }
 
 /** Fewest base-palette names a bare class must re-declare to read as a palette variant. */

@@ -133,8 +133,10 @@ the class themes your convention stands for in `themeguard.config.json` —
 `{"themes": ["theme-dark", "high-contrast"]}` — and each entry becomes a theme of its own, named as
 spelled, on exactly the subjects `.dark`/`.light` accept. The value is the theme NAME — the class
 without its dot — never a selector, and the built-in spellings need no entry. When a stylesheet
-declares a palette variant under a class nothing spells and no configuration names one, the audit
-refuses (exit `2`) naming the class and this key, rather than report success on a half-read palette; a
+declares a palette variant under a class nothing spells and no configuration names — whatever other
+themes the sheet reads, so `[data-theme="dark"]` plus an unnamed `.high-contrast` refuses, and so does a
+`themes` list that misses one of several palette classes — the audit refuses (exit `2`) naming every
+such class and this key, rather than report success on a half-read palette; a
 stylesheet with no palette variant in any class audits exactly as before, configured or not. A
 "palette variant" is a class that restates the base palette — at least half of the base tokens, and at
 least three — so a component overriding a token or two (`.card-compact { --radius: 2px; }`) is
@@ -753,8 +755,8 @@ element a non-empty string — a non-string or empty element exits `2` naming it
 must be a non-empty theme name — the class name the theme stands for, not a selector — got 42`),
 because a name the tool silently ignored is a user who believes their dark palette was audited when it
 still folded into the base. And the loader refuses the one silence the key exists to end: a stylesheet
-that DECLARES a palette variant under a class name nothing spells, governed by a config naming no
-themes (or by none at all), exits `2` naming the class, the built-in channels and this key —
+that DECLARES a palette variant under a class name nothing spells and no config names — alongside
+other recognised themes or not — exits `2` naming every such class, the built-in channels and this key —
 `theme block themeguard cannot recognise: .theme-dark (none of .dark/.light on bare/html/body/:root,
 [data-theme=…], [data-bs-theme=…], prefers-color-scheme) — name the class themes in
 themeguard.config.json: {"themes": ["theme-dark"]}` — riding the same fast-fail an unhonourable config
