@@ -1,11 +1,10 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { afterAll, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { CONFIG_FILENAME, ConfigError, configPathFor } from "../src/config.js";
+import { scratchDir } from "./fixture.js";
 
-const tmp = mkdtempSync(join(tmpdir(), "themeguard-config-stat-"));
-afterAll(() => rmSync(tmp, { recursive: true, force: true }));
+const tmp = scratchDir("config-stat");
 
 describe("configPathFor — a candidate the walk cannot stat is an error, never a skip", () => {
   it("a stylesheet path whose parent is a FILE (ENOTDIR) throws a ConfigError naming the candidate, instead of walking on to an ancestor's config", () => {

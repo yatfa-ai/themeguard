@@ -1,7 +1,5 @@
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { audit, skippedAims } from "../src/audit.js";
 import type { SkippedPair } from "../src/rules/scale-collapse.js";
 import {
@@ -15,7 +13,7 @@ import { resolveStylesheet, resolveCss } from "../src/resolve.js";
 import { expectReportKeyOrder } from "./report-keys.js";
 import { run, unmatchedRow } from "./run.js";
 import { soleUnmatchedRow } from "./unmatched-json.js";
-import { fixtureWriter } from "./fixture.js";
+import { fixtureWriter, scratchDir } from "./fixture.js";
 
 /**
  * THE KEPT-SKIPPED ARM of the `unmatched` section's advice (the sixth tellable
@@ -74,8 +72,7 @@ import { fixtureWriter } from "./fixture.js";
  * parameter keeps the blanket decline byte-for-byte.
  */
 
-const tmp = mkdtempSync(join(tmpdir(), "themeguard-skipped-aim-"));
-afterAll(() => rmSync(tmp, { recursive: true, force: true }));
+const tmp = scratchDir("skipped-aim");
 
 const write = fixtureWriter(tmp);
 

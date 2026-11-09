@@ -1,11 +1,10 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { afterAll, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { CONFIG_FILENAME, configPathFor, readConfig, readConfigDocument } from "../src/config.js";
+import { scratchDir } from "./fixture.js";
 
-const tmp = mkdtempSync(join(tmpdir(), "themeguard-config-gone-"));
-afterAll(() => rmSync(tmp, { recursive: true, force: true }));
+const tmp = scratchDir("config-gone");
 
 const CONFIG = JSON.stringify({
   suppress: [{ rule: "scale-collapse", token: "--panel-hover", reason: "deliberately subtle" }],

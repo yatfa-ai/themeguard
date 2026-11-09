@@ -1,11 +1,11 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { afterAll, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { audit } from "../src/audit.js";
 import { formatReport, runCli, type CliIo } from "../src/cli.js";
 import { resolveCss } from "../src/resolve.js";
 import { scaleCollapseRule, type SkippedPair } from "../src/rules/scale-collapse.js";
+import { scratchDir } from "./fixture.js";
 
 /**
  * THE SKIPPED ROW'S REASON, SPLIT ON THE SKIP BRANCH'S OWN ARMS (0.1.25).
@@ -44,8 +44,7 @@ import { scaleCollapseRule, type SkippedPair } from "../src/rules/scale-collapse
  * outside the exit code, and the counts are the counts they always were.
  */
 
-const tmp = mkdtempSync(join(tmpdir(), "themeguard-skip-"));
-afterAll(() => rmSync(tmp, { recursive: true, force: true }));
+const tmp = scratchDir("skip");
 
 function fixture(name: string, css: string): string {
   const path = join(tmp, name);

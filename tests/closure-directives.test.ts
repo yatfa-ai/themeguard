@@ -1,12 +1,10 @@
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { EXIT_ERROR, EXIT_FINDINGS, EXIT_OK, runCli } from "../src/cli.js";
 import { loadStylesheet } from "../src/load.js";
 import { parseStylesheet } from "../src/parse.js";
 import { run } from "./run.js";
-import { fixtureWriter } from "./fixture.js";
+import { fixtureWriter, scratchDir } from "./fixture.js";
 
 /**
  * `themeguard-ignore` directives across an IMPORT CLOSURE (0.1.19).
@@ -30,8 +28,7 @@ import { fixtureWriter } from "./fixture.js";
  * the collection and the stamps, `runCli` owns the report and the exit.
  */
 
-const tmp = mkdtempSync(join(tmpdir(), "themeguard-closure-directives-"));
-afterAll(() => rmSync(tmp, { recursive: true, force: true }));
+const tmp = scratchDir("closure-directives");
 
 const write = fixtureWriter(tmp);
 

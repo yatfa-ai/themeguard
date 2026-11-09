@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { audit } from "../src/audit.js";
 import { EXIT_FINDINGS, EXIT_OK } from "../src/cli.js";
 import { scanIgnoreDirectives } from "../src/directives.js";
@@ -9,7 +9,7 @@ import { unresolvedReferenceRule } from "../src/rules/unresolved-reference.js";
 import { loadStylesheet } from "../src/load.js";
 import { parseStylesheet } from "../src/parse.js";
 import { resolveCss, resolveStylesheet } from "../src/resolve.js";
-import { fixtureCss, fixtureWriter } from "./fixture.js";
+import { fixtureCss, fixtureWriter, scratchDir } from "./fixture.js";
 import { run } from "./run.js";
 
 /**
@@ -56,8 +56,7 @@ const HOSTILE_CSS = `
 .alias-user { color: var(--color-app-typo); }
 `;
 
-const tmp = mkdtempSync(join(tmpdir(), "themeguard-unresolved-"));
-afterAll(() => rmSync(tmp, { recursive: true, force: true }));
+const tmp = scratchDir("unresolved");
 
 const cssFixture = fixtureWriter(tmp);
 

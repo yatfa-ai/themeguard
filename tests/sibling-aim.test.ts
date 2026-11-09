@@ -1,7 +1,5 @@
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
   audit,
   siblingAims,
@@ -19,7 +17,7 @@ import { resolveCss, resolveStylesheet } from "../src/resolve.js";
 import { expectReportKeyOrder } from "./report-keys.js";
 import { run, unmatchedRow } from "./run.js";
 import { soleUnmatchedRow } from "./unmatched-json.js";
-import { fixtureWriter } from "./fixture.js";
+import { fixtureWriter, scratchDir } from "./fixture.js";
 
 /**
  * THE FILE-SIBLING ARM of the `unmatched` section's advice — its OLDEST tell,
@@ -67,8 +65,7 @@ import { fixtureWriter } from "./fixture.js";
  * scope. One row can never carry `siblingAim` beside another aim key.
  */
 
-const tmp = mkdtempSync(join(tmpdir(), "themeguard-sibling-aim-"));
-afterAll(() => rmSync(tmp, { recursive: true, force: true }));
+const tmp = scratchDir("sibling-aim");
 
 const write = fixtureWriter(tmp);
 

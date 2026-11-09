@@ -1,12 +1,10 @@
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { audit } from "../src/audit.js";
 import { EXIT_FINDINGS, EXIT_OK } from "../src/cli.js";
 import { ROOT_THEME, resolveCss } from "../src/resolve.js";
 import { parseStylesheet } from "../src/parse.js";
-import { CENSUS, fixtureCss, FIXTURE_PATH, fixtureWriter } from "./fixture.js";
+import { CENSUS, fixtureCss, FIXTURE_PATH, fixtureWriter, scratchDir } from "./fixture.js";
 import { run } from "./run.js";
 
 /**
@@ -92,8 +90,7 @@ import { run } from "./run.js";
  *      authorship doctrine requires.
  */
 
-const tmp = mkdtempSync(join(tmpdir(), "themeguard-compound-cycle-"));
-afterAll(() => rmSync(tmp, { recursive: true, force: true }));
+const tmp = scratchDir("compound-cycle");
 
 const cssFixture = fixtureWriter(tmp);
 

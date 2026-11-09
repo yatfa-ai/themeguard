@@ -1,7 +1,5 @@
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { audit, themelessAims } from "../src/audit.js";
 import { THEMELESS_RULES, type Finding } from "../src/rules/finding.js";
 import {
@@ -15,7 +13,7 @@ import { resolveStylesheet } from "../src/resolve.js";
 import { expectReportKeyOrder } from "./report-keys.js";
 import { run, unmatchedRow } from "./run.js";
 import { soleUnmatchedRow } from "./unmatched-json.js";
-import { fixtureWriter } from "./fixture.js";
+import { fixtureWriter, scratchDir } from "./fixture.js";
 
 /**
  * The THEME-SCOPE DEAD ARM of the `unmatched` section's advice (0.1.26).
@@ -57,8 +55,7 @@ import { fixtureWriter } from "./fixture.js";
  * there.
  */
 
-const tmp = mkdtempSync(join(tmpdir(), "themeguard-themeless-aim-"));
-afterAll(() => rmSync(tmp, { recursive: true, force: true }));
+const tmp = scratchDir("themeless-aim");
 
 const write = fixtureWriter(tmp);
 

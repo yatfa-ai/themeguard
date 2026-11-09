@@ -1,14 +1,13 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { afterAll, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { audit } from "../src/audit.js";
 import { parseConfig } from "../src/config.js";
 import { EXIT_FINDINGS, EXIT_OK } from "../src/cli.js";
 import { scanIgnoreDirectives } from "../src/directives.js";
 import { cycleReferenceRule } from "../src/rules/cycle-reference.js";
 import { resolveCss } from "../src/resolve.js";
-import { fixtureCss, fixtureWriter } from "./fixture.js";
+import { fixtureCss, fixtureWriter, scratchDir } from "./fixture.js";
 import { run } from "./run.js";
 
 /**
@@ -30,8 +29,7 @@ import { run } from "./run.js";
  * from memory.
  */
 
-const tmp = mkdtempSync(join(tmpdir(), "themeguard-cycle-"));
-afterAll(() => rmSync(tmp, { recursive: true, force: true }));
+const tmp = scratchDir("cycle");
 
 const cssFixture = fixtureWriter(tmp);
 
