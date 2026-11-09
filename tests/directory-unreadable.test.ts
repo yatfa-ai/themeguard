@@ -1,9 +1,9 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { afterAll, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { EXIT_ERROR } from "../src/cli.js";
 import { run } from "./run.js";
+import { scratchDir } from "./fixture.js";
 
 // A chmod-000 directory does not fail when the suite runs as root, so the
 // walker's failure is injected: readdirSync throws EACCES for one directory.
@@ -23,8 +23,7 @@ vi.mock("node:fs", async (importOriginal) => {
   };
 });
 
-const root = mkdtempSync(join(tmpdir(), "themeguard-unreadable-"));
-afterAll(() => rmSync(root, { recursive: true, force: true }));
+const root = scratchDir("unreadable");
 
 describe("unreadable directory during discovery", () => {
   it("exits 2 with a cannot-read diagnostic, never the findings code, and audits nothing", () => {

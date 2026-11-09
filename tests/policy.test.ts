@@ -1,7 +1,6 @@
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { afterAll, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { audit } from "../src/audit.js";
 import { parseConfig, parseConfigDocument } from "../src/config.js";
 import { loadStylesheet } from "../src/load.js";
@@ -14,7 +13,7 @@ import {
   runCli,
   type CliIo,
 } from "../src/cli.js";
-import { fixtureCss, fixtureStubCss, FIXTURE_PATH, fixtureWriter } from "./fixture.js";
+import { fixtureCss, fixtureStubCss, FIXTURE_PATH, fixtureWriter, scratchDir } from "./fixture.js";
 import { expectReportKeyOrder } from "./report-keys.js";
 import { run } from "./run.js";
 
@@ -54,8 +53,7 @@ import { run } from "./run.js";
  * 11 / 0 / 2 / 7 = 20 — the findings move, they do not vanish.
  */
 
-const tmp = mkdtempSync(join(tmpdir(), "themeguard-policy-"));
-afterAll(() => rmSync(tmp, { recursive: true, force: true }));
+const tmp = scratchDir("policy");
 
 const write = fixtureWriter(tmp);
 

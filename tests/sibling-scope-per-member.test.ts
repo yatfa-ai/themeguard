@@ -1,15 +1,14 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { afterAll, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { runCli, type CliIo } from "../src/cli.js";
+import { scratchDir } from "./fixture.js";
 
 // siblingScopeClause (src/cli.ts) has two shapes. When both members live in the
 // SAME themes it reads as one fact ("the pair is declared only in ..."); in every
 // other shape it names each member with its own themes and lines, joined by
 // joinAnd. The existing skip-reason tests only reach the shared shape with ONE theme.
-const tmp = mkdtempSync(join(tmpdir(), "themeguard-sibling-"));
-afterAll(() => rmSync(tmp, { recursive: true, force: true }));
+const tmp = scratchDir("sibling");
 
 function skippedLines(name: string, css: string): string[] {
   const path = join(tmp, name);

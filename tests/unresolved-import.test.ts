@@ -1,7 +1,6 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { afterAll, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { audit } from "../src/audit.js";
 import { EXIT_FINDINGS, EXIT_OK, runCli, type CliIo } from "../src/cli.js";
 import { scanIgnoreDirectives } from "../src/directives.js";
@@ -9,6 +8,7 @@ import { loadStylesheet } from "../src/load.js";
 import { parseStylesheet } from "../src/parse.js";
 import { readFileSync } from "node:fs";
 import { resolveStylesheet } from "../src/resolve.js";
+import { scratchDir } from "./fixture.js";
 
 /**
  * Rule 8 — UNRESOLVED IMPORT.
@@ -30,8 +30,7 @@ import { resolveStylesheet } from "../src/resolve.js";
  * token dimension, `sites` carrying the statement's own position).
  */
 
-const tmp = mkdtempSync(join(tmpdir(), "themeguard-unresolved-import-"));
-afterAll(() => rmSync(tmp, { recursive: true, force: true }));
+const tmp = scratchDir("unresolved-import");
 
 function cssFixture(name: string, css: string, base: string = tmp): string {
   const path = join(base, name);

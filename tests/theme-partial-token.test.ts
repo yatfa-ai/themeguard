@@ -1,7 +1,6 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { afterAll, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { audit } from "../src/audit.js";
 import { parseConfig } from "../src/config.js";
 import { EXIT_FINDINGS, EXIT_OK } from "../src/cli.js";
@@ -9,7 +8,7 @@ import { scanIgnoreDirectives } from "../src/directives.js";
 import { loadStylesheet } from "../src/load.js";
 import { themePartialTokenRule } from "../src/rules/theme-partial-token.js";
 import { resolveCss, resolveStylesheet } from "../src/resolve.js";
-import { fixtureCss, fixtureWriter } from "./fixture.js";
+import { fixtureCss, fixtureWriter, scratchDir } from "./fixture.js";
 import { run } from "./run.js";
 
 /**
@@ -34,8 +33,7 @@ import { run } from "./run.js";
  * asserted from memory.
  */
 
-const tmp = mkdtempSync(join(tmpdir(), "themeguard-theme-partial-"));
-afterAll(() => rmSync(tmp, { recursive: true, force: true }));
+const tmp = scratchDir("theme-partial");
 
 const cssFixture = fixtureWriter(tmp);
 

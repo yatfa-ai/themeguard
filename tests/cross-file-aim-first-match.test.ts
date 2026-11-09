@@ -1,15 +1,12 @@
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { audit, crossFileAims } from "../src/audit.js";
 import { runCli, EXIT_FINDINGS, type CliIo } from "../src/cli.js";
 import { loadStylesheet } from "../src/load.js";
 import { resolveStylesheet } from "../src/resolve.js";
-import { fixtureWriter } from "./fixture.js";
+import { fixtureWriter, scratchDir } from "./fixture.js";
 
-const tmp = mkdtempSync(join(tmpdir(), "themeguard-aim-first-match-"));
-afterAll(() => rmSync(tmp, { recursive: true, force: true }));
+const tmp = scratchDir("aim-first-match");
 
 const write = fixtureWriter(tmp);
 

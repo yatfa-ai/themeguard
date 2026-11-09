@@ -1,6 +1,8 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { afterAll } from "vitest";
 
 /** The vendored calibration stylesheet (yatfa @ 961eef3). See fixtures/README.md. */
 export const FIXTURE_PATH = fileURLToPath(
@@ -55,4 +57,11 @@ export function fixtureWriter(root: string): (rel: string, contents: string) => 
     writeFileSync(path, contents, "utf8");
     return path;
   };
+}
+
+/** A fresh scratch directory under the OS tmpdir, named `themeguard-<label>-…` and removed after the calling file's tests; call it at module scope. */
+export function scratchDir(label: string): string {
+  const dir = mkdtempSync(join(tmpdir(), `themeguard-${label}-`));
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+  return dir;
 }

@@ -1,11 +1,11 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { afterAll, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { audit } from "../src/audit.js";
 import { runCli, type CliIo } from "../src/cli.js";
 import { resolveCss } from "../src/resolve.js";
 import { scaleCollapseRule, type SkippedPair } from "../src/rules/scale-collapse.js";
+import { scratchDir } from "./fixture.js";
 
 // An ABSENT skipped pair whose members are declared only where no theme view
 // can reach them (here a `.card` block — a scope that is neither :root nor a
@@ -24,8 +24,7 @@ const CSS = `.card {
 }
 `;
 
-const tmp = mkdtempSync(join(tmpdir(), "themeguard-absent-"));
-afterAll(() => rmSync(tmp, { recursive: true, force: true }));
+const tmp = scratchDir("absent");
 
 describe("absent pair declared only outside every theme view", () => {
   it("is skipped as absent once per theme, with no declaredIn key", () => {
