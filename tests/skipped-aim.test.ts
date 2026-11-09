@@ -95,6 +95,13 @@ const TRANSLUCENT_CLAUSE =
   ' pair measurable (fix the value), accept the silence by turning the rule off with' +
   ' "suppress-rule", or retire the entry.';
 
+/** The one suppress entry every arm test aims at the translucent pair, whole. */
+const TRANSLUCENT_ENTRY = {
+  rule: "scale-collapse" as const,
+  tokens: ["--card-bg", "--card-bg-hover"],
+  reason: "reviewed, translucent by design",
+};
+
 /**
  * The ticket's probe sheet: a translucent hover pair — measurable to the eye,
  * unmeasurable to L* (the rule never invents a backdrop) — with both members
@@ -123,13 +130,7 @@ describe("the kept-skipped arm — an entry whose conjuncts match a pair rule 3 
   it("names the pair, its silence and the real moves, on a row that still reports unmatched", () => {
     const entry = write("probe/a.css", PROBE);
     config("probe", {
-      suppress: [
-        {
-          rule: "scale-collapse",
-          tokens: ["--card-bg", "--card-bg-hover"],
-          reason: "reviewed, translucent by design",
-        },
-      ],
+      suppress: [TRANSLUCENT_ENTRY],
     });
     const result = run(entry);
 
@@ -161,13 +162,7 @@ describe("the kept-skipped arm — an entry whose conjuncts match a pair rule 3 
     // byte-identical.
     const entry = write("prose/a.css", PROBE);
     config("prose", {
-      suppress: [
-        {
-          rule: "scale-collapse",
-          tokens: ["--card-bg", "--card-bg-hover"],
-          reason: "reviewed, translucent by design",
-        },
-      ],
+      suppress: [TRANSLUCENT_ENTRY],
     });
     const result = run(entry);
     expect(result.stdout).toContain(SECTION_LINE);
@@ -182,13 +177,7 @@ describe("the kept-skipped arm — an entry whose conjuncts match a pair rule 3 
     // almost retired SUPPRESSES it. That is the proof the aim was real.
     const entry = write("real/a.css", MEASURABLE);
     config("real", {
-      suppress: [
-        {
-          rule: "scale-collapse",
-          tokens: ["--card-bg", "--card-bg-hover"],
-          reason: "reviewed, translucent by design",
-        },
-      ],
+      suppress: [TRANSLUCENT_ENTRY],
     });
     const result = run(entry);
     expect(result.code).toBe(EXIT_OK);
@@ -368,13 +357,7 @@ describe("the arms that KEEP the existing advice — the diagnosis is the kept-s
     // unmatched, and the section (and its sixth line) never prints.
     const entry = write("measurable/a.css", MEASURABLE);
     config("measurable", {
-      suppress: [
-        {
-          rule: "scale-collapse",
-          tokens: ["--card-bg", "--card-bg-hover"],
-          reason: "reviewed, translucent by design",
-        },
-      ],
+      suppress: [TRANSLUCENT_ENTRY],
     });
     const result = run(entry);
     expect(result.stdout).toContain("unmatched (0)");
@@ -414,13 +397,7 @@ describe("the POLICY arm is byte-identical — the two carve-outs are disjoint b
     const entry = write("policy/a.css", PROBE);
     config("policy", {
       "suppress-rule": ["scale-collapse"],
-      suppress: [
-        {
-          rule: "scale-collapse",
-          tokens: ["--card-bg", "--card-bg-hover"],
-          reason: "reviewed, translucent by design",
-        },
-      ],
+      suppress: [TRANSLUCENT_ENTRY],
     });
     const result = run(entry);
     expect(result.code).toBe(EXIT_OK);
@@ -644,13 +621,7 @@ describe("--json carries the same diagnosis as data", () => {
   it("adds `skippedAim` to the unmatched row, and to no other row", () => {
     const entry = write("json/a.css", PROBE);
     config("json", {
-      suppress: [
-        {
-          rule: "scale-collapse",
-          tokens: ["--card-bg", "--card-bg-hover"],
-          reason: "reviewed, translucent by design",
-        },
-      ],
+      suppress: [TRANSLUCENT_ENTRY],
     });
     const result = run("--json", entry);
     expect(result.code).toBe(EXIT_OK);
@@ -667,11 +638,7 @@ describe("--json carries the same diagnosis as data", () => {
     expect(report.unmatchedSuppressions).toHaveLength(1);
     const row = report.unmatchedSuppressions[0] as Record<string, unknown>;
     // Every existing key is untouched, and the diagnosis rides beside them.
-    expect(row).toMatchObject({
-      rule: "scale-collapse",
-      tokens: ["--card-bg", "--card-bg-hover"],
-      reason: "reviewed, translucent by design",
-    });
+    expect(row).toMatchObject(TRANSLUCENT_ENTRY);
     expect(row.skippedAim).toEqual({
       theme: "root",
       base: "--card-bg",
@@ -709,13 +676,7 @@ describe("--json carries the same diagnosis as data", () => {
     const entry = write("json-policy/a.css", PROBE);
     config("json-policy", {
       "suppress-rule": ["scale-collapse"],
-      suppress: [
-        {
-          rule: "scale-collapse",
-          tokens: ["--card-bg", "--card-bg-hover"],
-          reason: "reviewed, translucent by design",
-        },
-      ],
+      suppress: [TRANSLUCENT_ENTRY],
     });
     const row = soleUnmatchedRow(run("--json", entry));
     expect("skippedAim" in row).toBe(false);
@@ -728,13 +689,7 @@ describe("the renderers are byte-identical without the diagnosis — the argumen
     // before the diagnosis existed, on both channels.
     const entry = write("additive/a.css", PROBE);
     const resolved = resolveStylesheet(loadStylesheet(entry));
-    const suppressions = [
-      {
-        rule: "scale-collapse" as const,
-        tokens: ["--card-bg", "--card-bg-hover"],
-        reason: "reviewed, translucent by design",
-      },
-    ];
+    const suppressions = [TRANSLUCENT_ENTRY];
     const report = audit(resolved, { suppressions });
     expect(report.unmatchedSuppressions).toHaveLength(1);
 
@@ -859,13 +814,7 @@ describe("the derivation reads the matcher's own semantics — never a re-derive
     const entry = write("fence/a.css", PROBE);
     const resolved = resolveStylesheet(loadStylesheet(entry));
     const report = audit(resolved, {
-      suppressions: [
-        {
-          rule: "scale-collapse" as const,
-          tokens: ["--card-bg", "--card-bg-hover"],
-          reason: "reviewed, translucent by design",
-        },
-      ],
+      suppressions: [TRANSLUCENT_ENTRY],
     });
     expect(report.suppressed).toHaveLength(0);
     expect(report.unmatchedSuppressions).toHaveLength(1);
@@ -880,13 +829,7 @@ describe("the derivation reads the matcher's own semantics — never a re-derive
     // probe contract.
     const entry = write("exit/a.css", PROBE);
     config("exit", {
-      suppress: [
-        {
-          rule: "scale-collapse",
-          tokens: ["--card-bg", "--card-bg-hover"],
-          reason: "reviewed, translucent by design",
-        },
-      ],
+      suppress: [TRANSLUCENT_ENTRY],
     });
     const result = run(entry);
     expect(result.code).toBe(EXIT_OK);
