@@ -755,11 +755,25 @@ export function unrecognisedClassTheme(scopes: readonly Scope[]): string | null 
  * configured name) has kind `theme` and is never a candidate.
  */
 export function unrecognisedClassThemes(scopes: readonly Scope[]): string[] {
+  return unrecognisedPaletteThemes(scopes, classThemeSubject);
+}
+
+/**
+ * The shared qualifying loop behind {@link unrecognisedClassThemes} and
+ * {@link unrecognisedAttributeThemes}: the subject names, in scope order and
+ * deduplicated, of the `root`/`other` scopes `subjectOf` reads a name from that
+ * restate at least half the base palette (and, for bare/html/body spellings,
+ * at least {@link PALETTE_VARIANT_MIN_OVERLAP} of it).
+ */
+function unrecognisedPaletteThemes(
+  scopes: readonly Scope[],
+  subjectOf: (selector: string) => string | null,
+): string[] {
   const found: string[] = [];
   const rootNames = basePaletteNames(scopes);
   for (const scope of scopes) {
     if (scope.kind !== "root" && scope.kind !== "other") continue;
-    const name = classThemeSubject(scope.matchedSelector);
+    const name = subjectOf(scope.matchedSelector);
     if (name === null) continue;
     const overlap = new Set(scope.declarations.map((d) => d.name).filter((n) => rootNames.has(n)));
     if (overlap.size === 0 || overlap.size * 2 < rootNames.size) continue;
@@ -826,21 +840,7 @@ export function unrecognisedAttributeTheme(scopes: readonly Scope[]): string | n
  * silence: a smaller variant audits as it always has.
  */
 export function unrecognisedAttributeThemes(scopes: readonly Scope[]): string[] {
-  const found: string[] = [];
-  const rootNames = basePaletteNames(scopes);
-  for (const scope of scopes) {
-    if (scope.kind !== "root" && scope.kind !== "other") continue;
-    const name = attributeThemeSubject(scope.matchedSelector);
-    if (name === null) continue;
-    const overlap = new Set(scope.declarations.map((d) => d.name).filter((n) => rootNames.has(n)));
-    if (overlap.size === 0 || overlap.size * 2 < rootNames.size) continue;
-    if (
-      (scope.kind === "root" || overlap.size >= PALETTE_VARIANT_MIN_OVERLAP) &&
-      !found.includes(name)
-    )
-      found.push(name);
-  }
-  return found;
+  return unrecognisedPaletteThemes(scopes, attributeThemeSubject);
 }
 
 /**
