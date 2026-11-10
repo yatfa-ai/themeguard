@@ -296,8 +296,9 @@ npx themeguard --json src/*.css
 ```
 
 The object is the **same report the library returns**, verbatim, with the audited `path` in front of it:
-`findings` (each with its `rule`, `theme`, `tokens`, `message`, `evidence` and — where the rule has a
-position to give — its `sites`, each naming a token, a line and the imported file it was spliced from),
+`findings` (each with its `rule`, `theme`, `tokens`, `message`, `evidence` and its `sites`, each naming
+a token, a line and — only when the position arrived over an `@import` edge — the imported file it was
+spliced from),
 `countsByRule`, `suppressed`, `unmatchedSuppressions`, `suppressedDisabled` (the policy's findings
 set-aside: `{finding, rule, reason}` rows, the reason the policy's own marker, verbatim — see
 [Turning a rule off for the project](#turning-a-rule-off-for-the-project--suppress-rule)), `skipped`
@@ -315,7 +316,7 @@ One key is the CLI's own rather than the library's, and it is additive: an `unma
 whose judgement names a live finding in another file of the closure carries `crossFileAim`, `{rule,
 site}` — the machine form of the prose's `— matches a live …` clause, so the pointer is read as data
 instead of regexed out of a sentence. The key is **absent** (never `null`) on every row without one, the
-same absence-is-a-fact discipline `sites` carries. A second such key rides the same discipline:
+same absent-never-`null` discipline `sites` carries on `origin`. A second such key rides the same discipline:
 `themelessAim`, `{rule}` — the machine form of the dead-theme-scope clause, on a row whose `theme` scope
 names a rule that reports no theme at all. A third rides it too: `skippedAim`,
 `{theme, base, state, reason}` — the machine form of the kept-skipped clause, the unmeasurable pair an
@@ -1115,13 +1116,16 @@ const report = audit(resolveStylesheet(loadStylesheet("application.css")));
 ```
 
 Types ship with the package. Every finding carries the `evidence` behind it, so a verdict can be checked
-rather than taken — and six of the nine rules also carry `sites`, the declaration each measured token
-resolved from (`{ name, line }`), which is the same position their message ends with. It cites the
-**cascade winner**: `--app-border` is declared twice in the fixture, at `:root`'s line 41 and winter's
-line 438, and the root finding cites 41 while the winter one cites 438. `dead-token`,
-`unresolved-reference` and `duplicate-declaration` carry no `sites` — they name their positions in
-their own messages (`:root:402`; every use site of the dangling name; the shadowed and winning
-declaration), positions the merged theme tables cannot supply.
+rather than taken — and all nine rules also carry `sites`, one `{ name, line, origin? }` per position the
+finding cites. For the rules that measure a resolved token it is the declaration each measured token
+resolved from, which is the same position their message ends with, citing the **cascade winner**:
+`--app-border` is declared twice in the fixture, at `:root`'s line 41 and winter's line 438, and the root
+finding cites 41 while the winter one cites 438. `dead-token` and `duplicate-declaration` carry one site
+per declaration (a duplicate's shadowed and winning declarations both), `unresolved-reference` one per use
+site, each in the same order as `evidence.declaredIn` / `evidence.usedIn`. `origin` is present only for a
+position spliced in over an `@import` edge and absent for an entry-file one, so `line` is always read
+against `origin` (line numbers restart at 1 in every imported file). The CSS selector is not part of a
+site: it remains only in the `declaredIn` / `usedIn` strings (`:root:402`), kept for compatibility.
 
 A library caller with the same need as the CLI — findings it has itself judged
 deliberate — passes them as the optional second argument, and reads `report.suppressed` under the same

@@ -113,10 +113,11 @@ export const THEMELESS_RULES: ReadonlySet<RuleId> = new Set<RuleId>([
  * table is merged across every scope that contributes to it, so by the time a
  * rule reads a token there is no single selector to attribute the winning
  * declaration to; inventing one would be a guess printed as a fact.
- * `dead-token` can say `:root:402` because it walks the parsed scopes itself,
- * one declaration at a time, and never consults a merged table. Adding scope
- * attribution to the resolved tokens is a resolver change, and it is not this
- * one.
+ * `dead-token` can say `:root:402` in its message and `evidence.declaredIn`
+ * because it walks the parsed scopes itself, one declaration at a time, and
+ * never consults a merged table; its `sites` still omit the selector, which
+ * stays only in those strings. Adding scope attribution to the resolved tokens
+ * is a resolver change, and it is not this one.
  *
  * `origin` names the imported file the winning declaration was spliced from,
  * in the same spelling {@link import("../parse").Scope.origin} writes it — the
@@ -157,6 +158,26 @@ export function siteFromToken(
     : { name, line: token.line, origin: token.importOrigin };
 }
 
+/**
+ * Build a {@link FindingSite} from a position a rule read straight off the
+ * PARSED stylesheet (a declaration or a `var()` use), for the rules that walk
+ * pre-fold scopes and never hold a `ResolvedToken`. `origin` is copied only
+ * when the position arrived over an `@import` edge, so an entry-file position
+ * gives a site with no `origin` key at all — the same convention
+ * {@link siteFromToken} writes for the resolved tables.
+ *
+ * The `selector` the caller holds is deliberately NOT copied: it stays only in
+ * the `declaredIn` / `usedIn` strings (see {@link siteString}).
+ */
+export function siteFromPosition(
+  name: string,
+  position: { readonly line: number; readonly origin?: string },
+): FindingSite {
+  return position.origin === undefined
+    ? { name, line: position.line }
+    : { name, line: position.line, origin: position.origin };
+}
+
 export interface Finding {
   readonly rule: RuleId;
   /**
@@ -184,11 +205,17 @@ export interface Finding {
    * A token declared in `:root` and again in a theme has two declarations and
    * only one of them was judged; this cites that one.
    *
-   * OPTIONAL, and its absence is a fact rather than an omission: `dead-token`
-   * carries none because it already says `:root:402` in its own message, with a
-   * selector this field deliberately cannot supply (see {@link FindingSite}).
-   * A consumer therefore reads `sites` as "the position, if the rule has one to
-   * give", never as "every finding's position".
+   * OPTIONAL, but every rule in the library publishes it today. The
+   * declaration-walking rules (`dead-token`, `duplicate-declaration`) and the
+   * use-walking one (`unresolved-reference`) publish one site per position
+   * they cite, in the same order as `evidence.declaredIn` / `evidence.usedIn`,
+   * so a consumer reads file and line as data instead of parsing the
+   * `selector:line` strings. The SELECTOR those strings carry is not part of a
+   * {@link FindingSite} (see there); it remains only in the `declaredIn` /
+   * `usedIn` strings, kept for compatibility. A consumer should still read
+   * `sites` as "the position, if the rule has one to give": the type stays
+   * optional so a future rule with no position to cite is not forced to invent
+   * one.
    */
   readonly sites?: readonly FindingSite[];
 }

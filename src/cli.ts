@@ -1493,13 +1493,15 @@ export function formatReport(
  * additive-key status every other report-level leg carries, empty — not
  * absent — wherever no rule is off, exactly as `suppressedDisabled` is.
  *
- * ⚠️ `sites` is ABSENT on the findings of rules that carry none
- * (`dead-token`, `unresolved-reference`, `duplicate-declaration`) rather than
- * `null`. That is the library's own serialization — `JSON.stringify` omits an
- * undefined optional — and {@link import("./rules/finding").Finding.sites}
- * documents the absence as a FACT rather than an omission: a consumer reads
- * `sites` as "the position, if the rule has one to give". Emitting `null`
- * would invent a value the library never had.
+ * ⚠️ `sites` rides every rule's findings since 0.1.35 — `dead-token`,
+ * `unresolved-reference` and `duplicate-declaration` publish it too, one
+ * `{name, line, origin?}` per position they cite, in the same order as
+ * `evidence.declaredIn` / `evidence.usedIn`. `origin` is present only for a
+ * position that arrived over an `@import` edge. The SELECTOR those evidence
+ * strings carry is not part of a site and remains only there (kept for
+ * compatibility). {@link import("./rules/finding").Finding.sites} stays an
+ * optional field, so a finding of a future rule with no position would omit
+ * it rather than emit `null` — `JSON.stringify` omits an undefined optional.
  *
  * `suppressed` entries carry `{finding, reason, entry}` whole, the entry
  * including its scope fields (`theme` / `tokens` / `token` / `file` /

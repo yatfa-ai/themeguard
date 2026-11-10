@@ -455,16 +455,13 @@ export interface SiteCoordinate {
  * Every position a finding can be judged AT, across the whole closure — the
  * union {@link findingLinesIn} then filters down to one file.
  *
- * Two sources, because two kinds of rule report a position two ways. A rule
- * that carries `sites` (collision, scale-collapse, family-consistency,
- * cycle-reference, unresolved-import, theme-partial-token) publishes them as
- * data and they are returned as they stand. A rule that carries none
- * (dead-token, unresolved-reference, duplicate-declaration) still publishes
- * its lines — as `evidence.declaredIn` strings in `":root:4"` shape, or
- * `evidence.usedIn` for the rule whose positions are USE sites and which names
- * them honestly. That is public, honestly named data the finding already
- * reports; reading it here adds a location dimension to suppression without
- * asking any rule to change, and a directive annotating the declaration that
+ * Two sources. Every rule in the library publishes `sites` as data and they
+ * are returned as they stand. The `evidence` citation strings
+ * (`evidence.declaredIn` in `":root:4"` shape, or `evidence.usedIn` for
+ * `unresolved-reference`, whose positions are USE sites) remain a fallback for
+ * a finding that carries no `sites` — a future rule, or a hand-built finding —
+ * so that case still gains a location dimension for suppression without
+ * asking the rule to change; a directive annotating the declaration that
  * holds a dangling `var()` is a judgement at the site the finding lives at,
  * exactly as it is for a declaration site.
  *

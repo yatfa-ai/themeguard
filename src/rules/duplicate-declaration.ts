@@ -71,12 +71,13 @@
  * point into whichever file the reader had open. Entry-file sites render the
  * `selector:line` string they always have.
  *
- * `evidence.declaredIn` is also what audit's site-scoped directive matching
- * reads for a rule that carries no `sites`, so a
- * `themeguard-ignore duplicate-declaration` directive binds to the finding's
- * own lines. No `sites` field, like `dead-token`: the rule names its
- * positions in its own message, with a selector the merged theme tables
- * cannot supply (see {@link FindingSite}).
+ * `sites` carries one `{name, line, origin?}` per declaration (shadowed and
+ * winner both), in the same order as `evidence.declaredIn`, so audit's
+ * site-scoped directive matching binds a
+ * `themeguard-ignore duplicate-declaration` directive to the finding's own
+ * lines through the published data. The selector the strings carry is not part
+ * of a {@link FindingSite}; it remains only in `evidence.declaredIn`, kept for
+ * compatibility.
  *
  * Deliberately NOT reported: did-you-mean value hints (7936's fence — the
  * finding stays factual; intent is the reader's to supply); which `var()`s
@@ -88,7 +89,7 @@
 
 import type { ResolvedStylesheet } from "../resolve.js";
 import type { Finding } from "./finding.js";
-import { siteString } from "./finding.js";
+import { siteFromPosition, siteString } from "./finding.js";
 
 /** One declaration site, as the pre-fold scope records it. */
 interface Site {
@@ -169,6 +170,7 @@ export function duplicateDeclarationRule(
           `${name} is declared ${times} in one scope: ${shadow.value} at ` +
           `${siteString(shadow)}, shadowed by ${winner.value} at ` +
           `${siteString(winner)} — the later declaration silently wins.`,
+        sites: sites.map((s) => siteFromPosition(name, s)),
         evidence: {
           declaredIn: sites.map(siteString),
           /** The declared values, positionally paired with `declaredIn`. */

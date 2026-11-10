@@ -976,18 +976,24 @@ describe("--json — the report as data, one NDJSON line per file", () => {
     expect(report.countsByRule["dead-token"]).toBe(0);
   });
 
-  it("omits `sites` on a rule that carries none rather than emitting null", () => {
-    // `dead-token` has no `sites` by design — it already names `:root:6` in
-    // its own message, with a selector `FindingSite` deliberately cannot
-    // supply. The absence is a FACT, and the serialization says so by leaving
-    // the key out: a consumer reads `sites` as "the position, IF the rule has
-    // one to give". `null` would invent a value the library never had.
+  it("publishes `sites` on a dead-token finding, selector-free, beside the compatibility strings", () => {
+    // `dead-token` still names `:root:6` in its message and in
+    // `evidence.declaredIn` (selector included, kept for compatibility), and
+    // now also publishes the position as data: one `{name, line}` per
+    // declaration, in `declaredIn` order, with no `origin` for an entry-file
+    // declaration and no selector.
     const report = jsonLines("--json", MIXED_PATH).lines[0] as {
       suppressed: { finding: Record<string, unknown> }[];
     };
-    const dead = report.suppressed[0]?.finding;
-    expect(dead?.rule).toBe("dead-token");
-    expect("sites" in (dead as object)).toBe(false);
+    const dead = report.suppressed[0]?.finding as {
+      rule: string;
+      sites: Record<string, unknown>[];
+      evidence: { declaredIn: string[] };
+    };
+    expect(dead.rule).toBe("dead-token");
+    expect(dead.evidence.declaredIn).toEqual([":root:5"]);
+    expect(dead.sites).toEqual([{ name: "--unused", line: 5 }]);
+    expect("origin" in (dead.sites[0] as object)).toBe(false);
   });
 
   it("carries a suppression whole — finding, reason, and the entry's scope fields", () => {

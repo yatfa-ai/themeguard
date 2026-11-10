@@ -93,7 +93,7 @@
 
 import type { ResolvedStylesheet } from "../resolve.js";
 import type { Finding } from "./finding.js";
-import { siteString } from "./finding.js";
+import { siteFromPosition, siteString } from "./finding.js";
 import { TokenNames } from "./tokens.js";
 
 export function unresolvedReferenceRule(
@@ -128,6 +128,7 @@ export function unresolvedReferenceRule(
       message:
         `${name} is used at ${sites.map(siteString).join(", ")} ` +
         `and no scope in this stylesheet declares it.`,
+      sites: sites.map((s) => siteFromPosition(name, s)),
       evidence: {
         usedIn: sites.map(siteString),
         useCount: sites.length,

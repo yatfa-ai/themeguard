@@ -50,7 +50,7 @@
 
 import type { ResolvedStylesheet } from "../resolve.js";
 import type { Finding } from "./finding.js";
-import { siteString } from "./finding.js";
+import { siteFromPosition, siteString } from "./finding.js";
 import { TokenNames } from "./tokens.js";
 
 export function deadTokenRule(
@@ -85,6 +85,7 @@ export function deadTokenRule(
       message:
         `${name} is declared at ${sites.map(siteString).join(", ")} ` +
         `and no var() in this stylesheet references it.`,
+      sites: sites.map((s) => siteFromPosition(name, s)),
       evidence: {
         declaredIn: sites.map(siteString),
         declarationCount: sites.length,
