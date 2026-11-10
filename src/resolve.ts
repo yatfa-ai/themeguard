@@ -70,7 +70,7 @@
  *                        completion so the loop's dependents resolve too.
  */
 
-import { parseColor, isTranslucent, toCss, type Color } from "./color.js";
+import { parseColor, isTranslucent, toCss, colorMixParts, type Color } from "./color.js";
 import {
   parseStylesheet,
   registeredInitialValues,
@@ -85,7 +85,7 @@ export type TokenKind =
   /** Resolves to a parseable colour. */
   | "color"
   /** Resolves to a value that is not a colour: a length, a duration, a shadow
-   *  list, a font stack, a `color-mix()` expression. */
+   *  list, a font stack, a `color-mix()` the colour evaluator declines. */
   | "non-color"
   /** A `var()` chain reached a property no scope declares in this theme. */
   | "unresolved"
@@ -513,18 +513,26 @@ export function resolveStylesheet(sheet: Stylesheet): ResolvedStylesheet {
     return reg ? { value: reg.value, line: reg.line } : null;
   };
 
-  const resolveValue = (
-    startName: string,
-    startValue: string,
-    theme: string,
-  ): {
+  interface Walk {
     resolvedValue: string | null;
     kind: TokenKind;
     chain: string[];
     missingReference: string | null;
-  } => {
-    const chain: string[] = [startName];
-    const seen = new Set<string>([startName]);
+  }
+
+  const resolveValue = (startName: string, startValue: string, theme: string): Walk =>
+    walkValue([startName], new Set<string>([startName]), startValue, theme);
+
+  // The walk itself. `chain` and `seen` arrive as the path ALREADY taken, so a
+  // `color-mix()` operand can be resolved as a continuation of its parent's
+  // walk: a `var()` operand that leads back onto any name on that path is a
+  // loop and is never evaluated.
+  const walkValue = (
+    chain: string[],
+    seen: Set<string>,
+    startValue: string,
+    theme: string,
+  ): Walk => {
     let value = startValue;
 
     for (;;) {
@@ -565,6 +573,25 @@ export function resolveStylesheet(sheet: Stylesheet): ResolvedStylesheet {
               chain: [...chain, name],
               missingReference: null,
             };
+          }
+        }
+        // A whole-value `color-mix()` is the one compound shape that EVALUATES:
+        // each `var()` operand is replaced by that operand's resolved colour in
+        // THIS theme's view, so the mix is computed from what the theme
+        // actually paints. An operand that is not a colour here (unresolved,
+        // a loop, a length) leaves the token as written — unread, and rules
+        // 5/6 report it exactly as before. The substituted text becomes the
+        // resolved value; `declaredValue` is untouched.
+        const substituted = substituteColorMix(value, (operand) => {
+          // A copy per operand: two operands sharing a base are a diamond,
+          // not a loop.
+          const r = walkValue([...chain], new Set(seen), operand, theme);
+          return r.kind === "color" ? r.resolvedValue : null;
+        });
+        if (substituted !== null && substituted !== value) {
+          const kind = classifyValue(substituted);
+          if (kind === "color") {
+            return { resolvedValue: substituted, kind, chain, missingReference: null };
           }
         }
         return { resolvedValue: value, kind: classifyValue(value), chain, missingReference: null };
@@ -840,6 +867,43 @@ export function resolveStylesheet(sheet: Stylesheet): ResolvedStylesheet {
 /** Convenience: parse and resolve in one call. */
 export function resolveCss(source: string): ResolvedStylesheet {
   return resolveStylesheet(parseStylesheet(source));
+}
+
+/**
+ * Replace every `var()` operand of a whole-value `color-mix()` — nested
+ * `color-mix()` operands included — with the colour text `resolveOperand`
+ * returns for it, rebuilding `color-mix(in <space>, A [N%], B [M%])`.
+ *
+ * Returns the value unchanged when it is not a two-item `color-mix()` or holds
+ * no `var()` operand (the caller's classifier then judges the literal text),
+ * and `null` when a `var()` operand could not be resolved to a colour — the
+ * token must then stay as written.
+ */
+function substituteColorMix(
+  value: string,
+  resolveOperand: (operand: string) => string | null,
+): string | null {
+  const parts = colorMixParts(value);
+  if (parts === null) return value;
+  const rebuilt: string[] = [];
+  let changed = false;
+  for (const item of [parts.first, parts.second]) {
+    let operand = item.color;
+    if (VAR_ONLY.test(operand)) {
+      const resolved = resolveOperand(operand);
+      if (resolved === null) return null;
+      operand = resolved;
+      changed = true;
+    } else {
+      const nested = substituteColorMix(operand, resolveOperand);
+      if (nested === null) return null;
+      if (nested !== operand) changed = true;
+      operand = nested;
+    }
+    rebuilt.push(item.percent === null ? operand : `${operand} ${item.percent}%`);
+  }
+  // Untouched when nothing was substituted, so a literal mix keeps its bytes.
+  return changed ? `color-mix(in ${parts.space}, ${rebuilt[0]}, ${rebuilt[1]})` : value;
 }
 
 function classifyValue(value: string): TokenKind {

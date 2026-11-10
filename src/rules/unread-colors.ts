@@ -6,7 +6,8 @@
  * returns null, and that one bit discards WHY. Most `non-color` tokens really
  * are not colours (lengths, durations, font stacks, shadows), but a modern
  * stylesheet also writes colours in syntax the parser documents it does not
- * evaluate — `light-dark()`, `color-mix()`, relative colour syntax
+ * evaluate — `light-dark()`, `color-mix()` (in a space other than `srgb` /
+ * `srgb-linear`, or with an operand the parser cannot read), relative colour syntax
  * (`oklch(from var(--x) l c h)`), `color()` in a space other than `srgb`,
  * `currentColor` and the system-colour keywords. Such a token is silently
  * absent from collision, scale-collapse and the contrast measurements, and
@@ -14,10 +15,13 @@
  *
  * This is DATA, never a judgement, under the `skipped` / `coverage` precedent:
  * counted, named, printed even at zero, and carrying no exit-code weight. It
- * only makes the omission visible; evaluating `color-mix()` of literal colours
- * is a separate (parser) concern and this inventory stays correct if that ever
- * lands, because it is read off the resolver's own `kind` fact — a token the
- * parser learns to read becomes `color` and drops out of the list.
+ * only makes the omission visible. It is read off the resolver's own `kind`
+ * fact, so a token the parser learns to read becomes `color` and drops out of
+ * the list: that is what happened to `color-mix(in srgb|srgb-linear, …)`, which
+ * the colour parser now evaluates (operands substituted per theme by the
+ * resolver). A `color-mix()` it declines — polar / `xyz*` / `oklab` / `lab`
+ * space, `currentColor` or a system colour operand, an unresolved or looping
+ * `var()` operand — is still listed here.
  *
  * ── What is deliberately NOT listed ─────────────────────────────────────────
  * Only a value that IS the colour-valued syntax. A function is matched only

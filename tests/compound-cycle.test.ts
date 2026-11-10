@@ -888,12 +888,15 @@ describe("SCAN SCOPE — a fallback-only back edge is NOT an edge", () => {
   });
 
   it("primary-position references with no back edge stay clean and classify as before", () => {
+    // `in oklch` is a space the colour evaluator declines, so the value stays
+    // the unread compound text this test has always pinned; the srgb spelling
+    // of the same declaration now evaluates (tests/color-mix.test.ts).
     const r = resolveCss(
-      `:root { --base: #ffffff; --tint: #000000; --mix: color-mix(in srgb, var(--base) 15%, var(--tint)); }`,
+      `:root { --base: #ffffff; --tint: #000000; --mix: color-mix(in oklch, var(--base) 15%, var(--tint)); }`,
     );
     const t = r.token("--mix", ROOT_THEME);
     expect(t?.kind).toBe("non-color");
-    expect(t?.resolvedValue).toBe("color-mix(in srgb, var(--base) 15%, var(--tint))");
+    expect(t?.resolvedValue).toBe("color-mix(in oklch, var(--base) 15%, var(--tint))");
     expect(t?.chain).toEqual(["--mix"]);
     expect(audit(r).countsByRule["cycle-reference"]).toBe(0);
   });

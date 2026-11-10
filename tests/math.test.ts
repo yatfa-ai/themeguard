@@ -58,6 +58,7 @@ describe("colour parsing", () => {
       "'Plus Jakarta Sans', system-ui, sans-serif",
       "0 1px 3px 0 rgba(0, 0, 0, 0.45), 0 1px 2px -1px rgba(0, 0, 0, 0.35)",
       "color-mix(in srgb, var(--app-success) 15%, var(--app-surface))",
+      "color-mix(in oklch, red, blue)",
       "var(--app-cta)",
       "",
       null,

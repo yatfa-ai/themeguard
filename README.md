@@ -181,14 +181,28 @@ channel** into sRGB and quantised to 0–255, exactly like the legacy forms. The
 high-chroma `oklch()` that lies outside sRGB is clipped, so it can differ from what a wide-gamut display
 paints. A stylesheet written in `oklch()` therefore reports the same findings as its hex twin.
 
+`color-mix(in srgb | srgb-linear, A [N%], B [M%])` is evaluated too, over any operands themeguard already
+reads (nested `color-mix()` included): CSS Color 5 percentage normalisation (both omitted is 50/50, one
+omitted is 100 minus the other, a sum above 100 is scaled, a sum below 100 multiplies the result's alpha;
+a negative or over-100 percentage, or `0% 0%`, is not a colour) and **premultiplied-alpha** interpolation,
+so a `transparent` operand fades the mix without darkening it, quantised to 0–255 like every other form.
+In the resolver a `var()` operand is replaced by that operand's resolved colour **in the same theme's
+view** — `color-mix(in srgb, var(--accent) 15%, var(--surface))` is one colour in `:root` and another in a
+theme that redefines `--surface` — and `resolvedValue` becomes the substituted text
+(`color-mix(in srgb, #22C55E 15%, #0F172A)`) while `declaredValue` stays as written. `oklab`/`lab` are
+deliberately **not** evaluated: themeguard has the conversion matrices but no independently computed
+reference to calibrate a mix against, so it declines rather than ship an unchecked number.
+
 The boundary: values that are not a fixed colour themeguard can place in sRGB are not colours to it —
-`color-mix()`, `light-dark()`, relative colour syntax (`oklch(from var(--x) l c h)`), `color()` in any
+a `color-mix()` in a polar (`hsl`/`hwb`/`lch`/`oklch`), `xyz*`, `oklab` or `lab` space, with a hue
+interpolation method, or with an operand it cannot read (`currentColor`, a system colour, `light-dark()`,
+a `calc()`, or a `var()` that is unresolved, loops, or is not a colour), `light-dark()`, relative colour syntax (`oklch(from var(--x) l c h)`), `color()` in any
 space other than `srgb` (`display-p3`, `rec2020`, …), system colours and `currentColor`. A token with
 such a value is classified `non-color` and is left out of the colour rules — but not silently: the
 report's counted **`unread-colors`** section names every such token (`--bg (light-dark) in theme
 "root", declared at line 2`), with a per-theme headline of how many tokens that is of the theme's
 total, and prints a "nothing left out" line at zero. It lists only a value that *is* the unread syntax
-(one `light-dark()` / `color-mix()` / relative-colour / non-sRGB `color()` call, or `currentColor` / a
+(one `light-dark()` / declined `color-mix()` / relative-colour / non-sRGB `color()` call, or `currentColor` / a
 system-colour keyword, on its own) — never a length, a font stack or a shadow — and it is facts, not
 findings: it never moves the exit code. In `--json` it is `unreadColors` — `{theme, token, syntax,
 line, declaration}` rows (plus `importOrigin` for a declaration spliced in over `@import`), always
@@ -389,14 +403,21 @@ coverage (2 themes, 73 base tokens)
     [inherited] --app-focus-ring-width (non-color)
     … 20 more — every base token each theme inherits, named
 
-unread-colors (8)
-  tokens whose value is colour syntax themeguard does not evaluate (…) — left out of collision, scale-collapse and contrast, not judged either way.
-  root: 8 of 137 tokens not read.
-    [unread] --app-error-toast-surface (color-mix) in theme "root", declared at line 111
-    … 7 more
+unread-colors (0)
+  nothing left out — every colour-valued token was read by the colour rules.
 
 22 findings: 11 collision, 2 dead-token, 2 scale-collapse, 7 family-consistency, 0 unresolved-reference, 0 cycle-reference, 0 duplicate-declaration, 0 unresolved-import, 0 theme-partial-token.
 ```
+
+`color-mix()` evaluation is what moved the `unread-colors` block: before it, the fixture printed
+`unread-colors (8)` / `root: 8 of 137 tokens not read` — the four `--app-*-toast-surface` tokens and their four
+`--color-app-*` aliases, all `color-mix(in srgb, var(--app-X) 12–15%, var(--app-surface))`. Measured
+after, all eight are read and the section is `unread-colors (0)`. The four resolve in `:root` to
+`#123132`, `#2A1C2D`, `#322B25` and `#162749` — exactly the values the sheet's own comment (lines 89–92)
+hand-computes — and `winter` is unchanged, because it overrides them to plain `--app-*-surface` hexes
+(lines 459–462). The report is otherwise byte-for-byte what it was: the same 22 findings in the same
+counts, **no new finding** — the newly read colours collide with nothing — so there is no new finding to be
+a false positive against those comments.
 
 Four things in that output are deliberate and worth reading.
 
@@ -430,7 +451,7 @@ sense; the findings are the judgement, the inventory is what they are judged aga
 
 **`unread-colors` is facts, not findings.** It prints after `coverage`, under the same discipline
 (counted, named, headline even at zero, never an exit code): the tokens whose colour the colour rules
-could not read, so a stylesheet written in `light-dark()` or `color-mix()` does not read as a complete
+could not read, so a stylesheet written in `light-dark()` or `color-mix(in oklch, …)` does not read as a complete
 audit. A theme that merely inherits an unread token lists it too, marked `inherited from :root`.
 
 **`@property` registrations are in both inventories.** A registration with a usable `initial-value`
@@ -1167,7 +1188,7 @@ facts and passes no judgement, the upper one judges those facts and nothing else
 |---|---|
 | `src/parse.ts` | Which blocks declare custom properties, in which of the four shapes — `:root`, `[data-theme=…]`, `@theme inline`, and a `prefers-color-scheme` `:root` block as its own theme — at which line, and every `var()` **use**, from every declaration rather than only the custom-property ones. |
 | `src/resolve.ts` | What each property resolves to **per theme**, following `var()` chains — through embedded primary-position references (`1px solid var(--c)`) as well as whole-value ones, re-marking a walk that stopped at a compound value `cycle` when the value it stopped at references a loop MEMBER in that theme's view — iterated to a fixed point, so a dependent several hops out is reached too — and minting, names-only, the loops no walk closes (an all-compound loop never completes a circuit from any seed), so their members carry the same fact and rule 6 judges them beside every other loop. Theme absence, translucency, unresolved references and cycles are each represented explicitly — none of them is an error and none is guessed at. |
-| `src/color.ts` | Colour parsing (hex 3/4/6/8, `rgb()`/`rgba()`, `hsl()`/`hsla()`, `oklch()`, `oklab()`, `lab()`, `lch()`, `hwb()`, `color(srgb …)`, named colours and `transparent`, alpha throughout; non-sRGB forms clip per channel, no gamut mapping), WCAG relative luminance, CIE L\*, contrast ratio, source-over compositing. |
+| `src/color.ts` | Colour parsing (hex 3/4/6/8, `rgb()`/`rgba()`, `hsl()`/`hsla()`, `oklch()`, `oklab()`, `lab()`, `lch()`, `hwb()`, `color(srgb …)`, named colours and `transparent`, alpha throughout; non-sRGB forms clip per channel, no gamut mapping; `color-mix(in srgb | srgb-linear, …)` of readable operands, premultiplied), WCAG relative luminance, CIE L\*, contrast ratio, source-over compositing. |
 | `src/audit.ts` | `audit(resolved)` — the nine rules in one pass, returning findings tagged `collision`, `dead-token`, `scale-collapse`, `family-consistency`, `unresolved-reference`, `cycle-reference`, `duplicate-declaration`, `unresolved-import` or `theme-partial-token`, plus the per-theme coverage inventory. Passing `suppressions` moves caller-declared findings out of `findings` and the counts into a `suppressed` leg, and the entries that matched nothing onto `unmatchedSuppressions`. Passing `disabledRules` moves a whole rule's output out of the report's live legs — findings off `findings` and the counts onto `suppressedDisabled`, and (for `scale-collapse`, the one rule with a second channel) skipped pairs off `skipped` onto `skippedDisabled` — the project-level policy face, checked before the per-entry match, so an entry naming a disabled rule stays unmatched and the report can say why. Also publishes the suppression matcher's own halves — `matchesEntryIdentity`, `findingSiteCoordinates`, `findingLinesIn`, `siteLineCovers`, `closureOrigins` — and the two reads over a FINISHED report that diagnose an unmatched judgement without suppressing anything: `crossFileAims`, which says which site-scoped judgement would govern a live finding one `@import` edge away, and `themelessAims`, which says which `theme`-scoped judgement names a rule that reports no theme at all. |
 | `src/config.ts` | `themeguard.config.json` — optional, discovered at or above the stylesheet (nearest ancestor wins; a config beside the stylesheet is the first hop). Parses and validates the `suppress` entries (strictly: an unhonourable config is an error naming the entry, never a silent skip) and the `suppress-rule` policy — an array of rule ids to turn off whole, validated against the same rule-id list the entries' `rule` field names, an unknown id an error naming the element — into the structured declarations `audit()` filters a finished report by. |
 | `src/rules/` | One module per question. Each docstring carries its judgement heuristics and, more usefully, what it deliberately does **not** report. `rules/coverage.ts` also carries the coverage inventory itself (its population includes `@property` registrations) — the facts rule 4 is measured over, printed by the CLI as an informational section and never an exit code. `rules/finding.ts` carries the shared citation the clauses are built from — `citeSite` for one site and `citeSiteList` for a list, which `positionClause` is now the `Declared at …` frame around, so a sibling clause needing the same file-aware spelling reads it rather than re-deriving it. It also declares `THEMELESS_RULES` — the five rules that report `theme: null` by construction, the stance the unmatched section's dead-theme-scope diagnosis reads rather than inferring from one run's findings. |
@@ -1189,7 +1210,7 @@ the calibration fixture:
 |---|---|---|---|
 | `collision` | 41 value groups (dark) | 11 across both themes | A token beside its own `@theme inline` alias; two names another theme *re-declares* equal in its own right; two members of one family (`--app-warning` / `--app-warning-border` is deliberate, and the fixture says so). |
 | `dead-token` | 66 unreferenced names | 2 | The 64 `@theme inline` aliases, whose consumers are the utility classes Tailwind generates *from* them and so are unreachable to a source read by construction. |
-| `scale-collapse` | — | 2 | Pairing is derived from **declared interaction states** (`X` / `X-hover`), not by sorting a family by lightness: that alternative returns 25 findings, including all four twins the fixture documents as deliberate. |
+| `scale-collapse` | — | 2 | Pairing is derived from **declared interaction states** (`X` / `X-hover`), not by sorting a family by lightness: that alternative returns 29 findings, including all four twins the fixture documents as deliberate. |
 | `family-consistency` | 22 inherited base tokens (winter) | 7 | A finding needs the theme's OWN declarations as evidence: at least one sibling sharing the token's declared family head must be overridden. That drops the other 15 — the 14 wholly-inherited tokens (focus-ring geometry, control heights, topbar height, sidebar widths, radii, transitions, font — a theme inheriting a family whole is a legitimate answer, so no finding and no invented intent) and `--app-solid-label`, whose family head `--app-solid` is never declared, so its prefix neighbours belong to a different family and there is nothing to cite. |
 | `unresolved-reference` | 214 `var()` uses naming 72 distinct names | 0 | Nothing to filter on this fixture — all 72 distinct used names are declared somewhere, and the `@theme inline` declarations count as declaring, so the alias namespace is a lookup hit, not a judged population. The rule's four populations (a typo'd use, a dangling fallback, a broken declaration chain, a dangling alias chain) simply do not occur here; the tests pin them on hostile sheets, and pin this 0 as a preservation check. `@property` registrations are read: a name registered with an `initial-value` always resolves, so it counts as declared (and a `var()` chain reaching it resolves to that value, in every theme) — the fixture has none, so this changes nothing here. A registration needs a `syntax`, a non-`*` syntax needs an `initial-value`, and a `syntax: "*"` registration with no initial value is guaranteed-invalid, so that name is still reported. Registrations also enter the `coverage` and `unread-colors` inventories (the fixture has none, so its sections are byte-identical). Not modelled: whether the initial value parses against the syntax. |
 | `cycle-reference` | — | 0 | Nothing to filter on this fixture — no `var()` chain in it returns to a name already on the chain, so there are no candidates at all. Its four compound-with-`var()` declarations (the `color-mix` toast surfaces) all point at plain non-ancestor colours, so the compound back-edge scan reads them and finds nothing — the dependent-declaration pass that re-marks compound-stopped walks reads the same finished results, reaches its fixed point on the first round, and finds nothing to re-mark — and the names-only pass that mints the loops no walk closes walks the fixture's 140 primary-position references (every one landing on a declared name) and closes no loop. The tests pin the rule's populations on hostile sheets (a root loop, a self-loop, a theme-authored loop, a compound loop, the override-heals and inherited-dedupe negatives, a tail into a compound loop, a compound tail into a loop, a dependent several hops out, and the all-compound loops the walk-blind mint now names) and pin this 0 as a preservation check. |

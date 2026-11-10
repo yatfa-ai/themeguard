@@ -21,8 +21,8 @@ const NINE_TOKENS = `
 :root {
   --bg: light-dark(#fff, #000);
   --fg: light-dark(#000, #fff);
-  --card: color-mix(in srgb, #fff 90%, #000);
-  --muted: color-mix(in srgb, #fff 90%, #000);
+  --card: color-mix(in oklch, #fff 90%, #000);
+  --muted: color-mix(in oklch, #fff 90%, #000);
   --border: #ccc;
   --line: #ccc;
   --accent: oklch(from var(--border) l c h);
@@ -53,7 +53,7 @@ describe("unreadColorSyntax — which syntax kept a token out", () => {
   it.each([
     ["light-dark(#fff, #000)", "light-dark"],
     ["LIGHT-DARK(var(--a), var(--b))", "light-dark"],
-    ["color-mix(in srgb, #fff 90%, #000)", "color-mix"],
+    ["color-mix(in oklch, #fff 90%, #000)", "color-mix"],
     ["oklch(from var(--x) l c h)", "relative-color"],
     ["rgb(from #123456 r g b / 50%)", "relative-color"],
     ["color(display-p3 1 0 0)", "color(display-p3)"],
@@ -183,7 +183,7 @@ body { background: var(--bg); color: var(--ink); }
 
   it("lists a token that resolves through var() to unread syntax", () => {
     const rows = audit(
-      resolveCss(":root { --base: color-mix(in srgb, red, blue); --alias: var(--base); }"),
+      resolveCss(":root { --base: color-mix(in oklch, red, blue); --alias: var(--base); }"),
     ).unreadColors;
     expect(rows.map((r) => [r.token, r.syntax])).toEqual([
       ["--alias", "color-mix"],
@@ -208,7 +208,7 @@ body { background: var(--bg); color: var(--ink); }
 
 describe("unread-colors branch pins", () => {
   it("a whole-value call followed by more value is not listed", () => {
-    expect(unreadColorSyntax("color-mix(in srgb, red, blue) 10%")).toBeNull();
+    expect(unreadColorSyntax("color-mix(in oklch, red, blue) 10%")).toBeNull();
     expect(unreadColorSyntax("light-dark(#fff, #000) !important")).toBeNull();
   });
 

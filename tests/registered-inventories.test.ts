@@ -225,7 +225,7 @@ describe("the import closure", () => {
   it("a registration spliced from an imported file is inventoried, with its file cited", () => {
     writeFileSync(
       join(dir, "props.css"),
-      `\n@property --banner { syntax: "<color>"; inherits: true; initial-value: color-mix(in srgb, #fff 50%, #000); }\n`,
+      `\n@property --banner { syntax: "<color>"; inherits: true; initial-value: color-mix(in oklch, #fff 50%, #000); }\n`,
       "utf8",
     );
     const main = sheet(`@import "./props.css";\n.x { color: var(--banner); }\n`, "closure-main.css");
