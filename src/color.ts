@@ -88,8 +88,9 @@ const MODERN = /^(oklch|oklab|lab|lch|hwb|color)\(\s*([^)]*)\)$/i;
  * colour functions — `oklch()`, `oklab()`, `lab()`, `lch()`, `hwb()` and
  * `color(srgb r g b)` — in their space-separated `/ alpha` form only (CSS has no
  * comma form for them), with percentage or number channels, the `none` keyword
- * read as 0, and hue units `deg`/`grad`/`rad`/`turn`; and the CSS named-colour
- * keywords plus `transparent`.
+ * read as 0, and hue units `deg`/`grad`/`rad`/`turn`; the CSS named-colour
+ * keywords plus `transparent`; and `color-mix(in srgb|srgb-linear, A [N%], B
+ * [M%])` of operands this function itself reads (see {@link mixColors}).
  *
  * Every non-sRGB form is converted with the standard CSS Color Module Level 4
  * matrices, then CLIPPED into sRGB per channel and quantised to 0–255 exactly
@@ -100,7 +101,9 @@ const MODERN = /^(oklch|oklab|lab|lch|hwb|color)\(\s*([^)]*)\)$/i;
  *
  * Returns `null` — never a guess — for anything that is not a colour this file
  * can place in sRGB: a length, a duration, a font stack, a box-shadow list, a
- * `color-mix()` or `light-dark()` expression, relative colour syntax
+ * `color-mix()` outside the rectangular sRGB spaces (polar, `xyz*`, `oklab`,
+ * `lab`) or with an operand this function cannot read (`var()`, `currentColor`,
+ * a system colour), a `light-dark()` expression, relative colour syntax
  * (`oklch(from var(--x) l c h)`), a non-sRGB `color()` space, a system colour,
  * `currentColor`. Callers classify those explicitly rather than pretending they
  * have a swatch.
@@ -112,6 +115,8 @@ export function parseColor(value: string | null | undefined): Color | null {
 
   const hex = v.match(HEX);
   if (hex) return parseHex(hex[1]);
+
+  if (COLOR_MIX_OPEN.test(v)) return parseColorMix(v);
 
   const rgb = v.match(RGB);
   if (rgb) return parseRgb(rgb[1]);
@@ -131,6 +136,147 @@ export function parseColor(value: string | null | undefined): Color | null {
   if (word === "transparent") return rgba(0, 0, 0, 0);
 
   return null;
+}
+
+// ── color-mix() ────────────────────────────────────────────────────────────
+
+const COLOR_MIX_OPEN = /^color-mix\(/i;
+const PERCENT = String.raw`[+-]?(?:\d+\.?\d*|\.\d+)%`;
+const TRAILING_PERCENT = new RegExp(String.raw`^([\s\S]*\S)\s+(${PERCENT})$`);
+const LEADING_PERCENT = new RegExp(String.raw`^(${PERCENT})\s+([\s\S]+)$`);
+
+/** One `<color> <percentage>?` item of a `color-mix()`, as written. */
+export interface ColorMixItem {
+  /** The colour operand's text, trimmed — a `var()`, a nested `color-mix()`, a hex, a keyword. */
+  readonly color: string;
+  /** The percentage as a number (`15` for `15%`), or `null` when the item carries none. */
+  readonly percent: number | null;
+}
+
+/** The structure of a whole-value `color-mix(in <space>, A [N%], B [M%])`. */
+export interface ColorMixParts {
+  /** Everything between `in` and the first comma, lower-cased: `srgb`, `oklch longer hue`, … */
+  readonly space: string;
+  readonly first: ColorMixItem;
+  readonly second: ColorMixItem;
+}
+
+/** Split `text` on the commas that sit at parenthesis depth 0. `null` when the parens do not balance. */
+function splitTopLevel(text: string): string[] | null {
+  const parts: string[] = [];
+  let depth = 0;
+  let start = 0;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === "(") depth++;
+    else if (ch === ")") {
+      depth--;
+      if (depth < 0) return null;
+    } else if (ch === "," && depth === 0) {
+      parts.push(text.slice(start, i));
+      start = i + 1;
+    }
+  }
+  if (depth !== 0) return null;
+  parts.push(text.slice(start));
+  return parts;
+}
+
+function parseMixItem(raw: string): ColorMixItem | null {
+  const text = raw.trim();
+  if (text === "") return null;
+  const trailing = text.match(TRAILING_PERCENT);
+  if (trailing) return { color: trailing[1].trim(), percent: Number(trailing[2].slice(0, -1)) };
+  const leading = text.match(LEADING_PERCENT);
+  if (leading) return { color: leading[2].trim(), percent: Number(leading[1].slice(0, -1)) };
+  return { color: text, percent: null };
+}
+
+/**
+ * Read the structure of a WHOLE-value `color-mix(in <space>, A [N%], B [M%])`
+ * without judging the operands or the space. `null` when the value is not
+ * exactly one two-item `color-mix()` call. Used by {@link parseColor} and by the
+ * resolver, which substitutes `var()` operands before asking for the colour.
+ */
+export function colorMixParts(value: string): ColorMixParts | null {
+  const v = value.trim();
+  if (!COLOR_MIX_OPEN.test(v) || !v.endsWith(")")) return null;
+  const inner = v.slice("color-mix(".length, -1);
+  const segments = splitTopLevel(inner);
+  if (segments === null || segments.length !== 3) return null;
+  const head = segments[0].trim().toLowerCase().match(/^in\s+(\S[\s\S]*)$/);
+  if (!head) return null;
+  const first = parseMixItem(segments[1]);
+  const second = parseMixItem(segments[2]);
+  if (first === null || second === null) return null;
+  return { space: head[1].replace(/\s+/g, " "), first, second };
+}
+
+function parseColorMix(value: string): Color | null {
+  const parts = colorMixParts(value);
+  if (parts === null) return null;
+  const a = parseColor(parts.first.color);
+  const b = parseColor(parts.second.color);
+  if (a === null || b === null) return null;
+  return mixColors(parts.space, a, parts.first.percent, b, parts.second.percent);
+}
+
+/** Decode one 0–255 sRGB byte to linear light (0–1). */
+const srgbToLinear = (c: number): number => {
+  const s = c / 255;
+  return s <= 0.04045 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+};
+
+/**
+ * `color-mix(in <space>, a pa%, b pb%)` for the rectangular spaces whose
+ * conversion is a closed form from the sRGB bytes this file already holds:
+ * `srgb` and `srgb-linear`. Any other space — the polar ones (`hsl`, `hwb`,
+ * `lch`, `oklch`, whose hue interpolation needs a method), `xyz*`, and
+ * `oklab`/`lab` — returns `null`: `oklab`/`lab` have the forward matrices here
+ * but no independently computed reference to calibrate a mix against, so v1
+ * declines them rather than ship an unchecked number.
+ *
+ * Percentages follow CSS Color 5: both omitted is 50/50; one omitted is
+ * 100 minus the other; a negative or over-100 percentage, or both zero, is
+ * invalid (`null`); a sum other than 100 is scaled to 1, and a sum below 100
+ * additionally multiplies the result's alpha by sum/100. Interpolation is on
+ * PREMULTIPLIED alpha, so a `transparent` operand fades the mix without
+ * darkening it. The result is quantised to 0–255 like every other form.
+ */
+export function mixColors(
+  space: string,
+  a: Color,
+  pa: number | null,
+  b: Color,
+  pb: number | null,
+): Color | null {
+  if (space !== "srgb" && space !== "srgb-linear") return null;
+  for (const p of [pa, pb]) if (p !== null && (!Number.isFinite(p) || p < 0 || p > 100)) return null;
+  let p1: number;
+  let p2: number;
+  if (pa === null && pb === null) [p1, p2] = [50, 50];
+  else if (pa === null) [p1, p2] = [100 - (pb as number), pb as number];
+  else if (pb === null) [p1, p2] = [pa, 100 - pa];
+  else [p1, p2] = [pa, pb];
+  const sum = p1 + p2;
+  if (sum === 0) return null;
+  const alphaScale = sum < 100 ? sum / 100 : 1;
+
+  // Weights stay in the written percentage units (never divided by `sum` up
+  // front) so a decimal like 15% is not a binary-inexact 0.15 that turns an
+  // exact .5 midpoint into .4999…: 15% of 245 over 85% of 15 is 4950/100, and
+  // that rounds to 50, the byte the stylesheet's own hand arithmetic records.
+  const wa = p1 * a.a;
+  const wb = p2 * b.a;
+  const weight = wa + wb;
+  if (weight === 0) return rgba(0, 0, 0, 0);
+  const linear = space === "srgb-linear";
+  const to = (c: number): number => (linear ? srgbToLinear(c) : c);
+  const out = [0, 1, 2].map((i) => {
+    const mixed = (wa * to([a.r, a.g, a.b][i]) + wb * to([b.r, b.g, b.b][i])) / weight;
+    return linear ? encodeSrgb(mixed) * 255 : mixed;
+  });
+  return rgba(out[0], out[1], out[2], (weight / sum) * alphaScale);
 }
 
 function parseHex(digits: string): Color | null {

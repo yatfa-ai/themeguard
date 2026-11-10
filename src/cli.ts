@@ -1418,7 +1418,7 @@ export function formatReport(
     lines.push("  nothing left out — every colour-valued token was read by the colour rules.");
   } else {
     lines.push(
-      "  tokens whose value is colour syntax themeguard does not evaluate (light-dark(), color-mix(), relative colour, color() outside srgb, currentColor, system colours) — left out of collision, scale-collapse and contrast, not judged either way.",
+      "  tokens whose value is colour syntax themeguard does not evaluate (light-dark(), color-mix() outside srgb / srgb-linear or with an operand it cannot read, relative colour, color() outside srgb, currentColor, system colours) — left out of collision, scale-collapse and contrast, not judged either way.",
     );
     for (const theme of new Set(report.unreadColors.map((row) => row.theme))) {
       const rows = report.unreadColors.filter((row) => row.theme === theme);

@@ -247,7 +247,7 @@ describe("what stays null — never a guess", () => {
     }
   });
 
-  it("keeps relative colour syntax, color-mix() and light-dark() outside the boundary", () => {
+  it("keeps relative colour syntax, a color-mix() outside srgb / srgb-linear and light-dark() outside the boundary", () => {
     for (const v of [
       "oklch(from var(--brand) l c h)",
       "oklch(from #fff calc(l - 0.1) c h)",

@@ -159,9 +159,12 @@ describe("translucent and non-colour values are represented, never coerced", () 
     expect(byName("--app-radius-pill")?.kind).toBe("non-color");
     expect(byName("--transition-fast")?.resolvedValue).toBe("150ms");
     expect(byName("--font-family")?.kind).toBe("non-color");
-    // A color-mix() expression is a colour a browser can compute but this stage
-    // cannot: reported as non-color, never guessed at.
-    const mix = byName("--app-success-toast-surface");
+    // A color-mix() the colour evaluator declines (here a polar space) is a
+    // colour a browser can compute but this stage cannot: non-color, never
+    // guessed at. The fixture's own srgb mixes are evaluated — see
+    // tests/color-mix.test.ts.
+    const declined = resolveCss(":root { --m: color-mix(in oklch, red, blue); }");
+    const mix = declined.token("--m", ROOT_THEME);
     expect(mix?.kind).toBe("non-color");
     expect(mix?.resolvedValue).toContain("color-mix(");
   });

@@ -406,7 +406,7 @@ describe("rule 3 — scale collapse, over the vendored fixture", () => {
     // Sorted-by-L* adjacency within a family, run over the same fixture. This
     // is not a hypothetical: it is the alternative the ticket names, computed
     // here so the docstring's two objections are checkable numbers rather than
-    // an argument. It returns 25 findings to state pairing's 2, and among them
+    // an argument. It returns 29 findings to state pairing's 2, and among them
     // are ALL FOUR of the deliberate semantic↔`-border` twins that success
     // criterion 3 protects — so adopting it would fail this suite elsewhere.
     const names = new TokenNames(resolved);
@@ -430,7 +430,9 @@ describe("rule 3 — scale collapse, over the vendored fixture", () => {
         }
       }
     }
-    expect(sortedAdjacency).toHaveLength(25);
+    // 25 before `color-mix(in srgb, …)` was evaluated; the four root
+    // `--app-*-toast-surface` tokens it now reads add four near-adjacent pairs.
+    expect(sortedAdjacency).toHaveLength(29);
     // Objection 1 — it manufactures the pair the fixture denies (:129-148).
     expect(sortedAdjacency).toContain("root --app-surface-hover~--app-surface-raised");
     // Objection 2 — it fires on every deliberate semantic↔`-border` twin.
