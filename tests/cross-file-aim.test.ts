@@ -12,6 +12,7 @@ import {
 import { formatReport, formatReportJson, EXIT_FINDINGS, EXIT_OK } from "../src/cli.js";
 import { loadStylesheet } from "../src/load.js";
 import { resolveStylesheet } from "../src/resolve.js";
+import type { Finding } from "../src/rules/finding.js";
 import { expectReportKeyOrder } from "./report-keys.js";
 import { run, unmatchedRow } from "./run.js";
 import { soleUnmatchedRow } from "./unmatched-json.js";
@@ -611,9 +612,10 @@ describe("the derivation reuses the matcher's own semantics", () => {
     ]);
   });
 
-  it("recovers coordinates from an `evidence` citation for a rule that publishes no `sites`", () => {
-    // dead-token carries no `sites` and publishes `evidence.declaredIn` in
-    // `":root:2"` / `"tokens.css:2"` shape instead. The reader classifies the
+  it("recovers coordinates from an `evidence` citation for a finding that publishes no `sites`", () => {
+    // Every rule publishes `sites` now, so the fallback is exercised on a
+    // dead-token finding with its `sites` stripped: `evidence.declaredIn` in
+    // `":root:2"` / `"tokens.css:2"` shape is the compatibility citation. The reader classifies the
     // prefix against the sheet's own origins — exact, never a shape guess — so
     // a selector prefix yields an entry-file coordinate and a file prefix an
     // imported one. Both spellings appear in one closure here.
@@ -625,15 +627,22 @@ describe("the derivation reuses the matcher's own semantics", () => {
     const resolved = resolveStylesheet(loadStylesheet(entry));
     const origins = closureOrigins(resolved);
     const dead = audit(resolved).findings.filter((f) => f.rule === "dead-token");
-    const imported = dead.find((f) => f.tokens.includes("--imported-orphan"));
-    const own = dead.find((f) => f.tokens.includes("--entry-orphan"));
-    expect(imported).toBeDefined();
-    expect(own).toBeDefined();
-    expect(findingSiteCoordinates(imported!, origins)).toEqual([{ line: 1, origin: "tokens.css" }]);
-    expect(findingSiteCoordinates(own!, origins)).toEqual([{ line: 2 }]);
+    const importedWhole = dead.find((f) => f.tokens.includes("--imported-orphan"));
+    const ownWhole = dead.find((f) => f.tokens.includes("--entry-orphan"));
+    expect(importedWhole).toBeDefined();
+    expect(ownWhole).toBeDefined();
+    // The published sites carry the same coordinates the citation strings do.
+    expect(findingSiteCoordinates(importedWhole!, origins)).toEqual(
+      importedWhole!.sites,
+    );
+    expect(findingSiteCoordinates(ownWhole!, origins)).toEqual(ownWhole!.sites);
+    const imported: Finding = { ...importedWhole!, sites: undefined };
+    const own: Finding = { ...ownWhole!, sites: undefined };
+    expect(findingSiteCoordinates(imported, origins)).toEqual([{ line: 1, origin: "tokens.css" }]);
+    expect(findingSiteCoordinates(own, origins)).toEqual([{ line: 2 }]);
     // And the filter reads them the same way the matcher does.
-    expect(findingLinesIn(imported!, undefined, origins)).toEqual([]);
-    expect(findingLinesIn(own!, undefined, origins)).toEqual([2]);
+    expect(findingLinesIn(imported, undefined, origins)).toEqual([]);
+    expect(findingLinesIn(own, undefined, origins)).toEqual([2]);
   });
 
   it("siteLineCovers is AT the site or ONE LINE ABOVE it — never below", () => {

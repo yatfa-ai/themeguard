@@ -1272,7 +1272,7 @@ describe("finding position — the declaration each rule actually judged", () =>
     expect(success?.message).not.toContain("Declared at lines");
   });
 
-  it("gives every one of the three rules' findings a site per token, and dead-token none", () => {
+  it("gives every one of the three rules' findings a site per token, and dead-token a site per declaration", () => {
     for (const finding of [...collisions, ...scale, ...family]) {
       expect(finding.sites, `${finding.rule}/${finding.tokens.join(",")}`).toHaveLength(
         finding.tokens.length,
@@ -1284,14 +1284,16 @@ describe("finding position — the declaration each rule actually judged", () =>
         expect(site.line).toBeGreaterThan(0);
       }
     }
-    // dead-token is UNTOUCHED: it already says `:root:402`, with a selector the
-    // merged theme tables cannot supply, so its absence here is a fact rather
-    // than an omission.
+    // dead-token's message is UNTOUCHED (`:root:402`, selector included) and
+    // it now ALSO publishes one site per declaration, in `declaredIn` order,
+    // without the selector. Both fixture dead tokens are entry-file
+    // declarations, so neither site carries an `origin`.
     expect(dead).toHaveLength(2);
     for (const finding of dead) {
-      expect(finding.sites).toBeUndefined();
       expect(finding.message).not.toContain("Declared at line");
     }
+    expect(dead[0]?.sites).toEqual([{ name: "--topbar-height", line: 402 }]);
+    expect(dead[1]?.sites).toEqual([{ name: "--transition-slow", line: 407 }]);
     expect(dead[0]?.message).toBe(
       "--topbar-height is declared at :root:402 and no var() in this stylesheet references it.",
     );

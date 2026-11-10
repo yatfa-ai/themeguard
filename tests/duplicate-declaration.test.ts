@@ -61,9 +61,12 @@ describe("rule 7 — duplicate declaration, the shapes that used to pass silent"
     expect(finding.evidence["declarationCount"]).toBe(2);
     expect(finding.evidence["shadowedValue"]).toBe("#FF0000");
     expect(finding.evidence["winnerValue"]).toBe("#00AA00");
-    // No `sites`, like dead-token: the positions are named in the message,
-    // with a selector the merged theme tables cannot supply.
-    expect(finding.sites).toBeUndefined();
+    // One site per declaration (shadowed and winner both), in the same order
+    // as `declaredIn`; the selector stays only in the `declaredIn` strings.
+    expect(finding.sites).toEqual([
+      { name: "--accent", line: 3 },
+      { name: "--accent", line: 4 },
+    ]);
 
     // And the audit carries it, exit-code active, as its own section count.
     const report = audit(resolveCss(css));
@@ -474,12 +477,13 @@ describe("the import closure — a duplicate inside an imported file is cited BY
    * `origin` fence in `audit.ts`'s `findingLinesIn` exists to answer, pinned
    * here because this rule reaches that fence by a path no other rule takes.
    *
-   * `duplicate-declaration` carries no `sites` (dead-token's stance: the rule
-   * names its positions in its own message), so site-scoped directive
-   * matching falls through to the `evidence.declaredIn` branch — and that
-   * fallback predates 0.1.10's closure work. The fence it gained is the one
-   * these two tests pin: a citation naming a known imported origin is SKIPPED
-   * when collecting a finding's lines, because directives are scanned from
+   * `duplicate-declaration` publishes one `sites` entry per declaration, each
+   * with its `origin` when spliced in over an `@import` edge, and site-scoped
+   * directive matching reads them first (the `evidence.declaredIn` citation
+   * fallback predates 0.1.10's closure work and reads the same coordinates).
+   * The fence they carry is the one these two tests pin: a site naming a
+   * known imported origin is SKIPPED when collecting a finding's lines for an
+   * entry-file directive, because directives are scanned from
    * the entry file's text ONLY and line numbers restart at 1 in every spliced
    * sheet. Without it, an entry-file directive on line 2 would silence a
    * finding whose site is line 2 OF ANOTHER FILE — a coincidence of numbers

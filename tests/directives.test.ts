@@ -197,8 +197,8 @@ describe("scanIgnoreDirectives — the grammar, as data in and errors out", () =
 /**
  * A stylesheet with exactly two findings, each on a KNOWN line: the
  * `--accent`/`--success` collision (declared at lines 2 and 3) and the dead
- * `--unused` token (declared at line 4, which carries no `sites` — its
- * position is `evidence.declaredIn`'s `":root:4"`).
+ * `--unused` token (declared at line 4, published as its `sites` entry
+ * and, for compatibility, as `evidence.declaredIn`'s `":root:4"`).
  */
 const SITE_CSS = `:root {
   --accent: #16A34A;
@@ -269,9 +269,9 @@ describe("audit — the site conjunct, on top of entry matching that has not cha
     expect(report.suppressed).toHaveLength(0);
   });
 
-  it("reaches a dead token through evidence.declaredIn — the position it already publishes", () => {
-    // --unused is declared at line 4 with no `sites`; its lines come from the
-    // `":root:4"` strings its own evidence carries.
+  it("reaches a dead token through its published sites — the same line its evidence cites", () => {
+    // --unused is declared at line 4; its lines come from the `sites` the rule
+    // publishes, which agree with the `":root:4"` strings its evidence carries.
     const at = audit(resolved, {
       suppressions: [
         { rule: "dead-token", reason: "not yet wired up", line: 4, source: "vendor.css:4" },
