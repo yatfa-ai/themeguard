@@ -207,12 +207,15 @@ export interface AuditReport {
   readonly coverage: readonly ThemeCoverage[];
   /**
    * The `non-color` tokens, per theme, whose value is colour-valued syntax the
-   * colour rules do not read (`light-dark()`, `color-mix()` the colour parser declines, relative colour,
+   * colour rules do not read (`color-mix()` the colour parser declines, a
+   * `light-dark()` whose chosen arm does not resolve to a colour, relative colour,
    * `color()` in a non-sRGB space, `currentColor`, system colours) — the
-   * omission made visible. A fact inventory under the `skipped` / `coverage`
-   * precedent: always present, an EMPTY array (not absent) when nothing was
-   * left out, and never an exit code. Appended after `coverage` so no existing
-   * key moves in the report object's insertion order.
+   * omission made visible. A whole-value `light-dark()` whose chosen arm
+   * resolves is evaluated per theme by the resolver and drops out, the way a
+   * readable `color-mix()` does. A fact inventory under the `skipped` /
+   * `coverage` precedent: always present, an EMPTY array (not absent) when
+   * nothing was left out, and never an exit code. Appended after `coverage` so
+   * no existing key moves in the report object's insertion order.
    */
   readonly unreadColors: readonly UnreadColor[];
 }

@@ -81,40 +81,53 @@ describe("unreadColorSyntax — which syntax kept a token out", () => {
   });
 });
 
-describe("the nine-token stylesheet — exactly the seven syntax-matching tokens", () => {
+describe("the nine-token stylesheet — exactly the syntax-matching tokens that stay out", () => {
+  // --bg and --fg are written `light-dark(...)`: the resolver evaluates them
+  // per theme view (root the light arm, the implicit dark view the dark arm),
+  // so they are colours and drop out of this inventory — the same exit the
+  // readable color-mix() took. The five tokens whose syntax the colour parser
+  // still declines are listed in BOTH views: the implicit dark view inherits
+  // them from :root, and the colour rules did not read them there either.
   const path = sheet(NINE_TOKENS);
   const result = run(path);
 
-  it("lists bg, fg, card, muted, accent, sh and cc — and neither hex token", () => {
+  it("lists accent, card, cc, muted and sh per view — the evaluated light-dark pair drops out", () => {
     const rows = audit(resolveCss(NINE_TOKENS)).unreadColors;
-    expect(rows.map((r) => [r.token, r.syntax])).toEqual([
-      ["--accent", "relative-color"],
-      ["--bg", "light-dark"],
-      ["--card", "color-mix"],
-      ["--cc", "currentColor"],
-      ["--fg", "light-dark"],
-      ["--muted", "color-mix"],
-      ["--sh", "color(display-p3)"],
+    expect(rows.map((r) => [r.theme, r.token, r.syntax])).toEqual([
+      ["root", "--accent", "relative-color"],
+      ["root", "--card", "color-mix"],
+      ["root", "--cc", "currentColor"],
+      ["root", "--muted", "color-mix"],
+      ["root", "--sh", "color(display-p3)"],
+      ["dark", "--accent", "relative-color"],
+      ["dark", "--card", "color-mix"],
+      ["dark", "--cc", "currentColor"],
+      ["dark", "--muted", "color-mix"],
+      ["dark", "--sh", "color(display-p3)"],
     ]);
   });
 
   it("prints a counted section with a per-theme headline and a row per token", () => {
-    expect(result.stdout).toContain("unread-colors (7)");
-    expect(result.stdout).toContain("  root: 7 of 9 tokens not read.");
+    expect(result.stdout).toContain("unread-colors (10)");
+    expect(result.stdout).toContain("  root: 5 of 9 tokens not read.");
+    expect(result.stdout).toContain("  dark: 5 of 9 token");
     expect(result.stdout).toContain(
-      '    [unread] --bg (light-dark) in theme "root", declared at line 3',
+      '    [unread] --card (color-mix) in theme "root", declared at line 5',
     );
     expect(result.stdout).toContain(
       '    [unread] --sh (color(display-p3)) in theme "root", declared at line 10',
     );
-    expect(result.out.filter((l) => l.startsWith("    [unread] "))).toHaveLength(7);
+    expect(result.out.filter((l) => l.startsWith("    [unread] "))).toHaveLength(10);
   });
 
-  it("never moves the exit code, and the hex pair is the only collision", () => {
+  it("never moves the exit code — an evaluated light-dark pair is not one either", () => {
     expect(result.stdout).toContain("collision (1)");
-    const clean = run(sheet(":root { --a: light-dark(#fff, #000); }\nbody { color: var(--a); }"));
+    const clean = run(sheet(":root { --a: color-mix(in oklch, #fff, #000); }\nbody { color: var(--a); }"));
     expect(clean.code).toBe(EXIT_OK);
     expect(clean.stdout).toContain("unread-colors (1)");
+    const evaluated = run(sheet(":root { --a: light-dark(#fff, #000); }\nbody { color: var(--a); }"));
+    expect(evaluated.code).toBe(EXIT_OK);
+    expect(evaluated.stdout).toContain("unread-colors (0)");
   });
 
   it("sits after coverage and before the summary line", () => {
@@ -128,14 +141,17 @@ describe("the nine-token stylesheet — exactly the seven syntax-matching tokens
       unreadColors: Record<string, unknown>[];
     };
     expect(Object.keys(report).at(-1)).toBe("unreadColors");
-    expect(report.unreadColors).toHaveLength(7);
-    expect(report.unreadColors.find((r) => r.token === "--bg")).toEqual({
+    expect(report.unreadColors).toHaveLength(10);
+    expect(report.unreadColors[0]).toEqual({
       theme: "root",
-      token: "--bg",
-      syntax: "light-dark",
-      line: 3,
+      token: "--accent",
+      syntax: "relative-color",
+      line: 9,
       declaration: "declared",
     });
+    // The evaluated light-dark pair is in no view's list.
+    expect(report.unreadColors.find((r) => r.token === "--bg")).toBeUndefined();
+    expect(report.unreadColors.find((r) => r.token === "--fg")).toBeUndefined();
   });
 });
 
@@ -155,7 +171,7 @@ describe("what stays out", () => {
 
   it("does not list a length or a font stack beside a listed token", () => {
     const rows = audit(
-      resolveCss(":root { --gap: 8px; --font: Inter, sans-serif; --bg: light-dark(#fff, #000); }"),
+      resolveCss(":root { --gap: 8px; --font: Inter, sans-serif; --bg: color-mix(in oklch, #fff, #000); }"),
     ).unreadColors;
     expect(rows.map((r) => r.token)).toEqual(["--bg"]);
   });
@@ -164,7 +180,7 @@ describe("what stays out", () => {
 describe("themes, aliases and imports", () => {
   it("lists a token a theme merely inherits under that theme, saying so", () => {
     const css = `
-:root { --bg: light-dark(#fff, #000); --ink: #101010; }
+:root { --bg: color-mix(in oklch, #fff 90%, #000); --ink: #101010; }
 [data-theme="dark"] { --ink: #f0f0f0; }
 body { background: var(--bg); color: var(--ink); }
 `;
@@ -177,7 +193,7 @@ body { background: var(--bg); color: var(--ink); }
     expect(text).toContain("unread-colors (2)");
     expect(text).toContain("  dark: 1 of 2 token");
     expect(text).toContain(
-      '    [unread] --bg (light-dark) in theme "dark", inherited from :root, declared at line 2',
+      '    [unread] --bg (color-mix) in theme "dark", inherited from :root, declared at line 2',
     );
   });
 
@@ -192,12 +208,12 @@ body { background: var(--bg); color: var(--ink); }
   });
 
   it("cites an @import origin by file", () => {
-    sheet(":root {\n  --bg: light-dark(#fff, #000);\n}\n", "imported-tokens.css");
+    sheet(":root {\n  --bg: color-mix(in oklch, #fff 90%, #000);\n}\n", "imported-tokens.css");
     const path = sheet('@import "./imported-tokens.css";\nbody { background: var(--bg); }\n');
     const text = run(path).stdout;
     expect(text).toContain("unread-colors (1)");
     expect(text).toContain(
-      '    [unread] --bg (light-dark) in theme "root", declared at imported-tokens.css:2',
+      '    [unread] --bg (color-mix) in theme "root", declared at imported-tokens.css:2',
     );
     const json = JSON.parse(run("--json", path).out[0] as string) as {
       unreadColors: { importOrigin?: string; line: number }[];
@@ -220,11 +236,11 @@ describe("unread-colors branch pins", () => {
   );
 
   it("names an @theme inline declaration and the singular token noun", () => {
-    const css = "@theme inline { --bg: light-dark(#fff, #000); }\nbody{background:var(--bg)}";
+    const css = "@theme inline { --bg: color-mix(in oklch, #fff 90%, #000); }\nbody{background:var(--bg)}";
     const r = resolveCss(css);
     const out = formatReport("x.css", audit(r), [], [], [], css, themeTokenTotals(r));
     expect(out).toContain(
-      '    [unread] --bg (light-dark) in theme "root", declared in @theme inline at line 1',
+      '    [unread] --bg (color-mix) in theme "root", declared in @theme inline at line 1',
     );
     expect(out).toContain("  root: 1 of 1 token not read.");
   });

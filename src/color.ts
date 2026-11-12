@@ -106,7 +106,9 @@ const MODERN = /^(oklch|oklab|lab|lch|hwb|color)\(\s*([^)]*)\)$/i;
  * a system colour), a `light-dark()` expression, relative colour syntax
  * (`oklch(from var(--x) l c h)`), a non-sRGB `color()` space, a system colour,
  * `currentColor`. Callers classify those explicitly rather than pretending they
- * have a swatch.
+ * have a swatch. The pipeline reads a whole-value `light-dark()` through
+ * {@link lightDarkParts} and hands this function only the resolved arm, so the
+ * decline here is what keeps an arm the resolver could not evaluate unread.
  */
 export function parseColor(value: string | null | undefined): Color | null {
   if (value === null || value === undefined) return null;
@@ -159,6 +161,38 @@ export interface ColorMixParts {
   readonly space: string;
   readonly first: ColorMixItem;
   readonly second: ColorMixItem;
+}
+
+/** The two colour arguments of a whole-value `light-dark(A, B)`, as written. */
+export interface LightDarkParts {
+  /** The light arm (what a `color-scheme: light` / default view paints). */
+  readonly light: string;
+  /** The dark arm (what a `color-scheme: dark` view paints). */
+  readonly dark: string;
+}
+
+const LIGHT_DARK_OPEN = /^light-dark\(/i;
+
+/**
+ * Read the structure of a WHOLE-value `light-dark(A, B)` — the two arms' texts,
+ * trimmed, without judging them. `null` when the value is not exactly one
+ * two-argument `light-dark()` call: unlike `color-mix()` the function takes
+ * colours only, so a segment carries no percentage and an empty arm is not a
+ * colour-shaped value. Used by the resolver, which evaluates ONE arm per theme
+ * view before handing the result to {@link parseColor}; `parseColor` itself
+ * still declines a `light-dark()` expression, because a colour it returns would
+ * claim a single value for a token that has one per colour scheme.
+ */
+export function lightDarkParts(value: string): LightDarkParts | null {
+  const v = value.trim();
+  if (!LIGHT_DARK_OPEN.test(v) || !v.endsWith(")")) return null;
+  const inner = v.slice("light-dark(".length, -1);
+  const segments = splitTopLevel(inner);
+  if (segments === null || segments.length !== 2) return null;
+  const light = segments[0].trim();
+  const dark = segments[1].trim();
+  if (light === "" || dark === "") return null;
+  return { light, dark };
 }
 
 /** Split `text` on the commas that sit at parenthesis depth 0. `null` when the parens do not balance. */

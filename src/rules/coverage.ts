@@ -51,6 +51,14 @@
  *      declares it. A registration mints no token row, so nothing else about
  *      the resolver's populations moves; a sheet with no registrations
  *      reports exactly what it did before.
+ *      IMPLICIT THEMES are inventoried like any other. A theme no scope
+ *      declares — today the implicit `dark` view the resolver mints for a
+ *      base palette written in `light-dark()` with no declared dark theme —
+ *      carries the same declared/inherited split (all `inherited`: its own
+ *      table is empty by construction), and its row is marked `implicit: true`
+ *      so the reader knows the view is the OS-dark one, not a declared block.
+ *      The finding half of this rule can never fire on such a view: its
+ *      evidence demands a sibling the theme DECLARES, and it declares nothing.
  *   2. THE FINDING (the evidence-bearing half, exit-code-active like the other
  *      rules). {@link familyConsistencyRule} reports an inherited token when
  *      the theme's OWN declarations prove per-theme tuning of its family: at
@@ -99,6 +107,7 @@
  *     fixture denies applies with equal force here.
  *   - TRANSLUCENCY IS IRRELEVANT. This is a declaration-PRESENCE fact, never a
  *     colour measurement, so a translucent value is reported like any other.
+
  *
  * The coverage half carries no exit-code weight anywhere: the CLI prints it as
  * an informational section under the `skipped` precedent — counted, named,
@@ -157,6 +166,16 @@ export interface ThemeCoverage {
    * did before registrations were inventoried.
    */
   readonly registered?: readonly CoverageEntry[];
+  /**
+   * True only on a theme NO scope declares — the implicit `dark` view the
+   * resolver minted for a base palette written in `light-dark()` when the
+   * sheet declares no dark theme ({@link ResolvedStylesheet.implicitThemes}).
+   * Its every entry is `inherited`, because the view's own table is empty by
+   * construction; the flag keeps a reader from mistaking it for a declared
+   * block. Absent on every declared theme, so a sheet whose every theme is
+   * declared serialises exactly what it did before.
+   */
+  readonly implicit?: boolean;
 }
 
 /**
@@ -218,6 +237,7 @@ export function coverageReport(
       overridden,
       inherited,
       ...(registered.length > 0 ? { registered } : {}),
+      ...(resolved.implicitThemes.includes(theme) ? { implicit: true as const } : {}),
     };
   });
 }

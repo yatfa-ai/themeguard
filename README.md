@@ -193,10 +193,32 @@ theme that redefines `--surface` — and `resolvedValue` becomes the substituted
 deliberately **not** evaluated: themeguard has the conversion matrices but no independently computed
 reference to calibrate a mix against, so it declines rather than ship an unchecked number.
 
+`light-dark(A, B)` is evaluated too, **per theme view**: a view named `dark` — the media query, the
+`.dark` class, `[data-theme=dark]`, compared case-insensitively, because the theme name is the only
+colour-scheme signal the parser carries — paints the dark arm B, and every other view (`root`,
+`light`, a custom theme such as `winter`) paints the light arm A, the CSS default. The chosen arm is
+resolved exactly like a `color-mix()` operand, so it may be a colour, a `var()` or a readable
+`color-mix()`; `resolvedValue` becomes that arm's resolved text in the view and `declaredValue` stays
+the `light-dark()` call as written. An arm that does not resolve to a colour leaves the token unread
+**in that view only** — the other view still judges its own arm. Whole-value only: a `light-dark()`
+embedded in a compound value (a shadow, a border shorthand) and an `@property` `initial-value` stay
+unread.
+
+Because `light-dark()` speaks for the dark view itself, a base palette that writes it — at `:root` or
+in the `@theme inline` alias layer — gains a theme when the sheet declares none named `dark`: the
+resolver mints an **implicit `dark` view** whose every token is inherited from `:root`, each
+`light-dark()` taking its dark arm, so a collision that exists only in the dark arm is reachable.
+Coverage marks the row `implicit: true` and the prose prints `dark (implicit)`, so it is never
+mistaken for a declared block; a finding measured in it carries `theme: "dark"` either way, and a
+suppression scoped to that theme aims at it exactly as at a declared block. Declaring a dark theme by
+any spelling (`.dark`, `[data-theme=dark]`, the media query) is the author speaking for that view
+themselves, and mints nothing.
+
 The boundary: values that are not a fixed colour themeguard can place in sRGB are not colours to it —
 a `color-mix()` in a polar (`hsl`/`hwb`/`lch`/`oklch`), `xyz*`, `oklab` or `lab` space, with a hue
 interpolation method, or with an operand it cannot read (`currentColor`, a system colour, `light-dark()`,
-a `calc()`, or a `var()` that is unresolved, loops, or is not a colour), `light-dark()`, relative colour syntax (`oklch(from var(--x) l c h)`), `color()` in any
+a `calc()`, or a `var()` that is unresolved, loops, or is not a colour), a `light-dark()` whose chosen arm
+does not resolve to a colour, relative colour syntax (`oklch(from var(--x) l c h)`), `color()` in any
 space other than `srgb` (`display-p3`, `rec2020`, …), system colours and `currentColor`. A token with
 such a value is classified `non-color` and is left out of the colour rules — but not silently: the
 report's counted **`unread-colors`** section names every such token (`--bg (light-dark) in theme
@@ -452,8 +474,9 @@ sense; the findings are the judgement, the inventory is what they are judged aga
 
 **`unread-colors` is facts, not findings.** It prints after `coverage`, under the same discipline
 (counted, named, headline even at zero, never an exit code): the tokens whose colour the colour rules
-could not read, so a stylesheet written in `light-dark()` or `color-mix(in oklch, …)` does not read as a complete
-audit. A theme that merely inherits an unread token lists it too, marked `inherited from :root`.
+could not read, so a stylesheet written in `color-mix(in oklch, …)` — or a `light-dark()` whose chosen
+arm does not resolve — does not read as a complete audit. A theme that merely inherits an unread token
+lists it too, marked `inherited from :root`.
 
 **`@property` registrations are in both inventories.** A registration with a usable `initial-value`
 mints no token row (so no rule's population moves), but it is a base-level fact: a sheet that declares
@@ -1214,7 +1237,7 @@ facts and passes no judgement, the upper one judges those facts and nothing else
 | Module | What it answers |
 |---|---|
 | `src/parse.ts` | Which blocks declare custom properties, in which of the four shapes — `:root`, `[data-theme=…]`, `@theme inline`, and a `prefers-color-scheme` `:root` block as its own theme — at which line, and every `var()` **use**, from every declaration rather than only the custom-property ones. |
-| `src/resolve.ts` | What each property resolves to **per theme**, following `var()` chains — through embedded primary-position references (`1px solid var(--c)`) as well as whole-value ones, re-marking a walk that stopped at a compound value `cycle` when the value it stopped at references a loop MEMBER in that theme's view — iterated to a fixed point, so a dependent several hops out is reached too — and minting, names-only, the loops no walk closes (an all-compound loop never completes a circuit from any seed), so their members carry the same fact and rule 6 judges them beside every other loop. Theme absence, translucency, unresolved references and cycles are each represented explicitly — none of them is an error and none is guessed at. |
+| `src/resolve.ts` | What each property resolves to **per theme**, following `var()` chains — through embedded primary-position references (`1px solid var(--c)`) as well as whole-value ones, re-marking a walk that stopped at a compound value `cycle` when the value it stopped at references a loop MEMBER in that theme's view — iterated to a fixed point, so a dependent several hops out is reached too — and minting, names-only, the loops no walk closes (an all-compound loop never completes a circuit from any seed), so their members carry the same fact and rule 6 judges them beside every other loop. Whole-value `color-mix()` and `light-dark()` evaluate to the colour the theme view paints; a base palette written in `light-dark()` with no declared dark theme gains the implicit `dark` view (`implicitThemes`). Theme absence, translucency, unresolved references and cycles are each represented explicitly — none of them is an error and none is guessed at. |
 | `src/color.ts` | Colour parsing (hex 3/4/6/8, `rgb()`/`rgba()`, `hsl()`/`hsla()`, `oklch()`, `oklab()`, `lab()`, `lch()`, `hwb()`, `color(srgb …)`, named colours and `transparent`, alpha throughout; non-sRGB forms clip per channel, no gamut mapping; `color-mix(in srgb | srgb-linear, …)` of readable operands, premultiplied), WCAG relative luminance, CIE L\*, contrast ratio, source-over compositing. |
 | `src/audit.ts` | `audit(resolved)` — the nine rules in one pass, returning findings tagged `collision`, `dead-token`, `scale-collapse`, `family-consistency`, `unresolved-reference`, `cycle-reference`, `duplicate-declaration`, `unresolved-import` or `theme-partial-token`, plus the per-theme coverage inventory. Passing `suppressions` moves caller-declared findings out of `findings` and the counts into a `suppressed` leg, and the entries that matched nothing onto `unmatchedSuppressions`. Passing `disabledRules` moves a whole rule's output out of the report's live legs — findings off `findings` and the counts onto `suppressedDisabled`, and (for `scale-collapse`, the one rule with a second channel) skipped pairs off `skipped` onto `skippedDisabled` — the project-level policy face, checked before the per-entry match, so an entry naming a disabled rule stays unmatched and the report can say why. Also publishes the suppression matcher's own halves — `matchesEntryIdentity`, `findingSiteCoordinates`, `findingLinesIn`, `siteLineCovers`, `closureOrigins` — and the two reads over a FINISHED report that diagnose an unmatched judgement without suppressing anything: `crossFileAims`, which says which site-scoped judgement would govern a live finding one `@import` edge away, and `themelessAims`, which says which `theme`-scoped judgement names a rule that reports no theme at all. |
 | `src/config.ts` | `themeguard.config.json` — optional, discovered at or above the stylesheet (nearest ancestor wins; a config beside the stylesheet is the first hop). Parses and validates the `suppress` entries (strictly: an unhonourable config is an error naming the entry, never a silent skip) and the `suppress-rule` policy — an array of rule ids to turn off whole, validated against the same rule-id list the entries' `rule` field names, an unknown id an error naming the element — into the structured declarations `audit()` filters a finished report by. |
