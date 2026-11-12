@@ -432,15 +432,15 @@ function parseSuppressList(value: unknown, path: string): readonly SuppressionEn
  */
 function parseDisabledRules(value: unknown, path: string): readonly RuleId[] {
   return mapArrayKey(value, path, "suppress-rule", "rule ids", (element, index) => {
-      if (typeof element !== "string" || !KNOWN_RULE_IDS.includes(element)) {
-        throw new ConfigError(
-          path,
-          `element ${index + 1} of "suppress-rule": unknown rule ${JSON.stringify(
-            element ?? null,
-          )} — expected one of ${RULE_IDS.join(", ")}`,
-        );
-      }
-      return element as RuleId;
+    if (typeof element !== "string" || !KNOWN_RULE_IDS.includes(element)) {
+      throw new ConfigError(
+        path,
+        `element ${index + 1} of "suppress-rule": unknown rule ${JSON.stringify(
+          element ?? null,
+        )} — expected one of ${RULE_IDS.join(", ")}`,
+      );
+    }
+    return element as RuleId;
   });
 }
 
@@ -459,15 +459,15 @@ function parseDisabledRules(value: unknown, path: string): readonly RuleId[] {
  */
 function parseThemeNames(value: unknown, path: string): readonly string[] {
   return mapArrayKey(value, path, "themes", "theme names", (element, index) => {
-      if (typeof element !== "string" || element.trim() === "") {
-        throw new ConfigError(
-          path,
-          `element ${index + 1} of "themes": must be a non-empty theme name — the class name the theme stands for, not a selector — got ${JSON.stringify(
-            element ?? null,
-          )}`,
-        );
-      }
-      return element;
+    if (typeof element !== "string" || element.trim() === "") {
+      throw new ConfigError(
+        path,
+        `element ${index + 1} of "themes": must be a non-empty theme name — the class name the theme stands for, not a selector — got ${JSON.stringify(
+          element ?? null,
+        )}`,
+      );
+    }
+    return element;
   });
 }
 
@@ -484,15 +484,15 @@ function parseThemeNames(value: unknown, path: string): readonly string[] {
  */
 function parseThemeAttributeNames(value: unknown, path: string): readonly string[] {
   return mapArrayKey(value, path, "themeAttributes", "attribute names", (element, index) => {
-      if (typeof element !== "string" || !/^[A-Za-z_][A-Za-z0-9_-]*$/.test(element)) {
-        throw new ConfigError(
-          path,
-          `element ${index + 1} of "themeAttributes": must be an attribute name — the bare name whose value names the theme, like "data-md-color-scheme", not a selector — got ${JSON.stringify(
-            element ?? null,
-          )}`,
-        );
-      }
-      return element;
+    if (typeof element !== "string" || !/^[A-Za-z_][A-Za-z0-9_-]*$/.test(element)) {
+      throw new ConfigError(
+        path,
+        `element ${index + 1} of "themeAttributes": must be an attribute name — the bare name whose value names the theme, like "data-md-color-scheme", not a selector — got ${JSON.stringify(
+          element ?? null,
+        )}`,
+      );
+    }
+    return element;
   });
 }
 
