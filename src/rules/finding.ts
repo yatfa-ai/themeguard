@@ -330,3 +330,14 @@ export function sortFindings(findings: readonly Finding[]): Finding[] {
       a.tokens.join(",").localeCompare(b.tokens.join(",")),
   );
 }
+
+/** `"a"` / `"a" and "b"` / `"a", "b" and "c"` — the list shape the messages read. */
+export function joinAnd(items: readonly string[]): string {
+  if (items.length === 1) return items[0] as string;
+  return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
+}
+
+/** `theme "dark"` / `themes "dark" and "winter"` — the noun agrees with the list. */
+export function themeList(themes: readonly string[]): string {
+  return `${themes.length === 1 ? "theme" : "themes"} ${joinAnd(themes.map((t) => `"${t}"`))}`;
+}

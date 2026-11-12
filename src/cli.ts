@@ -327,7 +327,7 @@ import { resolveStylesheet } from "./resolve.js";
 import type { TokenKind } from "./resolve.js";
 import type { Stylesheet } from "./parse.js";
 import type { FindingSite, RuleId } from "./rules/finding.js";
-import { citeSite, citeSiteList, RULE_IDS } from "./rules/finding.js";
+import { citeSite, citeSiteList, joinAnd, RULE_IDS, themeList } from "./rules/finding.js";
 import { themeTokenTotals, type UnreadColorTotals } from "./rules/unread-colors.js";
 import type { SkippedPair } from "./rules/scale-collapse.js";
 
@@ -675,17 +675,6 @@ function siblingScopeClause(pair: SkippedPair): string {
       (m) => `${m.name} is declared only in ${themeList(m.themes)} at ${citeSiteList(m.sites)}`,
     ),
   )}`;
-}
-
-/** `"a"` / `"a" and "b"` / `"a", "b" and "c"`. */
-function joinAnd(items: readonly string[]): string {
-  if (items.length === 1) return items[0] as string;
-  return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
-}
-
-/** `theme "dark"` / `themes "dark" and "winter"` — the noun agrees with the list. */
-function themeList(themes: readonly string[]): string {
-  return `${themes.length === 1 ? "theme" : "themes"} ${joinAnd(themes.map((t) => `"${t}"`))}`;
 }
 
 /**
