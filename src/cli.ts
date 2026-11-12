@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * The command — `themeguard [--json] <file.css|dir> [file.css|dir…]`.
+ * The command — `themeguard [--json | --github] <file.css|dir> [file.css|dir…]`.
  *
  * One command, ONE option; the positionals repeat. The sentence this replaces
  * — "one command, zero options" — was written at 0.1.2, when the command took
@@ -245,6 +245,15 @@
  *     before it are already on stdout — the same contract the prose reports
  *     have had since 0.1.7.
  *
+ * ── `--github`: annotations beside the number (0.1.36) ─────────────────────
+ * The second renderer. With `--github`, stdout carries one GitHub workflow
+ * command per site of each UNSUPPRESSED finding — `::warning file=…,line=…,
+ * title=themeguard/<rule>::<message>` — so a PR diff shows findings inline.
+ * It is `--json`'s sibling on every contract above: the exit codes do not move,
+ * diagnostics stay prose on stderr so stdout is never mixed, and combining it
+ * with `--json` is a usage error (exit 2) because one stdout has one format.
+ * See {@link formatReportGithub} for the file/escaping rules.
+ *
  * ── The exit contract, and why findings are not code 2 ─────────────────────
  * Three distinct codes, because a caller in a shell — a pipeline, a
  * pre-commit hook — can only branch on the number:
@@ -296,7 +305,7 @@
  */
 
 import { readFileSync, realpathSync } from "node:fs";
-import { dirname, resolve, sep } from "node:path";
+import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   audit,
@@ -360,7 +369,7 @@ function packageField(field: "version" | "homepage"): string {
   return typeof value === "string" ? value : "";
 }
 
-export const USAGE = "usage: themeguard [--json] <file.css|dir> [file.css|dir…]";
+export const USAGE = "usage: themeguard [--json | --github] <file.css|dir> [file.css|dir…]";
 
 /**
  * The `--help` / `-h` text. Short on purpose: the usage line, the three
@@ -377,6 +386,8 @@ export const HELP = [
   "",
   "options:",
   "  --json       print one NDJSON report object per stylesheet instead of prose",
+  "  --github     print one GitHub workflow-command annotation (::warning …) per",
+  "               unsuppressed finding site instead of prose; not combinable with --json",
   "  --help, -h   print this help and exit 0",
   "  --version    print the installed version and exit 0",
   "",
@@ -391,12 +402,19 @@ export const HELP = [
 ].join("\n");
 
 /**
- * The one option, and the only argument that is not a stylesheet path.
+ * The data-channel option; with {@link GITHUB_FLAG}, the only arguments that are not stylesheet paths.
  *
  * Deliberately no short alias in v1: `-j` is cheap to add later and
  * impossible to take back, and nothing has asked for it yet.
  */
 const JSON_FLAG = "--json";
+
+/**
+ * The second renderer flag (0.1.36): `--github` replaces the prose on stdout
+ * with GitHub workflow-command annotations. Mutually exclusive with
+ * {@link JSON_FLAG} — one invocation has one stdout format.
+ */
+const GITHUB_FLAG = "--github";
 
 /** The order groups are printed in — the library's own reading order. */
 const RULE_ORDER: readonly RuleId[] = RULE_IDS;
@@ -688,7 +706,7 @@ function siblingScopeClause(pair: SkippedPair): string {
  * the file reads: everything printed goes through `io`, so a test reads the
  * report instead of scraping a subprocess.
  *
- * `--json` is the one option, and it is removed here rather than anywhere
+ * `--json` and `--github` are the renderer options, and they are removed here rather than anywhere
  * deeper: everything that survives the filter is a positional, so the rest of
  * the command sees exactly the argument list it always saw. The flag is
  * position-free (any slot among the paths) and idempotent (`--json --json` is
@@ -716,7 +734,16 @@ export function runCli(args: readonly string[], io: CliIo): number {
   }
 
   const json = args.includes(JSON_FLAG);
-  const paths = args.filter((arg) => arg !== JSON_FLAG);
+  const github = args.includes(GITHUB_FLAG);
+  const paths = args.filter((arg) => arg !== JSON_FLAG && arg !== GITHUB_FLAG);
+
+  // Two stdout formats cannot share one stdout: a usage error, on stderr as
+  // prose like every diagnostic, before any file is read.
+  if (json && github) {
+    io.err(USAGE);
+    io.err(`themeguard: ${JSON_FLAG} and ${GITHUB_FLAG} cannot be combined.`);
+    return EXIT_ERROR;
+  }
 
   if (paths.length === 0) {
     io.err(USAGE);
@@ -733,7 +760,7 @@ export function runCli(args: readonly string[], io: CliIo): number {
   if (targets === null) return EXIT_ERROR;
 
   for (const path of targets) {
-    const outcome = auditStylesheet(path, io, json);
+    const outcome = auditStylesheet(path, io, json, github);
     if (outcome === EXIT_ERROR) {
       // Fail-fast: the first file that cannot be audited ends the invocation
       // with 2, whatever the files before it reported — those reports are
@@ -837,7 +864,7 @@ function expandDirectories(paths: readonly string[], io: CliIo): string[] | null
  * on `io.err` either way: the flag chooses what a SUCCESSFUL audit prints to
  * stdout, never what an error says or which code it returns.
  */
-function auditStylesheet(path: string, io: CliIo, json = false): number {
+function auditStylesheet(path: string, io: CliIo, json = false, github = false): number {
   // The entry's readability gate, byte-identical to 0.1.4: this read pins the
   // `cannot read <path>` diagnostic — and its precedence, ahead of the
   // config's, exactly as shipped. The loader re-reads the file (it has since
@@ -1025,6 +1052,7 @@ function auditStylesheet(path: string, io: CliIo, json = false): number {
   // travels.
   const siblings = siblingAims(report.unmatchedSuppressions, auditedStylesheet);
   if (json) io.out(formatReportJson(path, report, aims, themeless, skipped, siblings));
+  else if (github) for (const line of formatReportGithub(path, report)) io.out(line);
   else
     for (const line of formatReport(
       path,
@@ -1573,6 +1601,52 @@ export function formatReportJson(
     };
   });
   return JSON.stringify({ path, ...report, unmatchedSuppressions });
+}
+
+/** GitHub workflow-command data escaping: `%`, CR and LF. */
+function escapeCommandData(value: string): string {
+  return value.replace(/%/g, "%25").replace(/\r/g, "%0D").replace(/\n/g, "%0A");
+}
+
+/** Property values additionally escape `:` and `,`, which delimit properties. */
+function escapeCommandProperty(value: string): string {
+  return escapeCommandData(value).replace(/:/g, "%3A").replace(/,/g, "%2C");
+}
+
+/**
+ * The report as GitHub workflow commands — the `--github` renderer, separated
+ * from the I/O for the reason {@link formatReport} and {@link formatReportJson}
+ * are: a test reads it as data.
+ *
+ * One `::warning file=<path>,line=<n>,title=themeguard/<rule>::<message>` per
+ * SITE of each UNSUPPRESSED finding (`report.findings`), the finding's message
+ * repeated on each. Suppressed, skipped, disabled and unmatched rows are not
+ * annotated. A finding with no `sites` yields one command without `file` /
+ * `line` rather than being dropped.
+ *
+ * `file` is the path as named on the command line (the string `--json` calls
+ * `path`) for an entry-file site; for a site with `origin` — relative to the
+ * entry file's directory, as the loader stamps it — the origin is joined onto
+ * that directory. Everything is `warning`: no severity levels.
+ */
+export function formatReportGithub(path: string, report: ReturnType<typeof audit>): string[] {
+  const lines: string[] = [];
+  for (const finding of report.findings) {
+    const title = `title=${escapeCommandProperty(`themeguard/${finding.rule}`)}`;
+    const message = escapeCommandData(finding.message);
+    const sites = finding.sites ?? [];
+    if (sites.length === 0) {
+      lines.push(`::warning ${title}::${message}`);
+      continue;
+    }
+    for (const site of sites) {
+      const file = site.origin === undefined ? path : join(dirname(path), site.origin);
+      lines.push(
+        `::warning file=${escapeCommandProperty(file)},line=${site.line},${title}::${message}`,
+      );
+    }
+  }
+  return lines;
 }
 
 /**

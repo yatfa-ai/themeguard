@@ -224,7 +224,7 @@ npm install --save-dev themeguard
 
 ## Usage
 
-One command, one option — point it at a CSS file, or at a directory of them (see [Directories](#directories--themeguard-dir)).
+One command, two output options (`--json`, `--github`) — point it at a CSS file, or at a directory of them (see [Directories](#directories--themeguard-dir)).
 
 ```bash
 npx themeguard path/to/application.css
@@ -232,7 +232,7 @@ npx themeguard path/to/application.css
 
 `themeguard --help` (or `-h`) prints the usage, the exit-code contract and a pointer to this README, and
 `themeguard --version` prints the installed version; both exit `0` without auditing anything, wherever they
-appear among the arguments (help wins over version). They are the only arguments besides `--json` that are not
+appear among the arguments (help wins over version). They are the only arguments besides `--json` and `--github` that are not
 stylesheet paths (or directories).
 
 Several stylesheets take one invocation — the positionals repeat:
@@ -288,7 +288,7 @@ npx themeguard --json web/ admin/panel.css
 
 ### `--json` — the report as data
 
-`--json` is the one option. It replaces the prose on stdout with **NDJSON** — one compact JSON object
+`--json` replaces the prose on stdout with **NDJSON** — one compact JSON object
 per stylesheet, written as that file completes, in argument order:
 
 ```bash
@@ -348,7 +348,7 @@ Three properties a pipeline caller may rely on:
   rather than one array, whose closing bracket a fail-fast run never reaches.
 
 The flag is accepted in any position among the paths, and repeating it changes nothing. There is no short
-alias. Everything that is not `--json`, `--help`/`-h` or `--version` is a positional, exactly as before — an
+alias. Everything that is not `--json`, `--github`, `--help`/`-h` or `--version` is a positional, exactly as before — an
 unknown `--flag` is read as a path and fails as one — and `themeguard --json` with no stylesheet is the usage error it has always
 been, never a silent success.
 
@@ -492,6 +492,29 @@ and `suppressed`: an empty section is the visible proof that no rule is off. Its
 counts and the exit code and carry the policy's own marker instead of a quoted reason — the policy names
 rules, not prose. See
 [Turning a rule off for the project](#turning-a-rule-off-for-the-project--suppress-rule).
+
+### `--github` — annotations on the pull request
+
+`--github` replaces the prose on stdout with one [GitHub workflow command](https://docs.github.com/en/actions/reference/workflow-commands-for-github-actions)
+per **site** of each unsuppressed finding, so a finding shows up inline on the PR diff:
+
+```
+::warning file=styles/app.css,line=41,title=themeguard/collision::…message…
+```
+
+- `file` is the path as you named it on the command line (the same string `--json` calls `path`). A site
+  inside an `@import`ed file has its entry-relative origin joined onto the entry file's directory.
+- A finding with several sites emits one command per site, each carrying the same message. A finding with
+  no `sites` is emitted without `file`/`line` rather than dropped.
+- Everything is a `warning` (no severity levels). Suppressed, skipped and unmatched rows are not annotated.
+- Values are escaped per GitHub's rules (`%`, CR, LF in the message; additionally `:` and `,` in properties).
+- The exit codes are unchanged (`0`/`1`/`2`), diagnostics stay prose on stderr, and `--github` together with
+  `--json` is a usage error (exit `2`).
+
+```yaml
+# .github/workflows/themeguard.yml
+- run: npx themeguard --github web/
+```
 
 ### Stylesheets composed with `@import`
 
