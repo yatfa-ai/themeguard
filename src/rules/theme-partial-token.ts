@@ -98,20 +98,8 @@
 
 import type { ResolvedStylesheet } from "../resolve.js";
 import type { Finding, FindingSite } from "./finding.js";
-import { siteFromToken } from "./finding.js";
+import { joinAnd, siteFromToken, themeList } from "./finding.js";
 import { TokenNames } from "./tokens.js";
-
-/** `"a"` / `"a" and "b"` / `"a", "b" and "c"` — the list shape the messages read. */
-function joinList(items: readonly string[]): string {
-  if (items.length === 1) return items[0] as string;
-  if (items.length === 2) return `${items[0]} and ${items[1]}`;
-  return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
-}
-
-/** `theme "dark"` / `themes "root" and "winter"` — the noun agrees with the list. */
-function themeClause(themes: readonly string[]): string {
-  return `${themes.length === 1 ? "theme" : "themes"} ${joinList(themes.map((t) => `"${t}"`))}`;
-}
 
 /**
  * The consumers' half of the message. One consumer is one chain; several are
@@ -121,7 +109,7 @@ function themeClause(themes: readonly string[]): string {
  */
 function consumerClause(consumers: readonly string[]): string {
   const singular = consumers.length === 1;
-  const names = singular ? consumers[0] as string : joinList(consumers);
+  const names = singular ? consumers[0] as string : joinAnd(consumers);
   return `${names}'s var() chain${singular ? "" : "s"} resolve${singular ? "s" : ""} through it and find${singular ? "s" : ""} nothing`;
 }
 
@@ -144,9 +132,9 @@ function consumerClause(consumers: readonly string[]): string {
  */
 function declarationClause(themes: readonly string[], sites: readonly FindingSite[]): string {
   if (sites.every((s) => s.origin === undefined)) {
-    if (sites.length === 1) return `Declared in ${themeClause(themes)} at line ${sites[0].line}.`;
+    if (sites.length === 1) return `Declared in ${themeList(themes)} at line ${sites[0].line}.`;
     const last = sites[sites.length - 1] as FindingSite;
-    return `Declared in ${themeClause(themes)} at lines ${sites
+    return `Declared in ${themeList(themes)} at lines ${sites
       .slice(0, -1)
       .map((s) => String(s.line))
       .join(", ")} and ${last.line}.`;
@@ -154,8 +142,8 @@ function declarationClause(themes: readonly string[], sites: readonly FindingSit
   const cited = sites.map((s) =>
     s.origin === undefined ? `line ${s.line}` : `${s.origin}:${s.line}`,
   );
-  if (cited.length === 1) return `Declared in ${themeClause(themes)} at ${cited[0]}.`;
-  return `Declared in ${themeClause(themes)} at ${cited.slice(0, -1).join(", ")} and ${cited[cited.length - 1]}.`;
+  if (cited.length === 1) return `Declared in ${themeList(themes)} at ${cited[0]}.`;
+  return `Declared in ${themeList(themes)} at ${cited.slice(0, -1).join(", ")} and ${cited[cited.length - 1]}.`;
 }
 
 export function themePartialTokenRule(
@@ -253,8 +241,8 @@ export function themePartialTokenRule(
       theme: null,
       tokens: [name],
       message:
-        `${name} is declared only in ${themeClause(declaredIn)} but never reaches ` +
-        `${themeClause(fact.views)} — there, ${consumerClause(consumers)}, ` +
+        `${name} is declared only in ${themeList(declaredIn)} but never reaches ` +
+        `${themeList(fact.views)} — there, ${consumerClause(consumers)}, ` +
         `so the property falls back to unset/inherit. ` +
         `${declarationClause(declaredIn, declaredSites)}`,
       sites,
