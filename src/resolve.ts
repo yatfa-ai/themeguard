@@ -32,6 +32,19 @@
  * undeclared, which the scan deliberately does not do in v1. Both shapes are
  * pinned in `tests/compound-cycle.test.ts`.
  *
+ * ── Whole-value function evaluation, per theme ──────────────────────────────
+ * Two compound shapes do more than carry a loop edge — they are EVALUATED, per
+ * theme view, into the colour that view paints: `color-mix()` (operands
+ * substituted, srgb / srgb-linear only) and `light-dark(A, B)` (ONE arm per
+ * view — a dark view paints B, every other view paints A — the arm resolved
+ * through the same operand walk). The substituted text becomes `resolvedValue`
+ * while `declaredValue` stays as written; an arm or operand the evaluator
+ * cannot read leaves the token as written, unread, exactly as before. A base
+ * palette written in `light-dark()` with NO declared dark theme gains the
+ * implicit `dark` view ({@link IMPLICIT_DARK_THEME}, listed in
+ * {@link ResolvedStylesheet.implicitThemes}), so a collision that exists only
+ * in the dark arm is reachable.
+ *
  * ── This stage produces DATA, never verdicts ────────────────────────────────
  * Nothing here decides that two tokens holding the same colour is a defect, or
  * that an unresolved reference is an error. It reports what is there. The rules
@@ -70,7 +83,7 @@
  *                        completion so the loop's dependents resolve too.
  */
 
-import { parseColor, isTranslucent, toCss, colorMixParts, type Color } from "./color.js";
+import { parseColor, isTranslucent, toCss, colorMixParts, lightDarkParts, type Color } from "./color.js";
 import {
   parseStylesheet,
   registeredInitialValues,
@@ -80,6 +93,35 @@ import {
 
 /** The base scope. Every theme falls back to it. */
 export const ROOT_THEME = "root";
+
+/**
+ * The DARK view `light-dark()` speaks to, and the one view the resolver mints
+ * itself: a sheet whose base palette writes `light-dark()` but declares no
+ * `dark` theme still has a dark view in the browser — the OS-dark user's — so
+ * the resolver adds a theme by this name whose every token is inherited from
+ * `:root`, with `light-dark()` taking its dark arm. It is marked
+ * {@link ResolvedStylesheet.implicitThemes} so no reader mistakes it for a
+ * declared block.
+ */
+export const IMPLICIT_DARK_THEME = "dark";
+
+/**
+ * Which arm of a `light-dark(A, B)` a theme view paints.
+ *
+ * The comparison is on the theme NAME, case-insensitively: `dark` is the name
+ * the media query normalises to, the class `.dark` spells, and the attribute
+ * `[data-theme=dark]` (any case) carries — all three say the same thing about
+ * the palette, so all three take the dark arm. A configured class theme
+ * (`theme-dark`) is a name, not a colour scheme, and takes the light arm like
+ * every other non-dark view: `root`, `light`, and a custom theme (`winter`)
+ * whose own declarations say nothing about `color-scheme` default to light, the
+ * CSS default. (A declared `color-scheme: dark` is NOT honoured — the parser
+ * does not retain non-custom properties — so the name is the only signal this
+ * package has, and the README's Scope section says so.)
+ */
+function lightDarkArm(theme: string): "light" | "dark" {
+  return /^dark$/i.test(theme) ? "dark" : "light";
+}
 
 export type TokenKind =
   /** Resolves to a parseable colour. */
@@ -178,9 +220,22 @@ export interface ResolvedStylesheet {
   /**
    * `root` first, then every other theme in source order — `[data-theme=…]`
    * scopes named by their attribute value, and `prefers-color-scheme` `:root`
-   * scopes named by their feature value (`dark`, `winter`, `light`, …).
+   * scopes named by their feature value (`dark`, `winter`, `light`, …). A
+   * theme the resolver minted itself — the implicit `dark` view of a base
+   * palette written in `light-dark()` with no declared dark theme — is
+   * appended last, after every declared theme.
    */
   readonly themes: readonly string[];
+  /**
+   * The themes {@link themes} carries that NO scope declares — today exactly
+   * the implicit `dark` view ({@link IMPLICIT_DARK_THEME}), minted when the
+   * base palette or the alias layer writes a whole-value `light-dark()` and
+   * no declared theme is named `dark`. Every token in such a view is
+   * inherited from `:root`; `rules/coverage.ts` marks its row `implicit: true`
+   * so no reader mistakes it for a declared block. Empty — never absent — for
+   * a sheet whose every theme is declared.
+   */
+  readonly implicitThemes: readonly string[];
   /** Every token, for every theme. */
   readonly tokens: readonly ResolvedToken[];
   /** Per theme, the `:root` tokens that theme does not override. */
@@ -575,13 +630,36 @@ export function resolveStylesheet(sheet: Stylesheet): ResolvedStylesheet {
             };
           }
         }
-        // A whole-value `color-mix()` is the one compound shape that EVALUATES:
-        // each `var()` operand is replaced by that operand's resolved colour in
-        // THIS theme's view, so the mix is computed from what the theme
-        // actually paints. An operand that is not a colour here (unresolved,
-        // a loop, a length) leaves the token as written — unread, and rules
-        // 5/6 report it exactly as before. The substituted text becomes the
-        // resolved value; `declaredValue` is untouched.
+        // A whole-value `light-dark(A, B)` is one of the two compound shapes
+        // that EVALUATE (the other is the `color-mix()` below): the theme's
+        // view picks ONE arm — dark views the dark arm, every other view the
+        // light arm — and that arm is resolved through the same operand walk
+        // `color-mix()` uses, so the arm may be a colour, a `var()` or a
+        // readable `color-mix()`. The chosen arm becomes the resolved value;
+        // `declaredValue` stays the `light-dark()` text as written, exactly as
+        // a substituted `color-mix()`'s does.
+        //
+        // An arm that is not a colour here (unresolved, a loop, a form the
+        // colour parser declines) leaves the token as written — unread, and
+        // the unread-colours inventory lists it exactly as before. Only the
+        // CHOSEN arm is walked: falling back to the other arm would claim the
+        // view paints a colour it does not, and the OTHER view's walk answers
+        // for that arm.
+        const arms = lightDarkParts(value);
+        if (arms !== null) {
+          const arm = lightDarkArm(theme) === "dark" ? arms.dark : arms.light;
+          const r = walkValue([...chain], new Set(seen), arm, theme);
+          if (r.kind === "color" && r.resolvedValue !== null) {
+            return { resolvedValue: r.resolvedValue, kind: r.kind, chain, missingReference: null };
+          }
+        }
+        // A whole-value `color-mix()` is the other compound shape that
+        // EVALUATES: each `var()` operand is replaced by that operand's
+        // resolved colour in THIS theme's view, so the mix is computed from
+        // what the theme actually paints. An operand that is not a colour here
+        // (unresolved, a loop, a length) leaves the token as written — unread,
+        // and rules 5/6 report it exactly as before. The substituted text
+        // becomes the resolved value; `declaredValue` is untouched.
         const substituted = substituteColorMix(value, (operand) => {
           // A copy per operand: two operands sharing a base are a diamond,
           // not a loop.
@@ -630,7 +708,12 @@ export function resolveStylesheet(sheet: Stylesheet): ResolvedStylesheet {
   const tokens: ResolvedToken[] = [];
   const absences: ThemeAbsence[] = [];
 
-  for (const theme of themeNames) {
+  // One theme's token rows. Extracted from the loop below so the implicit
+  // `dark` view (minted AFTER the declared themes' walks, when the base palette
+  // turns out to speak `light-dark()`) runs the exact same code — its rows are
+  // ordinary rows, and nothing downstream can tell them apart except through
+  // `implicitThemes`.
+  const mintThemeTokens = (theme: string): void => {
     const names = new Set<string>([
       ...rootTable.keys(),
       ...(themeTables.get(theme)?.declarations.keys() ?? []),
@@ -663,6 +746,49 @@ export function resolveStylesheet(sheet: Stylesheet): ResolvedStylesheet {
         absences.push({ name, theme, inheritedValue: found.value });
       }
     }
+  }
+
+  for (const theme of themeNames) mintThemeTokens(theme);
+
+  // ── The implicit `dark` view ──────────────────────────────────────────────
+  // A base palette written in `light-dark()` has a dark view in the browser
+  // whether or not the sheet declares one: the OS-dark user's `color-scheme`
+  // paints the dark arm, and a collision that exists only there is invisible
+  // to every declared theme. So when the base-level tables (the `:root` table
+  // and the `@theme inline` alias layer — a light-dark() inside a NAMED
+  // theme's block is invisible to this view, which is root plus the alias
+  // layer, and cannot mint it) carry a whole-value `light-dark(A, B)`, and no
+  // declared theme is named `dark` in any spelling (media, class, attribute),
+  // the resolver adds a `dark` theme of its own: an EMPTY table, so every
+  // token in it is inherited from `:root` and each `light-dark()` takes its
+  // dark arm.
+  //
+  // The view is minted from the WRITING, not from evaluability — the browser's
+  // dark view exists whether or not every arm resolves, and an arm that does
+  // not is reported per view by the unread-colours inventory, the same honesty
+  // a declared theme gets. (A whole-value check only: `light-dark()` embedded
+  // in a compound value is out of scope and triggers nothing, exactly as it
+  // stays unread.)
+  //
+  // Nothing downstream treats the view specially except through
+  // `implicitThemes`: it resolves, judges and inventories like any theme, and
+  // `rules/coverage.ts` marks its row `implicit: true` so a reader does not
+  // mistake it for a declared block. A sheet that DOES declare a dark theme
+  // (`.dark`, `[data-theme=dark]`, the media query — all spellings) keeps
+  // byte-identical output, and a sheet with no base-level `light-dark()` never
+  // gains a theme at all.
+  const implicitThemes: string[] = [];
+  if (
+    themeNames.every((t) => !/^dark$/i.test(t)) &&
+    [...rootTable.values(), ...inlineTable.values()].some((d) => lightDarkParts(d.value) !== null)
+  ) {
+    themeNames.push(IMPLICIT_DARK_THEME);
+    themeTables.set(IMPLICIT_DARK_THEME, {
+      theme: IMPLICIT_DARK_THEME,
+      declarations: new Map(),
+    });
+    implicitThemes.push(IMPLICIT_DARK_THEME);
+    mintThemeTokens(IMPLICIT_DARK_THEME);
   }
 
   // ── The dependent-declaration completion ─────────────────────────────────
@@ -829,6 +955,7 @@ export function resolveStylesheet(sheet: Stylesheet): ResolvedStylesheet {
 
   return {
     themes: themeNames,
+    implicitThemes,
     tokens,
     absences,
     stylesheet: sheet,

@@ -6,8 +6,9 @@
  * returns null, and that one bit discards WHY. Most `non-color` tokens really
  * are not colours (lengths, durations, font stacks, shadows), but a modern
  * stylesheet also writes colours in syntax the parser documents it does not
- * evaluate — `light-dark()`, `color-mix()` (in a space other than `srgb` /
- * `srgb-linear`, or with an operand the parser cannot read), relative colour syntax
+ * evaluate — a `light-dark()` whose chosen arm does not resolve to a colour,
+ * `color-mix()` (in a space other than `srgb` / `srgb-linear`, or with an
+ * operand the parser cannot read), relative colour syntax
  * (`oklch(from var(--x) l c h)`), `color()` in a space other than `srgb`,
  * `currentColor` and the system-colour keywords. Such a token is silently
  * absent from collision, scale-collapse and the contrast measurements, and
@@ -19,7 +20,11 @@
  * fact, so a token the parser learns to read becomes `color` and drops out of
  * the list: that is what happened to `color-mix(in srgb|srgb-linear, …)`, which
  * the colour parser now evaluates (operands substituted per theme by the
- * resolver). A `color-mix()` it declines — polar / `xyz*` / `oklab` / `lab`
+ * resolver), and to `light-dark(A, B)`, which the resolver evaluates per theme
+ * view — the dark view takes the dark arm, every other view the light arm — so
+ * a token whose chosen arm resolves is a colour in that view and absent from
+ * the list there, while the OTHER view (the one whose arm does not resolve)
+ * still lists it. A `color-mix()` it declines — polar / `xyz*` / `oklab` / `lab`
  * space, `currentColor` or a system colour operand, an unresolved or looping
  * `var()` operand — is still listed here.
  *

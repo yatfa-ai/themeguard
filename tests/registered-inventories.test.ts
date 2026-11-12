@@ -149,11 +149,12 @@ describe("registrations beside declarations", () => {
   });
 
   it("unread-colors lists the registered initial-value only in themes that receive it", () => {
+    // dark declares --banner itself with a `light-dark()` value whose arms
+    // the resolver evaluates, so dark receives its own colour there — not the
+    // registration's initial value, which only root (declaring nothing) is
+    // read from, and only root lists.
     const rows = report.unreadColors.map((r) => [r.theme, r.token, r.declaration]);
-    expect(rows).toEqual([
-      ["root", "--banner", "registered"],
-      ["dark", "--banner", "declared"],
-    ]);
+    expect(rows).toEqual([["root", "--banner", "registered"]]);
   });
 
   it("a root declaration of a registered name is one base token, declared — the arms stay unchanged", () => {

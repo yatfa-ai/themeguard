@@ -1378,21 +1378,35 @@ export function formatReport(
   lines.push(
     `coverage (${themeCount} ${themeCount === 1 ? "theme" : "themes"}, ${baseCount} base tokens)`,
   );
+  const implicitThemes = report.coverage.filter((t) => t.implicit === true);
+  if (implicitThemes.length > 0) {
+    // The implicit view is named like a declared theme everywhere else (a
+    // finding carries `theme: "dark"` either way), so the marking has to sit
+    // where the theme itself is named — on its own row, and once in prose a
+    // reader reaches before the rows.
+    lines.push(
+      `  ${implicitThemes.map((t) => t.theme).join(", ")} ` +
+        `${implicitThemes.length === 1 ? "is a view" : "are views"} the resolver minted itself: ` +
+        `no dark theme is declared, so it models the OS-dark reading of the base palette — ` +
+        `every token inherited from :root, light-dark() taking its dark arm.`,
+    );
+  }
   for (const theme of report.coverage) {
     const byKind = (kind: TokenKind) =>
       theme.inherited.filter((e) => e.kind === kind).length;
     const color = byKind("color");
     const nonColor = byKind("non-color");
     const registered = theme.registered ?? [];
+    const label = theme.implicit === true ? `${theme.theme} (implicit)` : theme.theme;
     // Registered names (an `@property` initial value flows in) are a third
     // bucket, appended only when present so a sheet with no registrations
     // prints exactly what it always did.
     const registeredClause = registered.length > 0 ? `, registered ${registered.length}` : "";
     if (theme.inherited.length === 0 && registered.length === 0) {
-      lines.push(`  ${theme.theme}: declares all ${theme.baseTokens} base tokens, inherits 0.`);
+      lines.push(`  ${label}: declares all ${theme.baseTokens} base tokens, inherits 0.`);
     } else if (theme.inherited.length === 0) {
       lines.push(
-        `  ${theme.theme}: declares ${theme.overridden.length} of ${theme.baseTokens} base tokens, ` +
+        `  ${label}: declares ${theme.overridden.length} of ${theme.baseTokens} base tokens, ` +
           `inherits 0${registeredClause}.`,
       );
       for (const entry of registered) {
@@ -1412,7 +1426,7 @@ export function formatReport(
         if (count > 0) segments.push(`${count} ${kind}`);
       }
       lines.push(
-        `  ${theme.theme}: declares ${theme.overridden.length} of ${theme.baseTokens} base tokens, ` +
+        `  ${label}: declares ${theme.overridden.length} of ${theme.baseTokens} base tokens, ` +
           `inherits ${theme.inherited.length} (${segments.join(" / ")})${registeredClause}.`,
       );
       for (const entry of theme.inherited) {
@@ -1427,15 +1441,15 @@ export function formatReport(
 
   // Unread colours under the same precedent: the colour-valued tokens the
   // colour rules did not read, counted, named, printed even at zero, and never
-  // an exit code. Without it a stylesheet written in `light-dark()` or
-  // `color-mix()` prints `skipped (0)` and a coverage line and reads as a
-  // complete audit.
+  // an exit code. Without it a stylesheet written in `color-mix(in oklch, …)`
+  // — or a `light-dark()` whose chosen arm does not resolve — prints
+  // `skipped (0)` and a coverage line and reads as a complete audit.
   lines.push(`unread-colors (${report.unreadColors.length})`);
   if (report.unreadColors.length === 0) {
     lines.push("  nothing left out — every colour-valued token was read by the colour rules.");
   } else {
     lines.push(
-      "  tokens whose value is colour syntax themeguard does not evaluate (light-dark(), color-mix() outside srgb / srgb-linear or with an operand it cannot read, relative colour, color() outside srgb, currentColor, system colours) — left out of collision, scale-collapse and contrast, not judged either way.",
+      "  tokens whose value is colour syntax themeguard does not evaluate (a light-dark() whose chosen arm does not resolve to a colour, color-mix() outside srgb / srgb-linear or with an operand it cannot read, relative colour, color() outside srgb, currentColor, system colours) — left out of collision, scale-collapse and contrast, not judged either way.",
     );
     for (const theme of new Set(report.unreadColors.map((row) => row.theme))) {
       const rows = report.unreadColors.filter((row) => row.theme === theme);
