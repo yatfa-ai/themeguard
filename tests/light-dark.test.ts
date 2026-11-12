@@ -12,6 +12,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { audit } from "../src/audit.js";
+import { lightDarkParts } from "../src/color.js";
 import { EXIT_FINDINGS, EXIT_OK } from "../src/cli.js";
 import { IMPLICIT_DARK_THEME, ROOT_THEME, resolveCss } from "../src/resolve.js";
 import { run } from "./run.js";
@@ -256,5 +257,36 @@ describe("the implicit dark view", () => {
       ["root", false],
       ["dark", true],
     ]);
+  });
+});
+
+describe("a value that is not exactly one two-argument light-dark() call", () => {
+  const malformed = [
+    "light-dark(#fff)",
+    "light-dark(#fff, #000, #111)",
+    "light-dark(, #000)",
+    "light-dark(#fff, )",
+    "light-dark(#fff, #000) calc(1px)",
+    "light-dark(#fff, (#000)",
+  ];
+
+  it("parses a well-formed call: trims, opens case-insensitively, splits only at depth 1", () => {
+    expect(lightDarkParts("  LIGHT-DARK( #fff ,  rgb(0, 0, 0) )  ")).toEqual({
+      light: "#fff",
+      dark: "rgb(0, 0, 0)",
+    });
+  });
+
+  it.each(malformed)("lightDarkParts refuses %s", (value) => {
+    expect(lightDarkParts(value)).toBeNull();
+  });
+
+  it.each(malformed)("%s stays unread and mints no implicit dark view", (value) => {
+    const r = resolveCss(`:root { --x: ${value}; }`);
+    expect(r.themes).toEqual([ROOT_THEME]);
+    expect(r.implicitThemes).toEqual([]);
+    const token = r.token("--x", ROOT_THEME)!;
+    expect(token.kind).toBe("non-color");
+    expect(token.resolvedValue).toBe(token.declaredValue);
   });
 });
