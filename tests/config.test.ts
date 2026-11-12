@@ -184,7 +184,7 @@ describe("parseConfig — what the package can honour", () => {
       /expected a JSON object with a "suppress" key/,
     );
     expect(() => parseConfig('{"suppress": true}', "mem/config.json")).toThrowError(
-      /"suppress" must be an array/,
+      /"suppress" must be an array of entries, got true/,
     );
   });
 
