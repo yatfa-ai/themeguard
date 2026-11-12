@@ -395,15 +395,33 @@ export function parseConfig(raw: string, path: string): readonly SuppressionEntr
   return parseConfigDocument(raw, path).suppress;
 }
 
-/** `suppress`, with the array-shape gate it has always had. */
-function parseSuppressList(value: unknown, path: string): readonly SuppressionEntry[] {
+/**
+ * The array-shape gate the four list-valued config keys share: a non-array
+ * throws BEFORE any element is read, with the one sentence every key has
+ * always used, then each element is handed to `each` (which owns the
+ * per-element `element N of "key": ...` errors).
+ */
+function mapArrayKey<T>(
+  value: unknown,
+  path: string,
+  key: string,
+  noun: string,
+  each: (element: unknown, index: number) => T,
+): readonly T[] {
   if (!Array.isArray(value)) {
     throw new ConfigError(
       path,
-      `"suppress" must be an array of entries, got ${JSON.stringify(value)}`,
+      `"${key}" must be an array of ${noun}, got ${JSON.stringify(value)}`,
     );
   }
-  return value.map((item, index) => parseEntry(item, index, path));
+  return value.map((element, index) => each(element, index));
+}
+
+/** `suppress`, with the array-shape gate it has always had. */
+function parseSuppressList(value: unknown, path: string): readonly SuppressionEntry[] {
+  return mapArrayKey(value, path, "suppress", "entries", (item, index) =>
+    parseEntry(item, index, path),
+  );
 }
 
 /**
@@ -413,22 +431,16 @@ function parseSuppressList(value: unknown, path: string): readonly SuppressionEn
  * never a silent no-op policy.
  */
 function parseDisabledRules(value: unknown, path: string): readonly RuleId[] {
-  if (!Array.isArray(value)) {
-    throw new ConfigError(
-      path,
-      `"suppress-rule" must be an array of rule ids, got ${JSON.stringify(value)}`,
-    );
-  }
-  return value.map((element, index) => {
-    if (typeof element !== "string" || !KNOWN_RULE_IDS.includes(element)) {
-      throw new ConfigError(
-        path,
-        `element ${index + 1} of "suppress-rule": unknown rule ${JSON.stringify(
-          element ?? null,
-        )} — expected one of ${RULE_IDS.join(", ")}`,
-      );
-    }
-    return element as RuleId;
+  return mapArrayKey(value, path, "suppress-rule", "rule ids", (element, index) => {
+      if (typeof element !== "string" || !KNOWN_RULE_IDS.includes(element)) {
+        throw new ConfigError(
+          path,
+          `element ${index + 1} of "suppress-rule": unknown rule ${JSON.stringify(
+            element ?? null,
+          )} — expected one of ${RULE_IDS.join(", ")}`,
+        );
+      }
+      return element as RuleId;
   });
 }
 
@@ -446,22 +458,16 @@ function parseDisabledRules(value: unknown, path: string): readonly RuleId[] {
  * recognition, it never mints a theme.
  */
 function parseThemeNames(value: unknown, path: string): readonly string[] {
-  if (!Array.isArray(value)) {
-    throw new ConfigError(
-      path,
-      `"themes" must be an array of theme names, got ${JSON.stringify(value)}`,
-    );
-  }
-  return value.map((element, index) => {
-    if (typeof element !== "string" || element.trim() === "") {
-      throw new ConfigError(
-        path,
-        `element ${index + 1} of "themes": must be a non-empty theme name — the class name the theme stands for, not a selector — got ${JSON.stringify(
-          element ?? null,
-        )}`,
-      );
-    }
-    return element;
+  return mapArrayKey(value, path, "themes", "theme names", (element, index) => {
+      if (typeof element !== "string" || element.trim() === "") {
+        throw new ConfigError(
+          path,
+          `element ${index + 1} of "themes": must be a non-empty theme name — the class name the theme stands for, not a selector — got ${JSON.stringify(
+            element ?? null,
+          )}`,
+        );
+      }
+      return element;
   });
 }
 
@@ -477,22 +483,16 @@ function parseThemeNames(value: unknown, path: string): readonly string[] {
  * is harmless.
  */
 function parseThemeAttributeNames(value: unknown, path: string): readonly string[] {
-  if (!Array.isArray(value)) {
-    throw new ConfigError(
-      path,
-      `"themeAttributes" must be an array of attribute names, got ${JSON.stringify(value)}`,
-    );
-  }
-  return value.map((element, index) => {
-    if (typeof element !== "string" || !/^[A-Za-z_][A-Za-z0-9_-]*$/.test(element)) {
-      throw new ConfigError(
-        path,
-        `element ${index + 1} of "themeAttributes": must be an attribute name — the bare name whose value names the theme, like "data-md-color-scheme", not a selector — got ${JSON.stringify(
-          element ?? null,
-        )}`,
-      );
-    }
-    return element;
+  return mapArrayKey(value, path, "themeAttributes", "attribute names", (element, index) => {
+      if (typeof element !== "string" || !/^[A-Za-z_][A-Za-z0-9_-]*$/.test(element)) {
+        throw new ConfigError(
+          path,
+          `element ${index + 1} of "themeAttributes": must be an attribute name — the bare name whose value names the theme, like "data-md-color-scheme", not a selector — got ${JSON.stringify(
+            element ?? null,
+          )}`,
+        );
+      }
+      return element;
   });
 }
 
