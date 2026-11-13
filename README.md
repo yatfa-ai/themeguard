@@ -246,7 +246,7 @@ npm install --save-dev themeguard
 
 ## Usage
 
-One command, two output options (`--json`, `--github`) — point it at a CSS file, or at a directory of them (see [Directories](#directories--themeguard-dir)).
+One command, three output options (`--json`, `--github`, `--suppress-entries`) — point it at a CSS file, or at a directory of them (see [Directories](#directories--themeguard-dir)).
 
 ```bash
 npx themeguard path/to/application.css
@@ -254,7 +254,7 @@ npx themeguard path/to/application.css
 
 `themeguard --help` (or `-h`) prints the usage, the exit-code contract and a pointer to this README, and
 `themeguard --version` prints the installed version; both exit `0` without auditing anything, wherever they
-appear among the arguments (help wins over version). They are the only arguments besides `--json` and `--github` that are not
+appear among the arguments (help wins over version). They are the only arguments besides `--json`, `--github`, `--suppress-entries` and `--reason <text>` that are not
 stylesheet paths (or directories).
 
 Several stylesheets take one invocation — the positionals repeat:
@@ -370,7 +370,7 @@ Three properties a pipeline caller may rely on:
   rather than one array, whose closing bracket a fail-fast run never reaches.
 
 The flag is accepted in any position among the paths, and repeating it changes nothing. There is no short
-alias. Everything that is not `--json`, `--github`, `--help`/`-h` or `--version` is a positional, exactly as before — an
+alias. Everything that is not `--json`, `--github`, `--suppress-entries`, `--reason <text>`, `--help`/`-h` or `--version` is a positional, exactly as before — an
 unknown `--flag` is read as a path and fails as one — and `themeguard --json` with no stylesheet is the usage error it has always
 been, never a silent success.
 
@@ -802,6 +802,43 @@ rule that is off AND silent on both channels leaves its entries' ordinary advice
 "the defect was fixed" may be exactly true. The section prints even at zero, and like every counted
 section it never moves the exit code — the exit stays the unsuppressed-findings question, and findings the
 project's own policy set aside are not findings the report stands behind.
+
+### Adopting on an existing stylesheet — `--suppress-entries`
+
+Pointing themeguard at a stylesheet that already has findings gives exit `1`, and the two ways to reach `0`
+by hand are both poor: `suppress-rule` silences the rule's FUTURE findings too, and writing one `suppress`
+entry per finding is tedious. `--suppress-entries --reason "<why>"` prints the entries for you:
+
+```bash
+npx themeguard --suppress-entries --reason "legacy, tracked in #123" styles/ > /tmp/entries.json \
+  && mv /tmp/entries.json styles/themeguard.config.json
+```
+
+Redirect to a path **outside** the tree and move the file into place afterwards. Redirecting straight into
+`themeguard.config.json` (`… styles/ > styles/themeguard.config.json`, or into the current directory) does not
+work: the shell creates the empty target before themeguard starts, config discovery finds that 0-byte file
+and refuses it as invalid JSON (exit `2`, no document), and every later run keeps failing until the empty
+file is deleted. The config must also live in the directory the entries are relative to — `styles/` here, not
+the current directory — or nothing matches and every entry is reported `unmatched`.
+
+stdout carries ONE JSON document, `{ "suppress": [ … ] }`, with one entry per **unsuppressed** finding of
+every audited stylesheet — `{ rule, tokens, theme?, file, reason }`, the tokens sorted, `theme` omitted for
+a finding that has none (a dead token), identical entries listed once, in report order. Re-running against
+a config that already holds them prints an empty `suppress` array.
+
+- `--reason` is required and must not be blank (exit `2` otherwise): themeguard never invents the prose. The
+  one reason is stamped on every entry; edit individual ones afterwards.
+- Emitting the document is exit `0` whatever it contains; a file that cannot be audited keeps the fail-fast
+  `2` and prints no document. The flag cannot be combined with `--json` or `--github` (exit `2`), and it
+  never writes a file — redirect it, or merge it into an existing config by hand.
+- `file` names the audited stylesheet (the file scope an entry names — also for a finding spliced in from an
+  `@import`ed file), relative to the directory of the `themeguard.config.json` that governs it. With no config
+  yet, that home is the deepest directory containing every audited stylesheet: the stylesheet's own directory
+  for one file, `styles/` for `styles/` — save the document there (see the command above).
+
+Entries beat `suppress-rule` for ratcheting: each one pins a finding that exists today, so a NEW defect of
+the same rule still fails the build, and once a defect is fixed its entry is printed under
+[`unmatched (N)`](#when-a-judgement-matches-nothing--unmatched-n) — the cue to delete it.
 
 ### Naming your class themes — `themes`
 
