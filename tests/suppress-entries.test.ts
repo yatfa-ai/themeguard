@@ -57,6 +57,33 @@ describe("--suppress-entries", () => {
     expect(entries(again)).toEqual([]);
   });
 
+  it("supports the README's adoption flow: generate for a directory, move the document into that directory, re-run clean", () => {
+    write("adopt/styles/actiontext.css", fixtureStubCss());
+    write("adopt/styles/application.tailwind.css", fixtureCss());
+    const dir = join(tmp, "adopt", "styles");
+
+    // The generator runs while no config exists; the document goes outside the tree first.
+    const generated = run("--suppress-entries", "--reason", "legacy, tracked in #123", dir);
+    expect(generated.code).toBe(EXIT_OK);
+    expect(entries(generated)).toHaveLength(22);
+
+    // Entries are relative to `styles/`, so the config must be saved there (not in its parent).
+    write("adopt/styles/themeguard.config.json", generated.stdout);
+    const after = run(dir);
+    expect(after.code).toBe(EXIT_OK);
+    expect(after.stdout).toContain("suppressed (22)");
+    expect(after.stdout).toContain("unmatched (0)");
+  });
+
+  it("is why the README redirects outside the tree: an empty config already in place (the shell's `> themeguard.config.json`) is refused", () => {
+    write("redirect/styles/application.tailwind.css", COLLISION);
+    write("redirect/styles/themeguard.config.json", "");
+    const result = run("--suppress-entries", "--reason", "r", join(tmp, "redirect", "styles"));
+    expect(result.code).toBe(EXIT_ERROR);
+    expect(result.out).toEqual([]);
+    expect(result.stderr).toContain("invalid themeguard.config.json");
+  });
+
   it("prints a generated entry under `unmatched` once its finding is fixed", () => {
     const css = write("fixed/app.css", COLLISION);
     const generated = run("--suppress-entries", "--reason", "legacy", css);

@@ -810,8 +810,16 @@ by hand are both poor: `suppress-rule` silences the rule's FUTURE findings too, 
 entry per finding is tedious. `--suppress-entries --reason "<why>"` prints the entries for you:
 
 ```bash
-npx themeguard --suppress-entries --reason "legacy, tracked in #123" styles/ > themeguard.config.json
+npx themeguard --suppress-entries --reason "legacy, tracked in #123" styles/ > /tmp/entries.json \
+  && mv /tmp/entries.json styles/themeguard.config.json
 ```
+
+Redirect to a path **outside** the tree and move the file into place afterwards. Redirecting straight into
+`themeguard.config.json` (`… styles/ > styles/themeguard.config.json`, or into the current directory) does not
+work: the shell creates the empty target before themeguard starts, config discovery finds that 0-byte file
+and refuses it as invalid JSON (exit `2`, no document), and every later run keeps failing until the empty
+file is deleted. The config must also live in the directory the entries are relative to — `styles/` here, not
+the current directory — or nothing matches and every entry is reported `unmatched`.
 
 stdout carries ONE JSON document, `{ "suppress": [ … ] }`, with one entry per **unsuppressed** finding of
 every audited stylesheet — `{ rule, tokens, theme?, file, reason }`, the tokens sorted, `theme` omitted for
@@ -826,7 +834,7 @@ a config that already holds them prints an empty `suppress` array.
 - `file` names the audited stylesheet (the file scope an entry names — also for a finding spliced in from an
   `@import`ed file), relative to the directory of the `themeguard.config.json` that governs it. With no config
   yet, that home is the deepest directory containing every audited stylesheet: the stylesheet's own directory
-  for one file, `styles/` for `styles/` — save the document there.
+  for one file, `styles/` for `styles/` — save the document there (see the command above).
 
 Entries beat `suppress-rule` for ratcheting: each one pins a finding that exists today, so a NEW defect of
 the same rule still fails the build, and once a defect is fixed its entry is printed under
