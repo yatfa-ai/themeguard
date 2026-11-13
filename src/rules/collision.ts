@@ -131,6 +131,22 @@ export function collisionRule(
         colorValue(a, theme) === colorValue(b, theme),
     );
 
+  // Where each role resolves in `theme`: the cascade winner's declaration (and
+  // imported file, via `siteFromToken`). A role the theme cannot resolve is
+  // dropped rather than printed as a fabricated line.
+  const sitesFor = (roles: string[], theme: string): FindingSite[] =>
+    roles.flatMap((role) => {
+      const token = resolved.token(role, theme);
+      return token === undefined ? [] : [siteFromToken(role, token)];
+    });
+
+  // The first OTHER theme in which these roles resolve to different values.
+  const divergentTheme = (roles: string[], theme: string): string | undefined =>
+    resolved.themes.find(
+      (other) =>
+        other !== theme && new Set(roles.map((role) => colorValue(role, other))).size > 1,
+    );
+
   for (const theme of resolved.themes) {
     for (const group of resolved.collisionGroups(theme)) {
       const members = new Set(group.names);
@@ -179,10 +195,7 @@ export function collisionRule(
         // imported file a winner was spliced from, so a collision whose two sides
         // live in two files of a closure cites each by file instead of printing
         // two per-file line numbers side by side.
-        const sites: FindingSite[] = roles.flatMap((role) => {
-          const token = resolved.token(role, theme);
-          return token === undefined ? [] : [siteFromToken(role, token)];
-        });
+        const sites = sitesFor(roles, theme);
 
         // Does another theme SHOW these roles apart, or is this theme simply the
         // only place either of them is written? The finding is the same either
@@ -202,10 +215,7 @@ export function collisionRule(
         // Never inferred from theme COUNT: a two-theme sheet whose second theme
         // inherits both names witnesses exactly as little as a sheet with no
         // second theme at all.
-        const witness = resolved.themes.find(
-          (other) =>
-            other !== theme && new Set(roles.map((role) => colorValue(role, other))).size > 1,
-        );
+        const witness = divergentTheme(roles, theme);
         generic.push({
           rule: "collision",
           theme,
@@ -254,25 +264,13 @@ export function collisionRule(
           if (
             !declaresItself(surface, theme) &&
             !declaresItself(foreground, theme) &&
-            resolved.themes.some(
-              (other) =>
-                other !== theme &&
-                declaresItself(surface, other) &&
-                declaresItself(foreground, other) &&
-                colorValue(surface, other) === colorValue(foreground, other),
-            )
+            inLockstep(surface, foreground, theme)
           ) {
             continue;
           }
           const roles = [surface, foreground];
-          const sites: FindingSite[] = roles.flatMap((role) => {
-            const token = resolved.token(role, theme);
-            return token === undefined ? [] : [siteFromToken(role, token)];
-          });
-          const witness = resolved.themes.find(
-            (other) =>
-              other !== theme && new Set(roles.map((role) => colorValue(role, other))).size > 1,
-          );
+          const sites = sitesFor(roles, theme);
+          const witness = divergentTheme(roles, theme);
           generic.push({
             rule: "collision",
             theme,
