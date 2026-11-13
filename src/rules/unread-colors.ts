@@ -37,6 +37,7 @@
  * colour rules would have judged had they understood the syntax.
  */
 
+import { NUMBER_SOURCE } from "../color.js";
 import {
   type RegisteredToken,
   type ResolvedStylesheet,
@@ -93,7 +94,9 @@ const SYSTEM_COLORS = new Set([
  * read as a colour — only named here. (The `<hue> <pct> <pct>` shape is
  * unambiguous and IS read, so it never reaches this check.)
  */
-const CHANNEL_TRIPLE = /^[+-]?(?:\d+\.?\d*|\.\d+)(?:\s+[+-]?(?:\d+\.?\d*|\.\d+)){2}(?:\s*\/\s*\S+)?$/;
+const CHANNEL_TRIPLE = new RegExp(
+  String.raw`^${NUMBER_SOURCE}(?:\s+${NUMBER_SOURCE}){2}(?:\s*\/\s*\S+)?$`,
+);
 
 /**
  * The name and body of a value that is exactly ONE function call, else null.
