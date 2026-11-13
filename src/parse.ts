@@ -449,6 +449,27 @@ function lineIndex(css: string): number[] {
 }
 
 /**
+ * Yield the index of every character of `s` that lies OUTSIDE a quoted string.
+ *
+ * The CSS string rules live here and nowhere else among the splitters:
+ * a backslash inside a string swallows the next character, a matching quote
+ * closes the string, and a `"` or `'` outside one opens it. An unterminated
+ * string swallows the rest of `s`. Quote characters themselves are never
+ * yielded.
+ */
+function* outsideStrings(s: string): Generator<number, void, undefined> {
+  let inString: string | null = null;
+  for (let i = 0; i < s.length; i += 1) {
+    const ch = s[i] as string;
+    if (inString) {
+      if (ch === "\\") i += 1;
+      else if (ch === inString) inString = null;
+    } else if (ch === '"' || ch === "'") inString = ch;
+    else yield i;
+  }
+}
+
+/**
  * Split `s` on every TOP-LEVEL character for which `isSeparator` holds —
  * outside every paren, bracket and quoted string — then trim the pieces and
  * drop the empty ones.
@@ -456,17 +477,10 @@ function lineIndex(css: string): number[] {
 function splitTopLevel(s: string, isSeparator: (ch: string) => boolean): string[] {
   const out: string[] = [];
   let depth = 0;
-  let inString: string | null = null;
   let start = 0;
-  for (let i = 0; i < s.length; i += 1) {
+  for (const i of outsideStrings(s)) {
     const ch = s[i] as string;
-    if (inString) {
-      if (ch === "\\") i += 1;
-      else if (ch === inString) inString = null;
-      continue;
-    }
-    if (ch === '"' || ch === "'") inString = ch;
-    else if (ch === "(" || ch === "[") depth += 1;
+    if (ch === "(" || ch === "[") depth += 1;
     else if (ch === ")" || ch === "]") depth = Math.max(0, depth - 1);
     else if (depth === 0 && isSeparator(ch)) {
       out.push(s.slice(start, i));
@@ -544,18 +558,8 @@ function splitCombinators(selector: string): string[] {
  */
 function findTopLevel(s: string, re: RegExp): number {
   let depth = 0;
-  let inString: string | null = null;
-  for (let i = 0; i < s.length; i += 1) {
+  for (const i of outsideStrings(s)) {
     const ch = s[i];
-    if (inString) {
-      if (ch === "\\") i += 1;
-      else if (ch === inString) inString = null;
-      continue;
-    }
-    if (ch === '"' || ch === "'") {
-      inString = ch;
-      continue;
-    }
     if (depth === 0 && re.test(s.slice(i))) return i;
     if (ch === "(" || ch === "[") depth += 1;
     else if (ch === ")" || ch === "]") depth = Math.max(0, depth - 1);
@@ -1059,17 +1063,10 @@ function resolveNestedSelector(prelude: string, parent: string): string {
 function splitDeclarations(body: string): { text: string; offset: number }[] {
   const out: { text: string; offset: number }[] = [];
   let depth = 0;
-  let inString: string | null = null;
   let start = 0;
-  for (let i = 0; i < body.length; i += 1) {
+  for (const i of outsideStrings(body)) {
     const ch = body[i];
-    if (inString) {
-      if (ch === "\\") i += 1;
-      else if (ch === inString) inString = null;
-      continue;
-    }
-    if (ch === '"' || ch === "'") inString = ch;
-    else if (ch === "(") depth += 1;
+    if (ch === "(") depth += 1;
     else if (ch === ")") depth = Math.max(0, depth - 1);
     else if (ch === ";" && depth === 0) {
       out.push({ text: body.slice(start, i), offset: start });
