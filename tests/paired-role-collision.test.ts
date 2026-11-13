@@ -38,6 +38,18 @@ describe("collision — a surface and its own foreground (paired roles)", () => 
     expect(f?.sites?.map((s) => s.name)).toEqual(["--primary", "--primary-foreground"]);
   });
 
+  it("a pair another theme declares apart reports divergent corroboration and says so", () => {
+    const [f] = only(
+      `:root { --primary:#2563eb; --primary-foreground:#fff; }
+       .dark { --primary:#3b82f6; --primary-foreground:#3b82f6; }`,
+    );
+    expect(f?.theme).toBe("dark");
+    expect(f?.evidence.pairedRole).toBe("--primary / --primary-foreground");
+    expect(f?.evidence.corroboration).toBe('divergent in "root"');
+    expect(f?.message).toContain('Theme "root" declares them apart');
+    expect(f?.message).not.toContain("No other theme");
+  });
+
   it("is still reported when another theme restates the equality (lockstep does not exempt it)", () => {
     const found = named(
       `:root { --primary:#2563eb; --primary-foreground:#2563eb; }
