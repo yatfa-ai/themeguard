@@ -140,6 +140,39 @@ export function parseColor(value: string | null | undefined): Color | null {
   return null;
 }
 
+// ── Bare HSL channel triples (shadcn/ui, Tailwind v3) ──────────────────────
+
+const PCT = String.raw`[+-]?(?:\d+\.?\d*|\.\d+)%`;
+const HUE_TOKEN = String.raw`[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?(?:deg|grad|rad|turn)?`;
+const HSL_TRIPLE = new RegExp(
+  String.raw`^(${HUE_TOKEN})\s+(${PCT})\s+(${PCT})(?:\s*/\s*(\S+))?$`,
+  "i",
+);
+
+/**
+ * Read a custom-property value that is exactly a bare HSL channel triple —
+ * `<hue> <pct> <pct>` with an optional ` / <alpha>`, the shadcn/ui and
+ * Tailwind v3 convention (`--background: 222 47% 11%`, consumed as
+ * `hsl(var(--background))`) — as the colour `hsl(<same channels>)` would be.
+ *
+ * Only that shape is read. Two percentages after a hue is unambiguous; a bare
+ * `R G B` triple of three numbers is NOT guessed (see `channel-triple` in the
+ * unread-colors inventory). This is deliberately separate from
+ * {@link parseColor}: a bare triple is a *token* value, never a colour in
+ * `color-mix()` operand position or anywhere else a CSS colour is required.
+ */
+export function parseHslTriple(value: string | null | undefined): Color | null {
+  if (value === null || value === undefined) return null;
+  const m = value.trim().match(HSL_TRIPLE);
+  if (!m) return null;
+  return parseHsl(m[4] === undefined ? `${m[1]} ${m[2]} ${m[3]}` : `${m[1]} ${m[2]} ${m[3]} / ${m[4]}`);
+}
+
+/** {@link parseColor}, else a bare HSL channel triple ({@link parseHslTriple}). */
+export function parseTokenColor(value: string | null | undefined): Color | null {
+  return parseColor(value) ?? parseHslTriple(value);
+}
+
 // ── color-mix() ────────────────────────────────────────────────────────────
 
 const COLOR_MIX_OPEN = /^color-mix\(/i;
@@ -382,7 +415,7 @@ function parseHsl(body: string): Color | null {
   const split = splitComponents(body);
   if (!split) return null;
   const [rawH, rawS, rawL] = split.parts;
-  const h = Number(rawH.replace(/deg$/i, ""));
+  const h = hueDegrees(rawH) ?? NaN;
   const s = Number(rawS.replace(/%$/, "")) / 100;
   const l = Number(rawL.replace(/%$/, "")) / 100;
   if (![h, s, l].every(Number.isFinite)) return null;

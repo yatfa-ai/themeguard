@@ -83,7 +83,7 @@
  *                        completion so the loop's dependents resolve too.
  */
 
-import { parseColor, isTranslucent, toCss, colorMixParts, lightDarkParts, type Color } from "./color.js";
+import { parseTokenColor, isTranslucent, toCss, colorMixParts, lightDarkParts, type Color } from "./color.js";
 import {
   parseStylesheet,
   registeredInitialValues,
@@ -727,7 +727,7 @@ export function resolveStylesheet(sheet: Stylesheet): ResolvedStylesheet {
         found.value,
         theme,
       );
-      const color = kind === "color" ? parseColor(resolvedValue as string) : null;
+      const color = kind === "color" ? parseTokenColor(resolvedValue as string) : null;
       tokens.push({
         name,
         theme,
@@ -1034,5 +1034,5 @@ function substituteColorMix(
 }
 
 function classifyValue(value: string): TokenKind {
-  return parseColor(value) === null ? "non-color" : "color";
+  return parseTokenColor(value) === null ? "non-color" : "color";
 }

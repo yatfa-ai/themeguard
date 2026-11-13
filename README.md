@@ -170,7 +170,13 @@ condition-aware tables, which this package does not pretend to have.
 A token is judged only if its value is a colour themeguard can place in sRGB. Recognised:
 
 - hex (`#RGB`, `#RGBA`, `#RRGGBB`, `#RRGGBBAA`);
-- `rgb()`/`rgba()` and `hsl()`/`hsla()`, in the legacy comma and the modern space + `/ alpha` syntax;
+- `rgb()`/`rgba()` and `hsl()`/`hsla()`, in the legacy comma and the modern space + `/ alpha` syntax, with hue units `deg`/`grad`/`rad`/`turn` on `hsl()`;
+- a custom property holding a **bare HSL channel triple** — exactly `<hue> <pct> <pct>`, optionally `/ <alpha>`
+  (`--background: 222 47% 11%`, the shadcn/ui and Tailwind v3 convention, consumed as
+  `hsl(var(--background))`) — read as the `hsl()` of the same channels, so it reports exactly what
+  `hsl(222 47% 11%)` would. Two percentages after a hue is unambiguous, so no wrapper is inferred from the
+  consumer. A bare `R G B` triple of three numbers is *not* guessed: it is left out and named as
+  `channel-triple` (below);
 - `oklch()`, `oklab()`, `lab()`, `lch()` and `hwb()` in the space-separated `/ alpha` syntax, with
   percentage or number channels, the `none` keyword read as 0, and hue units `deg`/`grad`/`rad`/`turn`;
 - `color(srgb r g b)`, optionally `/ alpha`;
@@ -219,13 +225,15 @@ a `color-mix()` in a polar (`hsl`/`hwb`/`lch`/`oklch`), `xyz*`, `oklab` or `lab`
 interpolation method, or with an operand it cannot read (`currentColor`, a system colour, `light-dark()`,
 a `calc()`, or a `var()` that is unresolved, loops, or is not a colour), a `light-dark()` whose chosen arm
 does not resolve to a colour, relative colour syntax (`oklch(from var(--x) l c h)`), `color()` in any
-space other than `srgb` (`display-p3`, `rec2020`, …), system colours and `currentColor`. A token with
+space other than `srgb` (`display-p3`, `rec2020`, …), system colours, `currentColor` and a bare
+three-number value such as `255 255 255` (the Tailwind v3 `rgb(var(--x) / <alpha-value>)` channel shape —
+ambiguous without the consumer's wrapper, so named as `channel-triple` rather than guessed). A token with
 such a value is classified `non-color` and is left out of the colour rules — but not silently: the
 report's counted **`unread-colors`** section names every such token (`--bg (light-dark) in theme
 "root", declared at line 2`), with a per-theme headline of how many tokens that is of the theme's
 total, and prints a "nothing left out" line at zero. It lists only a value that *is* the unread syntax
 (one `light-dark()` / declined `color-mix()` / relative-colour / non-sRGB `color()` call, or `currentColor` / a
-system-colour keyword, on its own) — never a length, a font stack or a shadow — and it is facts, not
+system-colour keyword / a bare three-number `channel-triple`, on its own) — never a length, a font stack or a shadow — and it is facts, not
 findings: it never moves the exit code. In `--json` it is `unreadColors` — `{theme, token, syntax,
 line, declaration}` rows (plus `importOrigin` for a declaration spliced in over `@import`), always
 present, an empty array at zero. A value that merely does not parse is still left out without a line;
@@ -1275,7 +1283,7 @@ facts and passes no judgement, the upper one judges those facts and nothing else
 |---|---|
 | `src/parse.ts` | Which blocks declare custom properties, in which of the four shapes — `:root`, `[data-theme=…]`, `@theme inline`, and a `prefers-color-scheme` `:root` block as its own theme — at which line, and every `var()` **use**, from every declaration rather than only the custom-property ones. |
 | `src/resolve.ts` | What each property resolves to **per theme**, following `var()` chains — through embedded primary-position references (`1px solid var(--c)`) as well as whole-value ones, re-marking a walk that stopped at a compound value `cycle` when the value it stopped at references a loop MEMBER in that theme's view — iterated to a fixed point, so a dependent several hops out is reached too — and minting, names-only, the loops no walk closes (an all-compound loop never completes a circuit from any seed), so their members carry the same fact and rule 6 judges them beside every other loop. Whole-value `color-mix()` and `light-dark()` evaluate to the colour the theme view paints; a base palette written in `light-dark()` with no declared dark theme gains the implicit `dark` view (`implicitThemes`). Theme absence, translucency, unresolved references and cycles are each represented explicitly — none of them is an error and none is guessed at. |
-| `src/color.ts` | Colour parsing (hex 3/4/6/8, `rgb()`/`rgba()`, `hsl()`/`hsla()`, `oklch()`, `oklab()`, `lab()`, `lch()`, `hwb()`, `color(srgb …)`, named colours and `transparent`, alpha throughout; non-sRGB forms clip per channel, no gamut mapping; `color-mix(in srgb | srgb-linear, …)` of readable operands, premultiplied), WCAG relative luminance, CIE L\*, contrast ratio, source-over compositing. |
+| `src/color.ts` | Colour parsing (hex 3/4/6/8, `rgb()`/`rgba()`, `hsl()`/`hsla()`, `oklch()`, `oklab()`, `lab()`, `lch()`, `hwb()`, `color(srgb …)`, bare HSL channel triples on token values, named colours and `transparent`, alpha throughout; non-sRGB forms clip per channel, no gamut mapping; `color-mix(in srgb | srgb-linear, …)` of readable operands, premultiplied), WCAG relative luminance, CIE L\*, contrast ratio, source-over compositing. |
 | `src/audit.ts` | `audit(resolved)` — the nine rules in one pass, returning findings tagged `collision`, `dead-token`, `scale-collapse`, `family-consistency`, `unresolved-reference`, `cycle-reference`, `duplicate-declaration`, `unresolved-import` or `theme-partial-token`, plus the per-theme coverage inventory. Passing `suppressions` moves caller-declared findings out of `findings` and the counts into a `suppressed` leg, and the entries that matched nothing onto `unmatchedSuppressions`. Passing `disabledRules` moves a whole rule's output out of the report's live legs — findings off `findings` and the counts onto `suppressedDisabled`, and (for `scale-collapse`, the one rule with a second channel) skipped pairs off `skipped` onto `skippedDisabled` — the project-level policy face, checked before the per-entry match, so an entry naming a disabled rule stays unmatched and the report can say why. Also publishes the suppression matcher's own halves — `matchesEntryIdentity`, `findingSiteCoordinates`, `findingLinesIn`, `siteLineCovers`, `closureOrigins` — and the two reads over a FINISHED report that diagnose an unmatched judgement without suppressing anything: `crossFileAims`, which says which site-scoped judgement would govern a live finding one `@import` edge away, and `themelessAims`, which says which `theme`-scoped judgement names a rule that reports no theme at all. |
 | `src/config.ts` | `themeguard.config.json` — optional, discovered at or above the stylesheet (nearest ancestor wins; a config beside the stylesheet is the first hop). Parses and validates the `suppress` entries (strictly: an unhonourable config is an error naming the entry, never a silent skip) and the `suppress-rule` policy — an array of rule ids to turn off whole, validated against the same rule-id list the entries' `rule` field names, an unknown id an error naming the element — into the structured declarations `audit()` filters a finished report by. |
 | `src/rules/` | One module per question. Each docstring carries its judgement heuristics and, more usefully, what it deliberately does **not** report. `rules/coverage.ts` also carries the coverage inventory itself (its population includes `@property` registrations) — the facts rule 4 is measured over, printed by the CLI as an informational section and never an exit code. `rules/finding.ts` carries the shared citation the clauses are built from — `citeSite` for one site and `citeSiteList` for a list, which `positionClause` is now the `Declared at …` frame around, so a sibling clause needing the same file-aware spelling reads it rather than re-deriving it. It also declares `THEMELESS_RULES` — the five rules that report `theme: null` by construction, the stance the unmatched section's dead-theme-scope diagnosis reads rather than inferring from one run's findings. |
