@@ -60,6 +60,7 @@
 
 import { CONFIG_FILENAME, ConfigError, parseConfig } from "./config.js";
 import type { SiteScopedSuppressionEntry } from "./audit.js";
+import { commentSpans } from "./comments.js";
 
 /** The comment keyword. A comment is a directive when its body STARTS with this word. */
 export const IGNORE_KEYWORD = "themeguard-ignore";
@@ -108,10 +109,10 @@ const REASON_SEPARATOR = /(?:^|\s)--(?:\s|$)/;
  * return one entry per comment, in source order. String-aware, on the same
  * terms as `parse.ts`'s `blankComments`: a `themeguard-ignore` comment inside
  * a CSS string (`content: "/* themeguard-ignore … *\/"`) is prose, not a
- * directive. This walk is a conscious small duplicate of that walk — the
- * scanner needs comment BODIES and their lines, which blanking deliberately
- * erases; consolidating the two would put directive grammar inside the parser,
- * which must stay judgement-free.
+ * directive. Both read comments through the one shared scanner,
+ * `commentSpans` in `comments.ts`, which owns the string/escape/unterminated
+ * rules; this function only judges the bodies it hands back. The scanner is a
+ * pure lexer with no directive vocabulary, so the parser stays judgement-free.
  *
  * `path` is the diagnostic spelling for the file the text came from — the
  * path as the caller names it, and for a closure member its entry-relative
@@ -134,37 +135,13 @@ export function scanIgnoreDirectives(
   origin?: string,
 ): readonly IgnoreDirective[] {
   const directives: IgnoreDirective[] = [];
-  let i = 0;
-  let inString: string | null = null;
-  while (i < css.length) {
-    const ch = css[i];
-    if (inString) {
-      if (ch === "\\") {
-        i += 2;
-        continue;
-      }
-      if (ch === inString) inString = null;
-      i += 1;
-      continue;
+  // An unterminated comment ends at EOF — `commentSpans` reads it so, the same
+  // reading parse.ts's blanker takes; the stylesheet is already broken.
+  for (const { start, bodyEnd } of commentSpans(css)) {
+    const body = css.slice(start + 2, bodyEnd).trim();
+    if (DIRECTIVE_COMMENT.test(body)) {
+      directives.push(parseDirective(body, lineOf(css, start), path, origin));
     }
-    if (ch === '"' || ch === "'") {
-      inString = ch;
-      i += 1;
-      continue;
-    }
-    if (ch === "/" && css[i + 1] === "*") {
-      const close = css.indexOf("*/", i + 2);
-      const stop = close === -1 ? css.length : close + 2;
-      // An unterminated comment ends at EOF — the same reading parse.ts's
-      // blanker takes; the stylesheet is already broken on its own terms.
-      const body = css.slice(i + 2, close === -1 ? css.length : close).trim();
-      if (DIRECTIVE_COMMENT.test(body)) {
-        directives.push(parseDirective(body, lineOf(css, i), path, origin));
-      }
-      i = stop;
-      continue;
-    }
-    i += 1;
   }
   return directives;
 }

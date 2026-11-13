@@ -4,7 +4,7 @@ import { DirectiveError, scanIgnoreDirectives } from "../src/directives.js";
 /**
  * An unterminated `/* themeguard-ignore …` (no closing comment terminator) is read to end of file
  * as ONE directive: the opener's line, the rest of the file as its text, no second comment
- * scanned. This is the same reading parse.ts's blanker takes for an unterminated comment.
+ * scanned. Both this scan and parse.ts's blanker read it through the shared `commentSpans` scanner (src/comments.ts).
  */
 describe("scanIgnoreDirectives — an unterminated comment", () => {
   it("reads a well-formed directive that runs to end of file", () => {

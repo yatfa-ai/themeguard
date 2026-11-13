@@ -76,6 +76,7 @@
  * is a false statement about the stylesheet rather than a judgement call.
  */
 
+import { commentSpans } from "./comments.js";
 import type { IgnoreDirective } from "./directives.js";
 
 /** Which of the recognised declaration shapes a block is. */
@@ -426,38 +427,13 @@ function attributeThemePattern(configured: readonly string[]): RegExp {
  */
 function blankComments(css: string): string {
   let out = "";
-  let i = 0;
-  let inString: string | null = null;
-  while (i < css.length) {
-    const ch = css[i];
-    if (inString) {
-      if (ch === "\\") {
-        out += css.slice(i, i + 2);
-        i += 2;
-        continue;
-      }
-      if (ch === inString) inString = null;
-      out += ch;
-      i += 1;
-      continue;
-    }
-    if (ch === '"' || ch === "'") {
-      inString = ch;
-      out += ch;
-      i += 1;
-      continue;
-    }
-    if (ch === "/" && css[i + 1] === "*") {
-      const end = css.indexOf("*/", i + 2);
-      const stop = end === -1 ? css.length : end + 2;
-      for (let j = i; j < stop; j += 1) out += css[j] === "\n" ? "\n" : " ";
-      i = stop;
-      continue;
-    }
-    out += ch;
-    i += 1;
+  let from = 0;
+  for (const { start, end } of commentSpans(css)) {
+    out += css.slice(from, start);
+    for (let j = start; j < end; j += 1) out += css[j] === "\n" ? "\n" : " ";
+    from = end;
   }
-  return out;
+  return out + css.slice(from);
 }
 
 function lineIndex(css: string): number[] {
