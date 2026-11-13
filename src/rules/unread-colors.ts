@@ -49,7 +49,8 @@ export interface UnreadColor {
   readonly token: string;
   /**
    * The syntax that kept the token out: `light-dark`, `color-mix`,
-   * `relative-color`, `color(<space>)`, `currentColor` or `system-color`.
+   * `relative-color`, `color(<space>)`, `currentColor`, `system-color` or
+   * `channel-triple` (a bare three-number value such as `255 255 255`).
    */
   readonly syntax: string;
   /** 1-based line of the declaration the token resolves from. */
@@ -86,6 +87,15 @@ const SYSTEM_COLORS = new Set([
 ]);
 
 /**
+ * A bare three-number value (`255 255 255`, `15 23 42 / 0.5`): the Tailwind v3
+ * `rgb(var(--x) / <alpha-value>)` channel shape. Whether it is R G B, a hue
+ * list or something else depends on the consumer's wrapper, so it is never
+ * read as a colour — only named here. (The `<hue> <pct> <pct>` shape is
+ * unambiguous and IS read, so it never reaches this check.)
+ */
+const CHANNEL_TRIPLE = /^[+-]?(?:\d+\.?\d*|\.\d+)(?:\s+[+-]?(?:\d+\.?\d*|\.\d+)){2}(?:\s*\/\s*\S+)?$/;
+
+/**
  * The name and body of a value that is exactly ONE function call, else null.
  * `light-dark(a, b)` qualifies; `0 0 2px color-mix(...)` and
  * `color-mix(...) 10%` do not.
@@ -119,6 +129,7 @@ export function unreadColorSyntax(value: string): string | null {
   const lower = v.toLowerCase();
   if (lower === "currentcolor") return "currentColor";
   if (SYSTEM_COLORS.has(lower)) return "system-color";
+  if (CHANNEL_TRIPLE.test(v)) return "channel-triple";
   const call = wholeCall(v);
   if (call === null) return null;
   if (call.name === "light-dark") return "light-dark";

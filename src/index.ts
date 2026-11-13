@@ -117,6 +117,8 @@ export {
 
 export {
   parseColor,
+  parseHslTriple,
+  parseTokenColor,
   fromHsl,
   rgba,
   over,
