@@ -61,6 +61,20 @@
  *      twice; two different roles are two different roles. So a finding needs
  *      two distinct FAMILIES (see `TokenNames.head`), not merely two names.
  *
+ * ── The one exception to filter 3: a surface and its own foreground ────────
+ * Filter 3 is right about a tone and its border, and wrong about a SURFACE and
+ * its FOREGROUND. `--primary` / `--primary-foreground` (shadcn, Radix,
+ * Material) are one family by name, yet a theme that gives them one colour
+ * paints text in its own surface colour — invisible. That is never a
+ * deliberate identity, so a pair where one name is the foreground role of the
+ * other (`TokenNames` suffixes `-foreground`, `-fg`, `-text`, `-ink`,
+ * `-label`, `-contrast`; the `<head>-on-<rest>` / `<head>-<rest>` form; the
+ * `--on-X` / `--X` form) bypasses filters 2 AND 3: lockstep does not exempt it
+ * (restating the equality in every theme is still text on its own colour) and
+ * sharing a family does not either. Filter 1 still applies — a foreground
+ * written as a `var()` alias of its surface is the alias filter's, as before.
+ * Both names must be declared and hold one colour in the theme.
+ *
  * ── What the rule deliberately does NOT do ─────────────────────────────────
  * It does not rank, score or guess which member is "wrong". A collision is
  * symmetric and which side should move is a design decision this package has
@@ -74,7 +88,7 @@
 
 import type { ResolvedStylesheet } from "../resolve.js";
 import { positionClause, siteFromToken, type Finding, type FindingSite } from "./finding.js";
-import { TokenNames } from "./tokens.js";
+import { TokenNames, surfaceCandidates } from "./tokens.js";
 
 /** A set of names that hold the same value in every theme. */
 interface LockstepClass {
@@ -129,6 +143,8 @@ export function collisionRule(
       });
       if (independent.length < 2) continue;
 
+      const generic: Finding[] = [];
+
       // Filter 2 — collapse into lockstep classes.
       const classes: string[][] = [];
       for (const name of independent) {
@@ -146,81 +162,143 @@ export function collisionRule(
         const head = names.head(representative);
         if (!families.has(head)) families.set(head, { names: cls, representative });
       }
-      if (families.size < 2) continue;
+      if (families.size >= 2) {
+        const entries = [...families.entries()].sort(([a], [b]) => a.localeCompare(b));
+        const roles = entries.map(([, cls]) => cls.representative);
 
-      const entries = [...families.entries()].sort(([a], [b]) => a.localeCompare(b));
-      const roles = entries.map(([, cls]) => cls.representative);
+        // WHERE the collision is, and it is the CASCADE WINNER's line — the
+        // declaration this theme actually resolves through, never every place the
+        // name is written. `--app-border` is declared at :root:41 and again at
+        // winter:438; the root finding cites 41 and the winter finding cites 438,
+        // because those are the two declarations the two findings were measured
+        // from. A role always resolves here (it passed filter 1, which drops a
+        // name the theme cannot resolve), so a missing token is impossible rather
+        // than merely unlikely — but the filter keeps the types honest without a
+        // cast, and a role that somehow vanished is dropped from `sites` rather
+        // than printed as a fabricated line. `siteFromToken` also carries the
+        // imported file a winner was spliced from, so a collision whose two sides
+        // live in two files of a closure cites each by file instead of printing
+        // two per-file line numbers side by side.
+        const sites: FindingSite[] = roles.flatMap((role) => {
+          const token = resolved.token(role, theme);
+          return token === undefined ? [] : [siteFromToken(role, token)];
+        });
 
-      // WHERE the collision is, and it is the CASCADE WINNER's line — the
-      // declaration this theme actually resolves through, never every place the
-      // name is written. `--app-border` is declared at :root:41 and again at
-      // winter:438; the root finding cites 41 and the winter finding cites 438,
-      // because those are the two declarations the two findings were measured
-      // from. A role always resolves here (it passed filter 1, which drops a
-      // name the theme cannot resolve), so a missing token is impossible rather
-      // than merely unlikely — but the filter keeps the types honest without a
-      // cast, and a role that somehow vanished is dropped from `sites` rather
-      // than printed as a fabricated line. `siteFromToken` also carries the
-      // imported file a winner was spliced from, so a collision whose two sides
-      // live in two files of a closure cites each by file instead of printing
-      // two per-file line numbers side by side.
-      const sites: FindingSite[] = roles.flatMap((role) => {
-        const token = resolved.token(role, theme);
-        return token === undefined ? [] : [siteFromToken(role, token)];
-      });
+        // Does another theme SHOW these roles apart, or is this theme simply the
+        // only place either of them is written? The finding is the same either
+        // way — the roles hold one value here and they are separate roles — but
+        // the reader is owed the difference, because the first case carries the
+        // author's own proof that they are meant to differ and the second does
+        // not.
+        //
+        // Note the asymmetry with `inLockstep` above, which is deliberate. An
+        // EQUALITY only counts as intended when a theme restates it, so that
+        // predicate demands both names be declared there. A DIVERGENCE needs no
+        // such care: two roles resolving apart in some theme is proof they can
+        // differ, whether the theme redeclared both or moved just one and let the
+        // other inherit — which is exactly how `--app-cta` parts from
+        // `--app-success` in the fixture's winter.
+        //
+        // Never inferred from theme COUNT: a two-theme sheet whose second theme
+        // inherits both names witnesses exactly as little as a sheet with no
+        // second theme at all.
+        const witness = resolved.themes.find(
+          (other) =>
+            other !== theme && new Set(roles.map((role) => colorValue(role, other))).size > 1,
+        );
+        generic.push({
+          rule: "collision",
+          theme,
+          tokens: roles,
+          message:
+            `${roles.join(" and ")} both resolve to ${group.value} in theme "${theme}". ` +
+            (witness !== undefined
+              ? `They are separate roles, and theme "${witness}" declares them apart — ` +
+                `so this theme is repainting one with the other.`
+              : `They are separate roles, and no other theme declares them apart, so ` +
+                `nothing here shows the equality is intended.`) +
+            (sites.length > 0 ? ` ${positionClause(sites)}` : ""),
+          sites,
+          evidence: {
+            value: group.value,
+            roles,
+            /**
+             * Why this pair was not taken to be a deliberate identity.
+             * `divergent`: another theme declares the roles apart, which is the
+             * author's own evidence they must differ. `unwitnessed`: no other
+             * theme declares both, so there is no evidence either way and the
+             * equality is reported rather than assumed intentional.
+             */
+            corroboration: witness !== undefined ? `divergent in "${witness}"` : "unwitnessed",
+            /** Every name in the group, aliases included, for traceability. */
+            groupMembers: group.names,
+            /** The names each colliding role moves in lockstep with. */
+            lockstepClasses: entries.map(([, cls]) => cls.names.join(" == ")),
+          },
+        });
+      }
 
-      // Does another theme SHOW these roles apart, or is this theme simply the
-      // only place either of them is written? The finding is the same either
-      // way — the roles hold one value here and they are separate roles — but
-      // the reader is owed the difference, because the first case carries the
-      // author's own proof that they are meant to differ and the second does
-      // not.
-      //
-      // Note the asymmetry with `inLockstep` above, which is deliberate. An
-      // EQUALITY only counts as intended when a theme restates it, so that
-      // predicate demands both names be declared there. A DIVERGENCE needs no
-      // such care: two roles resolving apart in some theme is proof they can
-      // differ, whether the theme redeclared both or moved just one and let the
-      // other inherit — which is exactly how `--app-cta` parts from
-      // `--app-success` in the fixture's winter.
-      //
-      // Never inferred from theme COUNT: a two-theme sheet whose second theme
-      // inherits both names witnesses exactly as little as a sheet with no
-      // second theme at all.
-      const witness = resolved.themes.find(
-        (other) =>
-          other !== theme && new Set(roles.map((role) => colorValue(role, other))).size > 1,
-      );
-      findings.push({
-        rule: "collision",
-        theme,
-        tokens: roles,
-        message:
-          `${roles.join(" and ")} both resolve to ${group.value} in theme "${theme}". ` +
-          (witness !== undefined
-            ? `They are separate roles, and theme "${witness}" declares them apart — ` +
-              `so this theme is repainting one with the other.`
-            : `They are separate roles, and no other theme declares them apart, so ` +
-              `nothing here shows the equality is intended.`) +
-          (sites.length > 0 ? ` ${positionClause(sites)}` : ""),
-        sites,
-        evidence: {
-          value: group.value,
-          roles,
-          /**
-           * Why this pair was not taken to be a deliberate identity.
-           * `divergent`: another theme declares the roles apart, which is the
-           * author's own evidence they must differ. `unwitnessed`: no other
-           * theme declares both, so there is no evidence either way and the
-           * equality is reported rather than assumed intentional.
-           */
-          corroboration: witness !== undefined ? `divergent in "${witness}"` : "unwitnessed",
-          /** Every name in the group, aliases included, for traceability. */
-          groupMembers: group.names,
-          /** The names each colliding role moves in lockstep with. */
-          lockstepClasses: entries.map(([, cls]) => cls.names.join(" == ")),
-        },
-      });
+      // The paired-role exception (see the header): a surface and its own
+      // foreground, bypassing filters 2 and 3. Skipped for a pair the generic
+      // finding above already names, so one defect is never reported twice.
+      const present = new Set(independent);
+      const alreadyNamed = (a: string, b: string): boolean =>
+        generic.some((f) => f.tokens.includes(a) && f.tokens.includes(b));
+      for (const foreground of [...independent].sort()) {
+        for (const surface of surfaceCandidates(foreground).sort()) {
+          if (!present.has(surface) || alreadyNamed(surface, foreground)) continue;
+          // A theme that inherits BOTH names from another theme that declares
+          // them equal is reading that theme's defect again, not a second one:
+          // report it where it is written. (A theme declaring either name
+          // itself has made its own statement and is reported.)
+          if (
+            !declaresItself(surface, theme) &&
+            !declaresItself(foreground, theme) &&
+            resolved.themes.some(
+              (other) =>
+                other !== theme &&
+                declaresItself(surface, other) &&
+                declaresItself(foreground, other) &&
+                colorValue(surface, other) === colorValue(foreground, other),
+            )
+          ) {
+            continue;
+          }
+          const roles = [surface, foreground];
+          const sites: FindingSite[] = roles.flatMap((role) => {
+            const token = resolved.token(role, theme);
+            return token === undefined ? [] : [siteFromToken(role, token)];
+          });
+          const witness = resolved.themes.find(
+            (other) =>
+              other !== theme && new Set(roles.map((role) => colorValue(role, other))).size > 1,
+          );
+          generic.push({
+            rule: "collision",
+            theme,
+            tokens: roles,
+            message:
+              `${surface} and ${foreground} both resolve to ${group.value} in theme "${theme}". ` +
+              `${foreground} is the foreground role of ${surface}, so text set in ${foreground} ` +
+              `is painted in its own surface colour. ` +
+              (witness !== undefined
+                ? `Theme "${witness}" declares them apart, so this theme is repainting one with the other.`
+                : `No other theme declares them apart, and restating the equality would not make it intended.`) +
+              (sites.length > 0 ? ` ${positionClause(sites)}` : ""),
+            sites,
+            evidence: {
+              value: group.value,
+              roles,
+              /** The surface / foreground reading that made this pair a defect regardless of family or lockstep. */
+              pairedRole: `${surface} / ${foreground}`,
+              corroboration: witness !== undefined ? `divergent in "${witness}"` : "unwitnessed",
+              groupMembers: group.names,
+              lockstepClasses: roles,
+            },
+          });
+        }
+      }
+      findings.push(...generic);
     }
   }
 

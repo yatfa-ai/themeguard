@@ -44,6 +44,49 @@ export interface StatePair {
   readonly suffix: StateSuffix;
 }
 
+/**
+ * Suffixes that name the FOREGROUND ROLE of the surface token they are attached
+ * to: `--primary` / `--primary-foreground`, `--card` / `--card-fg`. This is the
+ * shadcn / Radix / Material convention, and it is a pairing the author wrote
+ * into the names themselves — a foreground exists to be painted ON its surface.
+ *
+ * Like {@link STATE_SUFFIXES} the suffix never classifies a token alone; it is
+ * only consulted by {@link surfaceCandidates} to propose the surface a name may
+ * be the foreground of, and the caller then requires that surface to be
+ * declared too.
+ */
+export const FOREGROUND_SUFFIXES = ["foreground", "fg", "text", "ink", "label", "contrast"] as const;
+
+/**
+ * The names `name` could be the FOREGROUND of, derived from its spelling alone.
+ *
+ *   `--primary-foreground`  → `--primary`            (suffix form)
+ *   `--accent-on-surface`   → `--accent-surface`     (`<head>-on-<rest>` form)
+ *   `--on-primary`          → `--primary`            (prefix form, empty head)
+ *
+ * The result is only a list of candidates: the caller keeps the ones the
+ * stylesheet actually declares, so a name that merely ends in `-text` with no
+ * surface beside it is nothing's foreground.
+ */
+export function surfaceCandidates(name: string): string[] {
+  const bare = name.replace(/^--/, "");
+  const out: string[] = [];
+  for (const suffix of FOREGROUND_SUFFIXES) {
+    if (bare.endsWith(`-${suffix}`) && bare.length > suffix.length + 1) {
+      out.push(`--${bare.slice(0, -(suffix.length + 1))}`);
+    }
+  }
+  if (bare.startsWith("on-") && bare.length > 3) out.push(`--${bare.slice(3)}`);
+  let at = bare.indexOf("-on-", 1);
+  while (at !== -1) {
+    const head = bare.slice(0, at);
+    const rest = bare.slice(at + 4);
+    if (rest.length > 0) out.push(`--${head}-${rest}`);
+    at = bare.indexOf("-on-", at + 1);
+  }
+  return [...new Set(out)];
+}
+
 export class TokenNames {
   /** Every custom property the stylesheet declares, in any scope. */
   readonly declared: ReadonlySet<string>;
