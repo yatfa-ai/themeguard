@@ -142,10 +142,12 @@ export function parseColor(value: string | null | undefined): Color | null {
 
 // ── Bare HSL channel triples (shadcn/ui, Tailwind v3) ──────────────────────
 
-const PCT = String.raw`[+-]?(?:\d+\.?\d*|\.\d+)%`;
-const HUE_TOKEN = String.raw`[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?(?:deg|grad|rad|turn)?`;
+/** The CSS number-literal grammar, shared by every site that builds on it. */
+export const NUMBER_SOURCE = String.raw`[+-]?(?:\d+\.?\d*|\.\d+)`;
+const PERCENT = String.raw`${NUMBER_SOURCE}%`;
+const HUE_TOKEN = String.raw`${NUMBER_SOURCE}(?:e[+-]?\d+)?(?:deg|grad|rad|turn)?`;
 const HSL_TRIPLE = new RegExp(
-  String.raw`^(${HUE_TOKEN})\s+(${PCT})\s+(${PCT})(?:\s*/\s*(\S+))?$`,
+  String.raw`^(${HUE_TOKEN})\s+(${PERCENT})\s+(${PERCENT})(?:\s*/\s*(\S+))?$`,
   "i",
 );
 
@@ -176,7 +178,6 @@ export function parseTokenColor(value: string | null | undefined): Color | null 
 // ── color-mix() ────────────────────────────────────────────────────────────
 
 const COLOR_MIX_OPEN = /^color-mix\(/i;
-const PERCENT = String.raw`[+-]?(?:\d+\.?\d*|\.\d+)%`;
 const TRAILING_PERCENT = new RegExp(String.raw`^([\s\S]*\S)\s+(${PERCENT})$`);
 const LEADING_PERCENT = new RegExp(String.raw`^(${PERCENT})\s+([\s\S]+)$`);
 
@@ -447,7 +448,7 @@ export function fromHsl(h: number, s: number, l: number): Color {
 
 // ── Modern colour functions ────────────────────────────────────────────────
 
-const NUMBER = /^[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?$/i;
+const NUMBER = new RegExp(String.raw`^${NUMBER_SOURCE}(?:e[+-]?\d+)?$`, "i");
 
 /** A strict CSS number, or `null`. (`Number()` alone would accept `0x10`, `Infinity`, ``.) */
 function strictNumber(raw: string): number | null {
