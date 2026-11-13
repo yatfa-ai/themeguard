@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * The command — `themeguard [--json | --github] <file.css|dir> [file.css|dir…]`.
+ * The command — `themeguard [--json | --github | --suppress-entries --reason <text>] <file.css|dir> [file.css|dir…]`.
  *
  * One command, ONE option; the positionals repeat. The sentence this replaces
  * — "one command, zero options" — was written at 0.1.2, when the command took
@@ -254,6 +254,15 @@
  * with `--json` is a usage error (exit 2) because one stdout has one format.
  * See {@link formatReportGithub} for the file/escaping rules.
  *
+ * ── `--suppress-entries --reason <text>`: the adoption renderer ────────────
+ * The third renderer. Stdout carries ONE JSON document `{ "suppress": [...] }`
+ * — a config entry for every UNSUPPRESSED finding of every audited stylesheet —
+ * meant to be redirected into `themeguard.config.json`. The CLI never writes a
+ * file. The reason is required and non-blank (never an invented placeholder);
+ * emitting the document is exit 0 whatever the findings; a file that cannot be
+ * audited keeps the fail-fast 2 and prints no document; combining it with
+ * `--json` or `--github` is a usage error. See {@link buildSuppressDocument}.
+ *
  * ── The exit contract, and why findings are not code 2 ─────────────────────
  * Three distinct codes, because a caller in a shell — a pipeline, a
  * pre-commit hook — can only branch on the number:
@@ -305,7 +314,7 @@
  */
 
 import { readFileSync, realpathSync } from "node:fs";
-import { dirname, join, resolve, sep } from "node:path";
+import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   audit,
@@ -369,7 +378,8 @@ function packageField(field: "version" | "homepage"): string {
   return typeof value === "string" ? value : "";
 }
 
-export const USAGE = "usage: themeguard [--json | --github] <file.css|dir> [file.css|dir…]";
+export const USAGE =
+  "usage: themeguard [--json | --github | --suppress-entries --reason <text>] <file.css|dir> [file.css|dir…]";
 
 /**
  * The `--help` / `-h` text. Short on purpose: the usage line, the three
@@ -388,6 +398,11 @@ export const HELP = [
   "  --json       print one NDJSON report object per stylesheet instead of prose",
   "  --github     print one GitHub workflow-command annotation (::warning …) per",
   "               unsuppressed finding site instead of prose; not combinable with --json",
+  "  --suppress-entries --reason <text>",
+  "               print ONE JSON document {\"suppress\": […]} with a themeguard.config.json",
+  "               entry per unsuppressed finding, each carrying <text> as its reason;",
+  "               exits 0 when emitted; not combinable with --json or --github;",
+  "               --reason is required with it and must not be blank",
   "  --help, -h   print this help and exit 0",
   "  --version    print the installed version and exit 0",
   "",
@@ -415,6 +430,19 @@ const JSON_FLAG = "--json";
  * {@link JSON_FLAG} — one invocation has one stdout format.
  */
 const GITHUB_FLAG = "--github";
+
+/**
+ * The third renderer flag: `--suppress-entries` prints a config `suppress`
+ * document for every unsuppressed finding instead of the report. It takes the
+ * value flag {@link REASON_FLAG} (`--reason <text>` or `--reason=<text>`).
+ */
+const SUPPRESS_ENTRIES_FLAG = "--suppress-entries";
+
+/** The reason every generated entry carries; required with {@link SUPPRESS_ENTRIES_FLAG}. */
+const REASON_FLAG = "--reason";
+
+/** The boolean flags removed from the positionals (the value flag is parsed separately). */
+const RENDERER_FLAGS: readonly string[] = [JSON_FLAG, GITHUB_FLAG, SUPPRESS_ENTRIES_FLAG];
 
 /** The order groups are printed in — the library's own reading order. */
 const RULE_ORDER: readonly RuleId[] = RULE_IDS;
@@ -735,13 +763,61 @@ export function runCli(args: readonly string[], io: CliIo): number {
 
   const json = args.includes(JSON_FLAG);
   const github = args.includes(GITHUB_FLAG);
-  const paths = args.filter((arg) => arg !== JSON_FLAG && arg !== GITHUB_FLAG);
+  const suppressEntries = args.includes(SUPPRESS_ENTRIES_FLAG);
+
+  // `--reason` is a value flag, and only means something beside
+  // `--suppress-entries`. Parsed position-free: `--reason <text>` or
+  // `--reason=<text>`, the value consumed from the paths.
+  let reason: string | undefined;
+  let reasonGiven = false;
+  const rest: string[] = [];
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i] as string;
+    if (arg === REASON_FLAG || arg.startsWith(`${REASON_FLAG}=`)) {
+      let value: string | undefined;
+      if (arg === REASON_FLAG) {
+        const next = args[i + 1];
+        if (next !== undefined && !RENDERER_FLAGS.includes(next)) {
+          value = next;
+          i++;
+        }
+      } else {
+        value = arg.slice(REASON_FLAG.length + 1);
+      }
+      if (!reasonGiven) {
+        reasonGiven = true;
+        reason = value;
+      }
+      continue;
+    }
+    rest.push(arg);
+  }
+  const paths = rest.filter((arg) => !RENDERER_FLAGS.includes(arg));
 
   // Two stdout formats cannot share one stdout: a usage error, on stderr as
   // prose like every diagnostic, before any file is read.
   if (json && github) {
     io.err(USAGE);
     io.err(`themeguard: ${JSON_FLAG} and ${GITHUB_FLAG} cannot be combined.`);
+    return EXIT_ERROR;
+  }
+  if (suppressEntries && (json || github)) {
+    io.err(USAGE);
+    io.err(
+      `themeguard: ${SUPPRESS_ENTRIES_FLAG} cannot be combined with ${json ? JSON_FLAG : GITHUB_FLAG}.`,
+    );
+    return EXIT_ERROR;
+  }
+  if (reasonGiven && !suppressEntries) {
+    io.err(USAGE);
+    io.err(`themeguard: ${REASON_FLAG} is only meaningful with ${SUPPRESS_ENTRIES_FLAG}.`);
+    return EXIT_ERROR;
+  }
+  if (suppressEntries && (reason === undefined || reason.trim() === "")) {
+    io.err(USAGE);
+    io.err(
+      `themeguard: ${SUPPRESS_ENTRIES_FLAG} requires ${REASON_FLAG} <text> — a non-blank reason every generated entry will carry.`,
+    );
     return EXIT_ERROR;
   }
 
@@ -759,8 +835,11 @@ export function runCli(args: readonly string[], io: CliIo): number {
   const targets = expandDirectories(paths, io);
   if (targets === null) return EXIT_ERROR;
 
+  const collected: CollectedReport[] = [];
+  const collect = suppressEntries ? (item: CollectedReport) => collected.push(item) : undefined;
+
   for (const path of targets) {
-    const outcome = auditStylesheet(path, io, json, github);
+    const outcome = auditStylesheet(path, io, json, github, collect);
     if (outcome === EXIT_ERROR) {
       // Fail-fast: the first file that cannot be audited ends the invocation
       // with 2, whatever the files before it reported — those reports are
@@ -769,6 +848,15 @@ export function runCli(args: readonly string[], io: CliIo): number {
       return EXIT_ERROR;
     }
     if (outcome === EXIT_FINDINGS) anyFindings = true;
+  }
+
+  // `--suppress-entries`: the document is emitted only once EVERY stylesheet
+  // audited (a fail-fast exit 2 above prints nothing), and emitting it is the
+  // success — exit 0 whatever the findings, because the findings are what the
+  // document records.
+  if (suppressEntries) {
+    io.out(JSON.stringify(buildSuppressDocument(collected, reason as string, io), null, 2));
+    return EXIT_OK;
   }
 
   // The aggregation, precedence 2 > 1 > 0: 2 has already been returned
@@ -864,7 +952,13 @@ function expandDirectories(paths: readonly string[], io: CliIo): string[] | null
  * on `io.err` either way: the flag chooses what a SUCCESSFUL audit prints to
  * stdout, never what an error says or which code it returns.
  */
-function auditStylesheet(path: string, io: CliIo, json = false, github = false): number {
+function auditStylesheet(
+  path: string,
+  io: CliIo,
+  json = false,
+  github = false,
+  collect?: (item: CollectedReport) => void,
+): number {
   // The entry's readability gate, byte-identical to 0.1.4: this read pins the
   // `cannot read <path>` diagnostic — and its precedence, ahead of the
   // config's, exactly as shipped. The loader re-reads the file (it has since
@@ -1051,7 +1145,8 @@ function auditStylesheet(path: string, io: CliIo, json = false, github = false):
   // beyond-config-home annotation rides the entry itself, so nothing else
   // travels.
   const siblings = siblingAims(report.unmatchedSuppressions, auditedStylesheet);
-  if (json) io.out(formatReportJson(path, report, aims, themeless, skipped, siblings));
+  if (collect !== undefined) collect({ path: auditedStylesheet, report, configDir });
+  else if (json) io.out(formatReportJson(path, report, aims, themeless, skipped, siblings));
   else if (github) for (const line of formatReportGithub(path, report)) io.out(line);
   else
     for (const line of formatReport(
@@ -1661,6 +1756,81 @@ export function formatReportGithub(path: string, report: ReturnType<typeof audit
     }
   }
   return lines;
+}
+
+/** One audited stylesheet's contribution to a `--suppress-entries` document. */
+interface CollectedReport {
+  /** The audited ENTRY stylesheet, absolute — the file scope an entry names. */
+  readonly path: string;
+  readonly report: ReturnType<typeof audit>;
+  /** The discovered config's directory, or `null` when none governs it. */
+  readonly configDir: string | null;
+}
+
+/** The deepest directory containing every given absolute directory. */
+function commonAncestor(dirs: readonly string[]): string {
+  let common = (dirs[0] as string).split(sep);
+  for (const dir of dirs.slice(1)) {
+    const parts = dir.split(sep);
+    let n = 0;
+    while (n < common.length && n < parts.length && common[n] === parts[n]) n++;
+    common = common.slice(0, n);
+  }
+  return common.join(sep) || sep;
+}
+
+/**
+ * The `--suppress-entries` renderer: `{ "suppress": [...] }`, one entry per
+ * UNSUPPRESSED finding of every audited stylesheet, whole-entry deduplicated,
+ * in report order. Each entry is `{ rule, tokens (sorted), theme (omitted when
+ * the finding has none), file, reason }`.
+ *
+ * `file` is the audited ENTRY stylesheet — the scope an entry's `file` names
+ * (the closure's root, even for a finding spliced in from an `@import`ed
+ * file) — relative to its config home: the directory of the discovered
+ * `themeguard.config.json`. When no config exists yet there is no home to be
+ * relative to; the document is meant to be saved as the config, and the
+ * discovery walk only reaches a config at or above a stylesheet, so the home
+ * is taken as the deepest directory containing every config-less stylesheet
+ * of the run. For one stylesheet (or a flat directory) that is the
+ * stylesheet's own directory; for a tree, the directory a single config
+ * governing it all would sit in.
+ *
+ * A finding with no tokens cannot be expressed (an entry's token set must be
+ * non-empty), so it is skipped with a note on stderr rather than emitted as
+ * an entry the config validator would refuse.
+ */
+function buildSuppressDocument(
+  collected: readonly CollectedReport[],
+  reason: string,
+  io: CliIo,
+): { suppress: Record<string, unknown>[] } {
+  const homeless = collected.filter((c) => c.configDir === null).map((c) => dirname(c.path));
+  const fallbackHome = homeless.length > 0 ? commonAncestor(homeless) : null;
+  const seen = new Set<string>();
+  const suppress: Record<string, unknown>[] = [];
+  for (const { path, report, configDir } of collected) {
+    const home = configDir ?? (fallbackHome as string);
+    const file = relative(home, path).split(sep).join("/");
+    for (const finding of report.findings) {
+      if (finding.tokens.length === 0) {
+        io.err(`themeguard: skipped a ${finding.rule} finding in ${path}: it carries no tokens, so no entry can name it.`);
+        continue;
+      }
+      const entry = {
+        rule: finding.rule,
+        tokens: [...finding.tokens].sort(),
+        ...(finding.theme !== null && finding.theme !== undefined ? { theme: finding.theme } : {}),
+        file,
+        reason,
+      };
+      const key = JSON.stringify(entry);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      suppress.push(entry);
+    }
+  }
+  return { suppress };
 }
 
 /**

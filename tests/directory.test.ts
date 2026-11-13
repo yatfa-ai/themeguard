@@ -39,7 +39,7 @@ function audited(out: readonly string[]): string[] {
 
 describe("directory arguments", () => {
   it("names the directory form in USAGE and --help", () => {
-    expect(USAGE).toBe("usage: themeguard [--json | --github] <file.css|dir> [file.css|dir…]");
+    expect(USAGE).toBe("usage: themeguard [--json | --github | --suppress-entries --reason <text>] <file.css|dir> [file.css|dir…]");
     expect(HELP.split("\n")[0]).toBe(USAGE);
     expect(HELP).toMatch(/directory argument/);
   });
