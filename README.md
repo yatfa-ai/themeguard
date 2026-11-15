@@ -106,6 +106,32 @@ Any CSS that declares custom properties — `:root`, `[data-theme="…"]`, the c
 away before themeguard sees anything: point it at the compiled CSS and it works, but the link back to
 the source names is lost.
 
+The base scope is the document element. `:root` names the `html` element with class-level
+specificity, and a palette spelled on the element itself is the same base scope: `html { … }`,
+`:where(html) { … }` and `:is(html) { … }` all file where a `:root` block does, so every
+base-reading rule (collision — its contrast judgement included, scale-collapse, family-consistency,
+theme-partial-token, dead-token, coverage) reads a sheet written without a single `:root`. The recognition is the EXACT spelling —
+the whole selector must be the bare element, case-folded — and the boundaries are deliberate:
+
+- **Cascade order across spellings is honoured**: `:root` (specificity 0,1,0) beats a bare `html`
+  block (0,0,1) from either side of it, and a `:where(html)` block (0,0,0) loses to both; `:is(html)`
+  takes its argument's specificity, so it ties a bare `html` block and document order decides, as
+  the cascade does. Within ONE spelling the fold stays document order — the reading two `:root`
+  blocks have always had, so existing sheets fold exactly as before.
+- **`body` is deliberately still not base**: it is a *descendant* of the element `:root` names, so
+  its declarations scope a subtree, and folding them into the base would report a token narrowed to
+  one element as the document's value. `body { --tokens… }` keeps its current reading — the
+  component-override shape. The same exclusion covers the unions: `html, body`, `:is(html, body)`,
+  `:where(html, body)`.
+- **Every narrowed spelling of the element keeps its current reading too**: `html .card` (a
+  combinator — its subject is `.card`), `html:not(.dark)` (a negation), `html:hover`, `html::before`,
+  `html:has(…)` — none of these is the bare element, and none enters the base. (Their `:root`-carrying
+  cousins — `:root:hover`, `:root:not(.dark)` — read as base through the `:root` token itself; that
+  is today's reading, unchanged.)
+- **A grouping follows the cascade's own rule for grouped selectors**: a `:where` anywhere in the
+  wrapping chain zeroes the rank (`:where(:is(html))` and `:is(:where(html))` both lose to a bare
+  `html` block), and an all-`:is` chain resolves to its argument.
+
 An OS-preference palette is a theme of its own, not a shadow over the base. `@media
 (prefers-color-scheme: dark) { :root { … } }` — how GitHub Primer, shadcn and plain-vanilla dark mode
 all write it — resolves as a `dark` theme beside `root`, with the same declared/inherited split as any
@@ -116,7 +142,10 @@ setting. The theme is named for the feature value; a stylesheet that *also* decl
 `[data-theme="dark"]` is stating the dark palette twice, by attribute and by OS preference, and the
 two land in one `dark` table — last declaration in source order winning, exactly as two
 `[data-theme="dark"]` blocks already did. The nested writing works too:
-`:root { @media (prefers-color-scheme: dark) { … } }`.
+`:root { @media (prefers-color-scheme: dark) { … } }`. The document-element spelling works the same:
+`@media (prefers-color-scheme: dark) { html { … } }` and
+`html { @media (prefers-color-scheme: dark) { … } }` are that dark theme, exactly like their `:root`
+twins.
 
 A class-based theme is a theme too. `.dark` or `.light` on a bare, `html`, `body` or `:root` subject —
 `.dark { … }`, `html.dark { … }`, `body.dark { … }`, `:root.dark { … }`, the way Tailwind's
@@ -1281,7 +1310,7 @@ facts and passes no judgement, the upper one judges those facts and nothing else
 
 | Module | What it answers |
 |---|---|
-| `src/parse.ts` | Which blocks declare custom properties, in which of the four shapes — `:root`, `[data-theme=…]`, `@theme inline`, and a `prefers-color-scheme` `:root` block as its own theme — at which line, and every `var()` **use**, from every declaration rather than only the custom-property ones. |
+| `src/parse.ts` | Which blocks declare custom properties, in which of the four shapes — `:root` (or the same base scope spelled on the document element itself: `html`, `:where(html)`, `:is(html)`), `[data-theme=…]`, `@theme inline`, and a `prefers-color-scheme` `:root`/`html` block as its own theme — at which line, and every `var()` **use**, from every declaration rather than only the custom-property ones. |
 | `src/resolve.ts` | What each property resolves to **per theme**, following `var()` chains — through embedded primary-position references (`1px solid var(--c)`) as well as whole-value ones, re-marking a walk that stopped at a compound value `cycle` when the value it stopped at references a loop MEMBER in that theme's view — iterated to a fixed point, so a dependent several hops out is reached too — and minting, names-only, the loops no walk closes (an all-compound loop never completes a circuit from any seed), so their members carry the same fact and rule 6 judges them beside every other loop. Whole-value `color-mix()` and `light-dark()` evaluate to the colour the theme view paints; a base palette written in `light-dark()` with no declared dark theme gains the implicit `dark` view (`implicitThemes`). Theme absence, translucency, unresolved references and cycles are each represented explicitly — none of them is an error and none is guessed at. |
 | `src/color.ts` | Colour parsing (hex 3/4/6/8, `rgb()`/`rgba()`, `hsl()`/`hsla()`, `oklch()`, `oklab()`, `lab()`, `lch()`, `hwb()`, `color(srgb …)`, bare HSL channel triples on token values, named colours and `transparent`, alpha throughout; non-sRGB forms clip per channel, no gamut mapping; `color-mix(in srgb | srgb-linear, …)` of readable operands, premultiplied), WCAG relative luminance, CIE L\*, contrast ratio, source-over compositing. |
 | `src/audit.ts` | `audit(resolved)` — the nine rules in one pass, returning findings tagged `collision`, `dead-token`, `scale-collapse`, `family-consistency`, `unresolved-reference`, `cycle-reference`, `duplicate-declaration`, `unresolved-import` or `theme-partial-token`, plus the per-theme coverage inventory. Passing `suppressions` moves caller-declared findings out of `findings` and the counts into a `suppressed` leg, and the entries that matched nothing onto `unmatchedSuppressions`. Passing `disabledRules` moves a whole rule's output out of the report's live legs — findings off `findings` and the counts onto `suppressedDisabled`, and (for `scale-collapse`, the one rule with a second channel) skipped pairs off `skipped` onto `skippedDisabled` — the project-level policy face, checked before the per-entry match, so an entry naming a disabled rule stays unmatched and the report can say why. Also publishes the suppression matcher's own halves — `matchesEntryIdentity`, `findingSiteCoordinates`, `findingLinesIn`, `siteLineCovers`, `closureOrigins` — and the two reads over a FINISHED report that diagnose an unmatched judgement without suppressing anything: `crossFileAims`, which says which site-scoped judgement would govern a live finding one `@import` edge away, and `themelessAims`, which says which `theme`-scoped judgement names a rule that reports no theme at all. |

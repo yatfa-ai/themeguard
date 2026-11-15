@@ -94,6 +94,9 @@ import {
 /** The base scope. Every theme falls back to it. */
 export const ROOT_THEME = "root";
 
+/** The base-fold rank of any `:root`-carrying spelling — the parser's highest ({@link Scope.baseRank}). */
+const BASE_RANK_ROOT = 2;
+
 /**
  * The DARK view `light-dark()` speaks to, and the one view the resolver mints
  * itself: a sheet whose base palette writes `light-dark()` but declares no
@@ -454,10 +457,14 @@ function tableFor(
       // ever handed: a `prefers-color-scheme` `:root` block does not cascade
       // over the base — both blocks are live, selected by the OS setting — so
       // resolveStylesheet builds each conditioned scope into its own theme and
-      // never lets it reach here. Scopes arrive in DOCUMENT order — the
-      // loader's splice guarantees it across files — so "last" is the
-      // browser's winner, whichever file it was written in, and the winner's
-      // `from` travels with it for the rules' citations.
+      // never lets it reach here. Scopes arrive in SPECIFICITY-then-DOCUMENT
+      // order — resolveStylesheet sorts the base scopes ascending by their
+      // spelling's {@link Scope.baseRank}, a stable sort that keeps the
+      // loader's document order within one rank (and is byte-identical to pure
+      // document order for the all-`:root` sheets this fold has always
+      // served) — so "last" is the browser's winner across spellings and files
+      // alike, and the winner's `from` travels with it for the rules'
+      // citations.
       map.set(d.name, { value: d.value, line: d.line, from: scope.origin });
     }
   }
@@ -483,7 +490,21 @@ export function resolveStylesheet(sheet: Stylesheet): ResolvedStylesheet {
   const baseScopes = rootScopes.filter((s) => !s.colorScheme);
   const schemeScopes = rootScopes.filter((s) => s.colorScheme);
 
-  const rootTable = tableFor(baseScopes);
+  // Within ONE spelling the fold below is document order, and that is still
+  // all an all-`:root` sheet needs. ACROSS spellings the cascade is not:
+  // `:root` (0,1,0) beats a bare `html` block (0,0,1) from either side, and a
+  // `:where(html)` block (0,0,0) loses to both. The parser stamps each root
+  // scope with the specificity class its spelling sits in
+  // ({@link Scope.baseRank}), so sorting the fold ascending — a stable sort,
+  // equal ranks keeping document order — puts the strongest spelling LAST and
+  // turns the sweep's "last declaration wins" into the browser's winner
+  // across spellings as well. `?? BASE_RANK_ROOT` is defensive only: every
+  // root scope the parser emits carries the field.
+  const rankedBaseScopes = [...baseScopes].sort(
+    (a, b) => (a.baseRank ?? BASE_RANK_ROOT) - (b.baseRank ?? BASE_RANK_ROOT),
+  );
+
+  const rootTable = tableFor(rankedBaseScopes);
   const inlineTable = tableFor(inlineScopes);
 
   const themeNames: string[] = [ROOT_THEME];

@@ -4,14 +4,23 @@
  * Reads the SOURCE — no browser, no framework, no CSSOM. It recognises the
  * four declaration shapes themeguard's scope names:
  *
- *   1. `:root { … }`                  the base scope
+ *   1. `:root { … }`                  the base scope — and the same block
+ *                                     spelled on the document element itself:
+ *                                     `html { … }`, `:where(html) { … }`,
+ *                                     `:is(html) { … }`, all read as the one
+ *                                     base scope ({@link classifyOne}'s bare-
+ *                                     element test), ranked below `:root` for
+ *                                     the cascade ({@link Scope.baseRank})
  *   2. `[data-theme="winter"] { … }`  a theme override scope
  *   3. `@theme inline { … }`          Tailwind v4's alias namespace
  *   4. `@media (prefers-color-scheme: dark) { :root { … } }`
  *                                     an OS-preference palette — its own
  *                                     theme beside the base, never folded
  *                                     into it; the condition travels on the
- *                                     scope ({@link Scope.colorScheme})
+ *                                     scope ({@link Scope.colorScheme}). The
+ *                                     base element spelling works the same:
+ *                                     the block may be `html { … }` exactly
+ *                                     as well as `:root { … }`.
  *
  * A fifth spelling of the dark/light scopes is the class form — `.dark`,
  * `html.dark`, `body.dark`, `:root.dark` (and `.light`) — read as the `dark` /
@@ -31,7 +40,8 @@
  * Anything else that declares custom properties (a component class, a `@media`
  * block conditioning on anything but one colour-scheme feature) is still parsed
  * and reported — under the scope kind `other`, or as a `root` scope when the
- * block is a `:root` — so nothing is silently dropped. Only the four shapes
+ * block names the base scope (a `:root` token, or the bare `html` element) —
+ * so nothing is silently dropped. Only the four shapes
  * above take part in theme resolution, and the fourth as its OWN theme: the old
  * reading folded a conditioned `:root` into the base table, overwriting the
  * light palette with the dark one. A `:root` under a media condition this file
@@ -127,6 +137,32 @@ export interface Scope {
    * silent guess. See {@link colorSchemeOf}.
    */
   readonly colorScheme?: "dark" | "light";
+  /**
+   * Cascade rank among the BASE scopes, set on `kind === "root"` scopes only:
+   * which of three specificity classes the declaring spelling sits in. The
+   * resolver sorts the base fold on this before its document-order sweep, so
+   * the sweep's "last declaration wins" lands on the browser's winner across
+   * spellings, not just within one:
+   *
+   *   - `0` — reached through a zero-specificity grouping: `:where(html)`.
+   *   - `1` — the bare document element: `html { … }`, and `:is(html)` (a
+   *     grouping takes its argument's specificity, and the argument is `html`).
+   *   - `2` — any spelling carrying the `:root` token: `:root`, `html:root`,
+   *     `:root:hover`, … — specificity (0,1,0) and up.
+   *
+   * Every rank-`2` scope carries the SAME value deliberately: their mutual
+   * fold stays document order, which is the reading the resolver has always
+   * had between two `:root` blocks, so existing sheets fold exactly as before.
+   * The values are the TRUE specificities of every shape this classifier
+   * admits to the base table — the bare-element recognition is the exact
+   * spelling (`html` alone, case-folded), so `html:hover`, `html::before` and
+   * `html:has(…)` never enter the base and never need a finer key. A grouping
+   * follows the cascade's own recursive rule for grouped selectors: a `:where`
+   * anywhere in the wrapping chain zeroes the rank (`:where(:is(html))` and
+   * `:is(:where(html))` both rank 0), an all-`:is` chain resolves to its
+   * argument (`:is(html)` ranks 1, the bare element's own specificity).
+   */
+  readonly baseRank?: number;
   /**
    * The imported file this scope was spliced from — the target's path relative
    * to the audit's ENTRY file, normalized (`tokens.css`, `shared/props.css`) —
@@ -879,11 +915,54 @@ function classThemeSubject(selector: string): string | null {
  * not the winter root, so it is `other` too. Within the subject compound itself
  * the token may sit anywhere, which is what makes `html:root`,
  * `:root:not([data-theme])` and `:root:hover` classify `root`.
+ *
+ * The bare document element classifies `root` too, under a STRICTER test than
+ * the `:root` one: the compound must BE `html` — case-folded, with the
+ * `:is()`/`:where()` arguments already pulled out and NOTHING left around them —
+ * where the `:root` test is a substring test. The strictness is what keeps the
+ * narrowed spellings in their current `other` reading and the base rank honest:
+ * `html .card` (a combinator), `html:not(.dark)` (a negation — read on the
+ * compound BEFORE negations are stripped, or the stripped remainder would be
+ * indistinguishable from the bare element), `html:hover`, `html::before` and
+ * `html:has(…)` all keep their `other` reading; only `:root`-carrying cousins
+ * of the same shapes classify `root` today. It also bounds the cascade key: the
+ * only bare-element shapes that enter the base are `html` (0,0,1),
+ * `:is(html)` (its argument's specificity — also 0,0,1) and `:where(html)`
+ * (zero specificity), which is exactly the three-value key
+ * {@link Scope.baseRank} carries — no general specificity calculator needed.
+ *
+ * `solo` says whether this selector is the WHOLE prelude (one selector in the
+ * list). The bare-element test requires it: `html, body { … }` declares on the
+ * union, and body's half scopes a subtree, so the block is not the base — the
+ * same reasoning that keeps a bare `body` out. A grouping's ARGUMENT inherits
+ * the same gate (`:where(html)` classifies base, `:where(html, body)` does not)
+ * and the chain's rank, when the grouping was the whole compound and named one
+ * selector — `:where(html)` classifies base at rank 0; `:where(html):hover`
+ * does not classify base at all. The rank follows the cascade's own recursive
+ * rule for grouped selectors: a `:where` ANYWHERE in the wrapping chain zeroes
+ * it (`:where(:is(html))` and `:is(:where(html))` both rank 0), an all-`:is`
+ * chain resolves to its argument (`:is(html)` ranks 1, the bare element's own
+ * specificity).
  */
+
+/** Reached through a zero-specificity grouping: `:where(html)`. */
+const BASE_RANK_WHERE = 0;
+/** The bare document element `html`, and `:is(html)` — specificity (0,0,1). */
+const BASE_RANK_ELEMENT = 1;
+/**
+ * Any spelling carrying the `:root` token — specificity (0,1,0) and up. ONE
+ * value for the whole family on purpose: two `:root` blocks fold by document
+ * order, the reading the resolver has always had between them, and one value
+ * keeps that reading byte for byte.
+ */
+const BASE_RANK_ROOT = 2;
+
 function classifyOne(
   selector: string,
   recognition: Recognition,
-): { kind: Exclude<ScopeKind, "other">; theme: string | null; matched: string }[] {
+  solo: boolean,
+  inheritedRank: number | null,
+): { kind: Exclude<ScopeKind, "other">; theme: string | null; matched: string; baseRank?: number }[] {
   const raw = selector.trim();
   if (/^@theme\b/i.test(raw)) return [{ kind: "theme-inline", theme: null, matched: raw }];
 
@@ -891,23 +970,67 @@ function classifyOne(
   // A combinator means the subject is not the scope but something within it.
   if (compounds.length !== 1) return [];
 
+  // The bare-element test reads the compound BEFORE negations are stripped (so
+  // `html:not(.dark)` cannot masquerade as `html`) and with string contents
+  // blanked. `leftover` is what remains of the compound once its top-level
+  // `:is()`/`:where()` groups are pulled out: empty for a pure grouping
+  // (`:where(html)`), which is what lets a grouping argument carry the base
+  // recognition below.
+  const blanked = blankStrings(compounds[0]);
+  const { rest: leftover } = extractMatchesAny(blanked);
+
   const subject = stripNegations(compounds[0]);
   const { rest: grouped, args } = extractMatchesAny(subject);
   // Whatever functional pseudo-classes remain describe a relationship or a
   // position; their arguments name some other element, never the subject.
   const rest = stripFunctionalArgs(grouped);
 
-  const found: { kind: Exclude<ScopeKind, "other">; theme: string | null; matched: string }[] = [];
+  // The argument classification has the whole-prelude standing (`solo`) only
+  // when the grouping was the whole compound and named ONE selector —
+  // `:where(html)` passes; `:where(html, body)`, `:where(html):hover` and
+  // `html:is(.dark)` do not.
+  const pureGrouping = args.length === 1 && leftover.trim() === "";
+
+  // The cascade rank the wrapping chain contributes, under the cascade's own
+  // recursive rule for grouped selectors: a `:where` anywhere in the chain
+  // zeroes it (specificity 0), an all-`:is` chain stays UNDECIDED (`null`)
+  // until an inner `:where` zeroes it or the bare element resolves it to its
+  // own rank. `inheritedRank` carries the chain's verdict from the enclosing
+  // call, so an inherited 0 is final. The first top-level grouping is the one
+  // that decides here — under `pureGrouping` there is exactly one top-level
+  // grouping, at position 0, so a nested occurrence can never precede it.
+  const whereAt = blanked.search(/:\s*where\s*\(/i);
+  const isAt = blanked.search(/:\s*(?:is|matches|-webkit-any|-moz-any)\s*\(/i);
+  const groupRank =
+    inheritedRank ??
+    (pureGrouping && whereAt !== -1 && (isAt === -1 || whereAt < isAt) ? BASE_RANK_WHERE : null);
+
+  // The base recognition itself: the whole prelude must be this one selector
+  // (`solo`), and through a grouping the argument keeps that standing only
+  // under `pureGrouping` — the recursion's `solo` below.
+  const bareHtml = solo && /^html$/i.test(leftover.trim());
+
+  const found: { kind: Exclude<ScopeKind, "other">; theme: string | null; matched: string; baseRank?: number }[] = [];
   const themeMatch = rest.match(recognition.attributeTheme);
   const classTheme = classThemeOf(blankStrings(rest), recognition.classes);
   if (themeMatch) found.push({ kind: "theme", theme: themeMatch[1].trim(), matched: raw });
   // BEFORE the `:root` test: `:root.dark` is the dark scope, not the base.
   else if (classTheme) found.push({ kind: "theme", theme: classTheme, matched: raw });
-  else if (/:root\b/.test(blankStrings(rest)))
-    found.push({ kind: "root", theme: null, matched: raw });
+  else if (/:root\b/.test(blankStrings(rest)) || bareHtml)
+    found.push({
+      kind: "root",
+      theme: null,
+      matched: raw,
+      baseRank: inheritedRank ?? (bareHtml ? BASE_RANK_ELEMENT : BASE_RANK_ROOT),
+    });
 
   for (const arg of args)
-    found.push(...classifyOne(arg, recognition).map((f) => ({ ...f, matched: arg })));
+    found.push(
+      ...classifyOne(arg, recognition, solo && pureGrouping, groupRank).map((f) => ({
+        ...f,
+        matched: arg,
+      })),
+    );
   return found;
 }
 
@@ -923,20 +1046,28 @@ function classifyOne(
  *
  * Only when NO selector in the list names a recognised shape does the block
  * collapse to a single `other` scope, so an ordinary rule stays one scope.
+ *
+ * Each member is classified with `solo` set only when the list has exactly one
+ * member: the bare-`html` base recognition is a whole-prelude test, so
+ * `html, body { … }` — and `:where(html), body { … }` — never yields a base
+ * scope, while a lone `html { … }` does. `baseRank` travels with a `root`
+ * classification ({@link Scope.baseRank}) and is undefined for every other
+ * kind.
  */
 function classifySelectors(
   prelude: string,
   recognition: Recognition,
-): { kind: ScopeKind; theme: string | null; matchedSelector: string }[] {
+): { kind: ScopeKind; theme: string | null; matchedSelector: string; baseRank?: number }[] {
   const selectors = splitSelectorList(prelude);
-  const matched: { kind: ScopeKind; theme: string | null; matchedSelector: string }[] = [];
+  const solo = selectors.length === 1;
+  const matched: { kind: ScopeKind; theme: string | null; matchedSelector: string; baseRank?: number }[] = [];
   const seen = new Set<string>();
   for (const selector of selectors) {
-    for (const { kind, theme, matched: matchedSelector } of classifyOne(selector, recognition)) {
+    for (const { kind, theme, matched: matchedSelector, baseRank } of classifyOne(selector, recognition, solo, null)) {
       const key = `${kind}\u0000${theme ?? ""}`;
       if (seen.has(key)) continue;
       seen.add(key);
-      matched.push({ kind, theme, matchedSelector });
+      matched.push({ kind, theme, matchedSelector, baseRank });
     }
   }
   if (matched.length > 0) return matched;
@@ -1320,7 +1451,7 @@ export function parseStylesheet(source: string, options?: ParseOptions): Stylesh
                 ),
               );
               if (conditional.length > 0) {
-                for (const { kind, theme, matchedSelector } of parentMatches) {
+                for (const { kind, theme, matchedSelector, baseRank } of parentMatches) {
                   scopes.push({
                     kind,
                     selector: parent,
@@ -1334,6 +1465,9 @@ export function parseStylesheet(source: string, options?: ParseOptions): Stylesh
                     // a root scope carries it; only the resolver's root fold
                     // ever read it.
                     ...(kind === "root" && ownScheme ? { colorScheme: ownScheme } : {}),
+                    // The declaring spelling's cascade rank — root scopes
+                    // only, the key the resolver's base fold sorts on.
+                    ...(kind === "root" ? { baseRank } : {}),
                     line: lines[blockStart] ?? 1,
                     declarations: conditional,
                   });
@@ -1358,7 +1492,7 @@ export function parseStylesheet(source: string, options?: ParseOptions): Stylesh
             if (declarations.length > 0) {
               // One scope per recognised selector in the list: a
               // `:root, [data-theme="dark"]` block IS both scopes.
-              for (const { kind, theme, matchedSelector } of matches) {
+              for (const { kind, theme, matchedSelector, baseRank } of matches) {
                 scopes.push({
                   kind,
                   selector,
@@ -1369,6 +1503,9 @@ export function parseStylesheet(source: string, options?: ParseOptions): Stylesh
                   // the root kind only, which is the kind whose fold the
                   // resolver must not perform.
                   ...(kind === "root" && scheme ? { colorScheme: scheme } : {}),
+                  // The declaring spelling's cascade rank — root scopes
+                  // only, the key the resolver's base fold sorts on.
+                  ...(kind === "root" ? { baseRank } : {}),
                   line: lines[blockStart] ?? 1,
                   declarations,
                 });
