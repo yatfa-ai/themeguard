@@ -59,6 +59,13 @@ export function fixtureWriter(root: string): (rel: string, contents: string) => 
   };
 }
 
+/** A css-first writer over one scratch directory: `sheet(css)` writes the next of `s0.css`, `s1.css`, … and returns its absolute path; `sheet(css, name)` writes `name` instead and does not advance the counter. */
+export function numberedSheetWriter(root: string): (css: string, name?: string) => string {
+  const write = fixtureWriter(root);
+  let n = 0;
+  return (css, name = `s${n++}.css`) => write(name, css);
+}
+
 /** A fresh scratch directory under the OS tmpdir, named `themeguard-<label>-…` and removed when the suite that calls it finishes; call it at module or describe scope. */
 export function scratchDir(label: string): string {
   const dir = mkdtempSync(join(tmpdir(), `themeguard-${label}-`));

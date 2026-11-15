@@ -1,11 +1,9 @@
-import { writeFileSync } from "node:fs";
-import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { audit } from "../src/audit.js";
 import { EXIT_OK, formatReport } from "../src/cli.js";
 import { resolveCss } from "../src/resolve.js";
 import { themeTokenTotals, unreadColorSyntax } from "../src/rules/unread-colors.js";
-import { scratchDir } from "./fixture.js";
+import { numberedSheetWriter, scratchDir } from "./fixture.js";
 import { run } from "./run.js";
 
 /**
@@ -38,12 +36,7 @@ body { background: var(--bg); color: var(--fg); }
 // Created at module load, not in a hook: describe bodies below call `run(...)`
 // during collection, before any `beforeAll` has run.
 const dir = scratchDir("unread");
-let n = 0;
-const sheet = (css: string, name = `s${n++}.css`): string => {
-  const path = join(dir, name);
-  writeFileSync(path, css, "utf8");
-  return path;
-};
+const sheet = numberedSheetWriter(dir);
 
 describe("unreadColorSyntax — which syntax kept a token out", () => {
   it.each([

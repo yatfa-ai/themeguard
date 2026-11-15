@@ -6,7 +6,7 @@ import { EXIT_OK } from "../src/cli.js";
 import { loadStylesheet } from "../src/load.js";
 import { resolveCss, resolveStylesheet } from "../src/resolve.js";
 import { themeTokenTotals } from "../src/rules/unread-colors.js";
-import { FIXTURE_PATH, scratchDir } from "./fixture.js";
+import { FIXTURE_PATH, numberedSheetWriter, scratchDir } from "./fixture.js";
 import { run } from "./run.js";
 
 /**
@@ -24,12 +24,7 @@ import { run } from "./run.js";
  */
 
 const dir = scratchDir("registered");
-let n = 0;
-const sheet = (css: string, name = `s${n++}.css`): string => {
-  const path = join(dir, name);
-  writeFileSync(path, css, "utf8");
-  return path;
-};
+const sheet = numberedSheetWriter(dir);
 
 const REG_ONLY = `
 @property --brand { syntax: "<color>"; inherits: true; initial-value: #ff0000; }
