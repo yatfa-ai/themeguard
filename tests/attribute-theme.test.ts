@@ -13,6 +13,7 @@ import {
 } from "../src/parse.js";
 import { resolveStylesheet } from "../src/resolve.js";
 import { scaleCollapseRule } from "../src/rules/scale-collapse.js";
+import { fixtureWriter, scratchDir } from "./fixture.js";
 
 /**
  * The `themeAttributes` configuration key — naming additional ATTRIBUTE
@@ -258,18 +259,8 @@ describe("parseConfigDocument — themeAttributes validates with the house disci
 });
 
 describe("load — the refusal and the recognition", () => {
-  let dir: string;
-  beforeAll(() => {
-    dir = mkdtempSync(join(tmpdir(), "themeguard-attr-themes-"));
-  });
-  afterAll(() => {
-    rmSync(dir, { recursive: true, force: true });
-  });
-  const write = (name: string, text: string): string => {
-    const path = join(dir, name);
-    writeFileSync(path, text, "utf8");
-    return path;
-  };
+  const dir = scratchDir("attr-themes");
+  const write = fixtureWriter(dir);
   const errorOf = (fn: () => unknown): Error => {
     try {
       fn();

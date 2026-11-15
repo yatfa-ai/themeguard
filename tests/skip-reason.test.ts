@@ -5,7 +5,7 @@ import { audit } from "../src/audit.js";
 import { formatReport, runCli, type CliIo } from "../src/cli.js";
 import { resolveCss } from "../src/resolve.js";
 import { scaleCollapseRule, type SkippedPair } from "../src/rules/scale-collapse.js";
-import { scratchDir } from "./fixture.js";
+import { fixtureWriter, scratchDir } from "./fixture.js";
 
 /**
  * THE SKIPPED ROW'S REASON, SPLIT ON THE SKIP BRANCH'S OWN ARMS (0.1.25).
@@ -46,11 +46,7 @@ import { scratchDir } from "./fixture.js";
 
 const tmp = scratchDir("skip");
 
-function fixture(name: string, css: string): string {
-  const path = join(tmp, name);
-  writeFileSync(path, css, "utf8");
-  return path;
-}
+const fixture = fixtureWriter(tmp);
 
 function run(...args: string[]): { code: number; stdout: string } {
   const out: string[] = [];

@@ -1,8 +1,6 @@
-import { writeFileSync } from "node:fs";
-import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { resolveCss } from "../src/resolve.js";
-import { scratchDir } from "./fixture.js";
+import { fixtureWriter, scratchDir } from "./fixture.js";
 import { run } from "./run.js";
 
 /**
@@ -13,11 +11,7 @@ import { run } from "./run.js";
 
 const dir = scratchDir("important");
 
-function sheet(name: string, css: string): string {
-  const path = join(dir, name);
-  writeFileSync(path, css);
-  return path;
-}
+const sheet = fixtureWriter(dir);
 
 function dark(border: string, surface: string, muted: string): string {
   return `:root { --border:#dddddd; --surface:#f5f5f5; --text:#111111; --text-muted:#555555; }

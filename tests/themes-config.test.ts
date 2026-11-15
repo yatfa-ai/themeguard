@@ -8,7 +8,7 @@ import { EXIT_ERROR, EXIT_FINDINGS, EXIT_OK, runCli, type CliIo } from "../src/c
 import { loadStylesheet } from "../src/load.js";
 import { parseStylesheet, unrecognisedClassTheme, unrecognisedClassThemes } from "../src/parse.js";
 import { resolveStylesheet } from "../src/resolve.js";
-import { FIXTURE_PATH, fixtureCss } from "./fixture.js";
+import { FIXTURE_PATH, fixtureCss, fixtureWriter, scratchDir } from "./fixture.js";
 
 /**
  * The `themes` configuration key — naming additional class themes.
@@ -331,21 +331,8 @@ describe("parseConfigDocument — the themes key validates with the house discip
 });
 
 describe("load — the refusal and the recognition", () => {
-  let dir: string;
-
-  beforeAll(() => {
-    dir = mkdtempSync(join(tmpdir(), "themeguard-themes-"));
-  });
-
-  afterAll(() => {
-    rmSync(dir, { recursive: true, force: true });
-  });
-
-  const write = (name: string, text: string): string => {
-    const path = join(dir, name);
-    writeFileSync(path, text, "utf8");
-    return path;
-  };
+  const dir = scratchDir("themes");
+  const write = fixtureWriter(dir);
 
   it("a sheet declaring an unrecognised palette variant refuses with the fix spelled out", () => {
     const path = write("gap.css", `${ROOT}${THEME_DARK}`);
