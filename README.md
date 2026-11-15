@@ -182,6 +182,8 @@ A token is judged only if its value is a colour themeguard can place in sRGB. Re
 - `color(srgb r g b)`, optionally `/ alpha`;
 - the CSS named-colour keywords (`white`, `rebeccapurple`, …) and `transparent`.
 
+A custom property's `!important` flag is ignored when reading its colour (the cascade priority itself is not modelled).
+
 The non-sRGB functions are converted with the standard CSS Color 4 matrices and then **clipped per
 channel** into sRGB and quantised to 0–255, exactly like the legacy forms. There is no gamut mapping: a
 high-chroma `oklch()` that lies outside sRGB is clipped, so it can differ from what a wide-gamut display

@@ -85,7 +85,10 @@ export type ScopeKind = "root" | "theme" | "theme-inline" | "other";
 export interface Declaration {
   /** Custom property name, including the leading `--`. */
   readonly name: string;
-  /** Declared value text, trimmed, with comments removed. */
+  /**
+   * Declared value text, trimmed, with comments removed and a trailing
+   * `!important` priority flag removed (the cascade priority is not modelled).
+   */
   readonly value: string;
   /** 1-based line of the declaration in the source. */
   readonly line: number;
@@ -1115,7 +1118,11 @@ function readDeclarations(
 ): Declaration[] {
   return readPairs(rawBody, bodyStart, lines)
     .filter((p) => /^--[\w-]+$/.test(p.property))
-    .map(({ property, value, line }) => ({ name: property, value, line }));
+    .map(({ property, value, line }) => ({
+      name: property,
+      value: value.replace(/\s*!\s*important\s*$/i, ""),
+      line,
+    }));
 }
 
 const VAR_USE = /var\(\s*(--[\w-]+)/g;
