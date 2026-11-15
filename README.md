@@ -1187,6 +1187,8 @@ were there unsuppressed findings.
 stylesheet. The number stays exactly that; [`--json`](#--json--the-report-as-data) adds the DATA beside
 it, on stdout, without moving the verdict — a caller reads the code for the decision and the NDJSON for
 the detail behind it. Diagnostics stay on stderr as prose in both modes, so stdout is never mixed.
+The exit code is the audit verdict even when stdout is closed early (`| head`, `grep -q`): a reader that
+stops listening ends the output silently and never turns a `0` into a `1`.
 
 Over one invocation naming several stylesheets, these codes **aggregate per invocation** with the
 precedence `2 > 1 > 0`: if any file errored, the invocation exits `2` — fail-fast, with the reports the

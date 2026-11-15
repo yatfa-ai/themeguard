@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -15,7 +16,7 @@ import { loadStylesheet } from "../src/load.js";
 import { resolveStylesheet } from "../src/resolve.js";
 import { FIXTURE_PATH, fixtureWriter, scratchDir } from "./fixture.js";
 import { expectReportKeyOrder } from "./report-keys.js";
-import { REPO_ROOT, buildCli, run, spawnBuilt } from "./run.js";
+import { BUILT_CLI, REPO_ROOT, buildCli, run, spawnBuilt } from "./run.js";
 
 /**
  * The CLI — success criteria 1 and 2.
@@ -683,6 +684,81 @@ describe("node dist/cli.js — the built artifact", () => {
     expect(() => JSON.parse(failed.stdout.trimEnd())).not.toThrow();
     expect(failed.stderr).toContain("cannot read");
   });
+});
+
+/**
+ * A reader that closes the pipe before the report is fully written (`| head`,
+ * `grep -q`) must not override the audit verdict. Node emits EPIPE on the
+ * stream on the next write; unhandled, that kills the process with a stack
+ * trace and exit 1. The reader is simulated deterministically: the child's
+ * stdout is destroyed after its FIRST chunk, and the report is repeated over
+ * enough files to outlive the pipe buffer, so later writes always hit the
+ * closed pipe regardless of timing.
+ */
+describe("node dist/cli.js — a reader that closes stdout early", () => {
+  beforeAll(buildCli, 120_000);
+
+  /** Spawn the built CLI, optionally preloading a script, and run `onFirstChunk` on its first stdout chunk. */
+  function runWithReader(
+    args: string[],
+    onFirstChunk: (child: ReturnType<typeof spawn>) => void,
+    preload?: string,
+  ): Promise<{ code: number | null; stderr: string }> {
+    return new Promise((resolve, reject) => {
+      const nodeArgs = preload === undefined ? [] : ["--require", preload];
+      const child = spawn(process.execPath, [...nodeArgs, BUILT_CLI, ...args], {
+        cwd: REPO_ROOT,
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      let stderr = "";
+      let first = true;
+      child.stderr?.setEncoding("utf8");
+      child.stderr?.on("data", (d: string) => (stderr += d));
+      child.stdout?.on("data", () => {
+        if (!first) return;
+        first = false;
+        onFirstChunk(child);
+      });
+      child.on("error", reject);
+      child.on("close", (code) => resolve({ code, stderr }));
+    });
+  }
+
+  const closeStdout = (child: ReturnType<typeof spawn>): void => {
+    child.stdout?.destroy();
+  };
+  // Enough repeated positionals that the output exceeds any pipe buffer.
+  const many = (path: string): string[] => Array.from({ length: 400 }, () => path);
+
+  it("keeps exit 0 and an empty stderr for a clean stylesheet", async () => {
+    const result = await runWithReader(many(CLEAN_PATH), closeStdout);
+    expect(result.stderr).toBe("");
+    expect(result.code).toBe(EXIT_OK);
+  }, 60_000);
+
+  it("keeps exit 1 and an empty stderr for a stylesheet with findings", async () => {
+    const result = await runWithReader(many(ONE_FINDING_PATH), closeStdout);
+    expect(result.stderr).toBe("");
+    expect(result.code).toBe(EXIT_FINDINGS);
+  }, 60_000);
+
+  it("does not swallow a stdout error that is not EPIPE", async () => {
+    const preload = join(tmp, "stdout-eio.cjs");
+    writeFileSync(
+      preload,
+      [
+        "const write = process.stdout.write;",
+        "process.stdout.write = function (...args) {",
+        "  process.nextTick(() => this.emit('error', Object.assign(new Error('boom-eio'), { code: 'EIO' })));",
+        "  return write.apply(this, args);",
+        "};",
+        "",
+      ].join("\n"),
+    );
+    const result = await runWithReader([CLEAN_PATH], () => undefined, preload);
+    expect(result.stderr).toContain("boom-eio");
+    expect(result.code).not.toBe(EXIT_OK);
+  }, 60_000);
 });
 
 /**

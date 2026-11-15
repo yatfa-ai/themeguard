@@ -1854,6 +1854,16 @@ function isEntryPoint(): boolean {
 }
 
 if (isEntryPoint()) {
+  // A reader that closes the pipe early (`| head`, `grep -q`) makes the next
+  // write emit EPIPE on the stream. Unhandled, that kills the process with a
+  // stack trace and exit 1, overriding the verdict stored in `process.exitCode`.
+  // A closed reader is a silent end of output; every other stream error is
+  // still fatal.
+  for (const stream of [process.stdout, process.stderr]) {
+    stream.on("error", (error: NodeJS.ErrnoException) => {
+      if (error.code !== "EPIPE") throw error;
+    });
+  }
   const code = runCli(process.argv.slice(2), {
     out: (line) => process.stdout.write(`${line}\n`),
     err: (line) => process.stderr.write(`${line}\n`),
