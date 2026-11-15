@@ -77,6 +77,8 @@ describe("unreadColorSyntax — which syntax kept a token out", () => {
     "0 0 0 2px color-mix(in srgb, red 50%, blue)",
     "1px solid currentColor",
     "calc(var(--x) + 2px)",
+    "0 1px 2px rgb(var(--x))",
+    "1px solid hsl(var(--x))",
     "color(srgb 1 0 0)",
     "not-a-colour",
   ])("%s is not listed", (value) => {
