@@ -10,12 +10,12 @@
 // the CSS Color 4 spec's own red/blue/lime coordinates (oklch 0.628 0.2577 29.23
 // is sRGB red, oklch 0.452 0.3132 264.05 is blue, lab 54.2905 80.8049 69.891 is
 // red, lab 87.82 -79.27 80.99 is lime).
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { afterAll, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { parseColor, toHex } from "../src/color.js";
 import { resolveCss, ROOT_THEME } from "../src/resolve.js";
+import { scratchDir } from "./fixture.js";
 import { run } from "./run.js";
 
 const hexOf = (v: string): string => {
@@ -297,8 +297,7 @@ describe("the resolver and the CLI see modern-syntax tokens", () => {
     ]);
   });
 
-  const tmp = mkdtempSync(join(tmpdir(), "themeguard-modern-colors-"));
-  afterAll(() => rmSync(tmp, { recursive: true, force: true }));
+  const tmp = scratchDir("modern-colors");
 
   // The shadcn / Tailwind v4 default palette, once in oklch() and once in hex.
   const SHEET = (v: { white: string; grey: string; border: string; ink: string }): string => `

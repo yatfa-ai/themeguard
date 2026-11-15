@@ -7,29 +7,25 @@
 // `unread-colors (2)` — same defect, opposite verdicts, because the resolver
 // classified the whole `light-dark()` value non-colour and no colour rule
 // judged it.
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { afterAll, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { audit } from "../src/audit.js";
 import { lightDarkParts } from "../src/color.js";
 import { EXIT_FINDINGS, EXIT_OK } from "../src/cli.js";
 import { IMPLICIT_DARK_THEME, ROOT_THEME, resolveCss } from "../src/resolve.js";
+import { scratchDir } from "./fixture.js";
 import { run } from "./run.js";
 
 // Created at module load, not in a hook: describe bodies below call `run(...)`
 // during collection, before any `beforeAll` has run.
-const dir = mkdtempSync(join(tmpdir(), "themeguard-light-dark-"));
+const dir = scratchDir("light-dark");
 let n = 0;
 const sheet = (css: string, name = `s${n++}.css`): string => {
   const path = join(dir, name);
   writeFileSync(path, css, "utf8");
   return path;
 };
-
-afterAll(() => {
-  rmSync(dir, { recursive: true, force: true });
-});
 
 /** The hex twin: the dark palette spelled as a `prefers-color-scheme` block. */
 const REPRO_HEX = `

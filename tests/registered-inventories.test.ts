@@ -1,13 +1,12 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { afterAll, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { audit } from "../src/audit.js";
 import { EXIT_OK } from "../src/cli.js";
 import { loadStylesheet } from "../src/load.js";
 import { resolveCss, resolveStylesheet } from "../src/resolve.js";
 import { themeTokenTotals } from "../src/rules/unread-colors.js";
-import { FIXTURE_PATH } from "./fixture.js";
+import { FIXTURE_PATH, scratchDir } from "./fixture.js";
 import { run } from "./run.js";
 
 /**
@@ -24,14 +23,13 @@ import { run } from "./run.js";
  * stays exactly as it was.
  */
 
-const dir = mkdtempSync(join(tmpdir(), "themeguard-registered-"));
+const dir = scratchDir("registered");
 let n = 0;
 const sheet = (css: string, name = `s${n++}.css`): string => {
   const path = join(dir, name);
   writeFileSync(path, css, "utf8");
   return path;
 };
-afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
 const REG_ONLY = `
 @property --brand { syntax: "<color>"; inherits: true; initial-value: #ff0000; }

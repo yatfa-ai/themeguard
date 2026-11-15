@@ -59,7 +59,7 @@ export function fixtureWriter(root: string): (rel: string, contents: string) => 
   };
 }
 
-/** A fresh scratch directory under the OS tmpdir, named `themeguard-<label>-…` and removed after the calling file's tests; call it at module scope. */
+/** A fresh scratch directory under the OS tmpdir, named `themeguard-<label>-…` and removed when the suite that calls it finishes; call it at module or describe scope. */
 export function scratchDir(label: string): string {
   const dir = mkdtempSync(join(tmpdir(), `themeguard-${label}-`));
   afterAll(() => rmSync(dir, { recursive: true, force: true }));

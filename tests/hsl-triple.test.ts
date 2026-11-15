@@ -1,12 +1,11 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { afterAll, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { audit } from "../src/audit.js";
 import { parseColor, parseHslTriple, toCss } from "../src/color.js";
 import { resolveCss } from "../src/resolve.js";
 import { unreadColorSyntax } from "../src/rules/unread-colors.js";
-import { FIXTURE_PATH } from "./fixture.js";
+import { FIXTURE_PATH, scratchDir } from "./fixture.js";
 import { run } from "./run.js";
 
 /**
@@ -16,8 +15,7 @@ import { run } from "./run.js";
  * three-number triple is ambiguous, so it is not read but is named.
  */
 
-const dir = mkdtempSync(join(tmpdir(), "themeguard-hsl-triple-"));
-afterAll(() => rmSync(dir, { recursive: true, force: true }));
+const dir = scratchDir("hsl-triple");
 
 function sheet(name: string, css: string): string {
   const path = join(dir, name);

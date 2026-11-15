@@ -1,12 +1,12 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterAll, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { audit } from "../src/audit.js";
 import { EXIT_ERROR, EXIT_FINDINGS, EXIT_OK } from "../src/cli.js";
 import type { SuppressionEntry } from "../src/config.js";
 import { resolveCss } from "../src/resolve.js";
+import { scratchDir } from "./fixture.js";
 import { run } from "./run.js";
 
 /**
@@ -198,7 +198,7 @@ describe("the shared-config pair — tests/fixtures/styles, one ledger, two styl
  * Same shape as cli.test.ts: a directory per scenario, a config beside the
  * stylesheets, runCli driven in-process so the report is read as data.
  */
-const tmp = mkdtempSync(join(tmpdir(), "themeguard-file-scoped-"));
+const tmp = scratchDir("file-scoped");
 
 function scenario(
   name: string,
@@ -240,8 +240,6 @@ const DEAD_CSS = `
 .x { color: var(--other); }
 :root { --other: #345678; }
 `;
-
-afterAll(() => rmSync(tmp, { recursive: true, force: true }));
 
 describe("a file-scoped entry moves the exit only for its own file", () => {
   const [a, b] = scenario(

@@ -1,8 +1,8 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { afterAll, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { resolveCss } from "../src/resolve.js";
+import { scratchDir } from "./fixture.js";
 import { run } from "./run.js";
 
 /**
@@ -11,8 +11,7 @@ import { run } from "./run.js";
  * read as a colour.
  */
 
-const dir = mkdtempSync(join(tmpdir(), "themeguard-important-"));
-afterAll(() => rmSync(dir, { recursive: true, force: true }));
+const dir = scratchDir("important");
 
 function sheet(name: string, css: string): string {
   const path = join(dir, name);

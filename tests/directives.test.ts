@@ -1,13 +1,12 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { afterAll, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { EXIT_ERROR, EXIT_FINDINGS, EXIT_OK } from "../src/cli.js";
 import { DirectiveError, scanIgnoreDirectives } from "../src/directives.js";
 import { audit } from "../src/audit.js";
 import { resolveCss } from "../src/resolve.js";
 import { run } from "./run.js";
-import { fixtureWriter } from "./fixture.js";
+import { fixtureWriter, scratchDir } from "./fixture.js";
 
 /**
  * `/* themeguard-ignore … *\/` — the site-scoped suppression slice.
@@ -330,11 +329,9 @@ describe("audit — the site conjunct, on top of entry matching that has not cha
  * annotation lives IN the file; the file is then refactored.
  */
 describe("runCli — the site-scoped suppression, end to end", () => {
-  const tmp = mkdtempSync(join(tmpdir(), "themeguard-directives-"));
+  const tmp = scratchDir("directives");
 
   const cssFixture = fixtureWriter(tmp);
-
-  afterAll(() => rmSync(tmp, { recursive: true, force: true }));
 
   /** The deliberate pair, annotated where it is written (standalone, line 3, above line 4). */
   const ANNOTATED = [

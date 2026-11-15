@@ -1,7 +1,6 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import { EXIT_ERROR, EXIT_FINDINGS, EXIT_OK } from "../src/cli.js";
 import {
   CONFIG_FILENAME,
@@ -12,7 +11,7 @@ import {
 } from "../src/config.js";
 import { audit } from "../src/audit.js";
 import { resolveCss } from "../src/resolve.js";
-import { FIXTURE_PATH, fixtureCss, fixtureStubCss, fixtureWriter } from "./fixture.js";
+import { FIXTURE_PATH, fixtureCss, fixtureStubCss, fixtureWriter, scratchDir } from "./fixture.js";
 import { BUILT_CLI, buildCli, run, spawnBuilt } from "./run.js";
 
 /**
@@ -60,7 +59,7 @@ const ONE_FINDING_CSS = `
 .panel:hover { background: var(--panel-hover); }
 `;
 
-const tmp = mkdtempSync(join(tmpdir(), "themeguard-config-"));
+const tmp = scratchDir("config");
 
 function writeConfig(dir: string, json: string): string {
   const path = join(dir, CONFIG_FILENAME);
@@ -82,8 +81,6 @@ const cssFixture = fixtureWriter(tmp);
 const FIXTURE_COPY = cssFixture("fixture-copy.css", fixtureCss());
 writeFileSync(join(tmp, "actiontext.css"), fixtureStubCss(), "utf8");
 const ONE_FINDING_PATH = cssFixture("one-finding.css", ONE_FINDING_CSS);
-
-afterAll(() => rmSync(tmp, { recursive: true, force: true }));
 
 describe("parseConfig — what the package can honour", () => {
   it("reads entries from the documented shape", () => {

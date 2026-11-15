@@ -1,8 +1,7 @@
-import { mkdirSync, readFileSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import { audit } from "../src/audit.js";
 import {
   EXIT_ERROR,
@@ -14,7 +13,7 @@ import {
 } from "../src/cli.js";
 import { loadStylesheet } from "../src/load.js";
 import { resolveStylesheet } from "../src/resolve.js";
-import { FIXTURE_PATH } from "./fixture.js";
+import { FIXTURE_PATH, scratchDir } from "./fixture.js";
 import { expectReportKeyOrder } from "./report-keys.js";
 import { REPO_ROOT, buildCli, run, spawnBuilt } from "./run.js";
 
@@ -80,7 +79,7 @@ const TRANSLUCENT_CSS = `
  * undefined at the moment it is read, and the command would report a missing
  * file rather than the stylesheet under test.
  */
-const tmp = mkdtempSync(join(tmpdir(), "themeguard-cli-"));
+const tmp = scratchDir("cli");
 
 function fixture(name: string, css: string): string {
   const path = join(tmp, name);
@@ -176,8 +175,6 @@ writeFileSync(
   }),
   "utf8",
 );
-
-afterAll(() => rmSync(tmp, { recursive: true, force: true }));
 
 describe("themeguard <file.css> over the vendored calibration fixture", () => {
   const result = run(FIXTURE_PATH);
