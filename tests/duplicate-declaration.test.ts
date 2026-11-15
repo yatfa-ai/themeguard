@@ -1,5 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { audit } from "../src/audit.js";
@@ -430,14 +429,9 @@ describe("the import closure — a duplicate inside an imported file is cited BY
    * the file the line belongs to.
    */
   it("names the imported file rather than a bare selector:line", () => {
-    const dir = mkdtempSync(join(tmpdir(), "themeguard-duplicate-import-"));
-    writeFileSync(
-      join(dir, "tokens.css"),
-      ":root {\n  --accent: #FF0000;\n  --accent: #00AA00;\n}\n",
-      "utf8",
-    );
-    const entry = join(dir, "app.css");
-    writeFileSync(entry, '@import "./tokens.css";\n.btn { color: var(--accent); }\n', "utf8");
+    const write = fixtureWriter(join(tmp, "imported-site"));
+    write("tokens.css", ":root {\n  --accent: #FF0000;\n  --accent: #00AA00;\n}\n");
+    const entry = write("app.css", '@import "./tokens.css";\n.btn { color: var(--accent); }\n');
 
     const findings = duplicateDeclarationRule(resolveStylesheet(loadStylesheet(entry)));
     expect(findings).toHaveLength(1);
@@ -446,8 +440,6 @@ describe("the import closure — a duplicate inside an imported file is cited BY
     expect(finding?.message).toContain("#00AA00 at tokens.css:3");
     expect(finding?.message).not.toContain(":root:2");
     expect(finding?.evidence?.["declaredIn"]).toEqual(["tokens.css:2", "tokens.css:3"]);
-
-    rmSync(dir, { recursive: true, force: true });
   });
 
   /**
@@ -458,18 +450,14 @@ describe("the import closure — a duplicate inside an imported file is cited BY
    * declarations now sit in one audited document.
    */
   it("does not fire across the import edge — two files' :root blocks are two scopes", () => {
-    const dir = mkdtempSync(join(tmpdir(), "themeguard-duplicate-cross-file-"));
-    writeFileSync(join(dir, "tokens.css"), ":root { --accent: #FF0000; }\n", "utf8");
-    const entry = join(dir, "app.css");
-    writeFileSync(
-      entry,
+    const write = fixtureWriter(join(tmp, "cross-file"));
+    write("tokens.css", ":root { --accent: #FF0000; }\n");
+    const entry = write(
+      "app.css",
       '@import "./tokens.css";\n:root { --accent: #00AA00; }\n.btn { color: var(--accent); }\n',
-      "utf8",
     );
 
     expect(duplicateDeclarationRule(resolveStylesheet(loadStylesheet(entry)))).toEqual([]);
-
-    rmSync(dir, { recursive: true, force: true });
   });
 
   /**
@@ -496,19 +484,14 @@ describe("the import closure — a duplicate inside an imported file is cited BY
    * finding's structured fields rather than on a line.
    */
   it("an ENTRY-file directive does NOT silence a duplicate living in an IMPORTED file", () => {
-    const dir = mkdtempSync(join(tmpdir(), "themeguard-duplicate-suppress-import-"));
-    writeFileSync(
-      join(dir, "tokens.css"),
-      ":root {\n  --accent: #FF0000;\n  --accent: #00AA00;\n}\n",
-      "utf8",
-    );
+    const write = fixtureWriter(join(tmp, "suppress-import"));
+    write("tokens.css", ":root {\n  --accent: #FF0000;\n  --accent: #00AA00;\n}\n");
     const entryCss = [
       '@import "./tokens.css";',
       "/* themeguard-ignore duplicate-declaration -- entry-file judgement, line 2 */",
       ".btn { color: var(--accent); }",
     ].join("\n");
-    const entry = join(dir, "app.css");
-    writeFileSync(entry, `${entryCss}\n`, "utf8");
+    const entry = write("app.css", `${entryCss}\n`);
 
     // The directive sits at entry line 2; the shadowed site is tokens.css:2.
     // The bare numbers coincide — the origin fence is what keeps them apart.
@@ -523,19 +506,12 @@ describe("the import closure — a duplicate inside an imported file is cited BY
     expect(report.suppressed).toHaveLength(0);
     // And the judgement that bound to nothing says so rather than going quiet.
     expect(report.unmatchedSuppressions).toHaveLength(1);
-
-    rmSync(dir, { recursive: true, force: true });
   });
 
   it("a token-scoped CONFIG entry DOES suppress an imported duplicate — the door that crosses files", () => {
-    const dir = mkdtempSync(join(tmpdir(), "themeguard-duplicate-config-import-"));
-    writeFileSync(
-      join(dir, "tokens.css"),
-      ":root {\n  --accent: #FF0000;\n  --accent: #00AA00;\n}\n",
-      "utf8",
-    );
-    const entry = join(dir, "app.css");
-    writeFileSync(entry, '@import "./tokens.css";\n.btn { color: var(--accent); }\n', "utf8");
+    const write = fixtureWriter(join(tmp, "config-import"));
+    write("tokens.css", ":root {\n  --accent: #FF0000;\n  --accent: #00AA00;\n}\n");
+    const entry = write("app.css", '@import "./tokens.css";\n.btn { color: var(--accent); }\n');
 
     const report = audit(resolveStylesheet(loadStylesheet(entry)), {
       suppressions: [
@@ -550,8 +526,6 @@ describe("the import closure — a duplicate inside an imported file is cited BY
     expect(report.suppressed).toHaveLength(1);
     expect(report.suppressed[0]?.finding.message).toContain("tokens.css:2");
     expect(report.unmatchedSuppressions).toHaveLength(0);
-
-    rmSync(dir, { recursive: true, force: true });
   });
 });
 
