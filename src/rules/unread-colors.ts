@@ -9,8 +9,9 @@
  * evaluate — a `light-dark()` whose chosen arm does not resolve to a colour,
  * `color-mix()` (in a space other than `srgb` / `srgb-linear`, or with an
  * operand the parser cannot read), relative colour syntax
- * (`oklch(from var(--x) l c h)`), `color()` in a space other than `srgb`,
- * `currentColor` and the system-colour keywords. Such a token is silently
+ * (`oklch(from var(--x) l c h)`), an rgb/hsl/hwb/lab/lch/oklab/oklch call with
+ * a `var()` or `calc()` argument (`hsl(var(--h) 0% 13.3%)`), `color()` in a
+ * space other than `srgb`, `currentColor` and the system-colour keywords. Such a token is silently
  * absent from collision, scale-collapse and the contrast measurements, and
  * without this inventory the report reads as a complete audit.
  *
@@ -50,8 +51,10 @@ export interface UnreadColor {
   readonly token: string;
   /**
    * The syntax that kept the token out: `light-dark`, `color-mix`,
-   * `relative-color`, `color(<space>)`, `currentColor`, `system-color` or
-   * `channel-triple` (a bare three-number value such as `255 255 255`).
+   * `relative-color`, `functional-color(var/calc)` (an rgb/hsl/hwb/lab/lch/
+   * oklab/oklch call with a `var()` or `calc()` argument), `color(<space>)`,
+   * `currentColor`, `system-color` or `channel-triple` (a bare three-number
+   * value such as `255 255 255`).
    */
   readonly syntax: string;
   /** 1-based line of the declaration the token resolves from. */
@@ -140,6 +143,17 @@ export function unreadColorSyntax(value: string): string | null {
   const body = call.body.trim();
   if (RELATIVE_FUNCTIONS.has(call.name) && /^from(?:\s|$)/i.test(body)) {
     return "relative-color";
+  }
+  // A colour function whose argument is a `var()` / `calc()` the parser does
+  // not substitute (`hsl(var(--h) 0% 13.3%)`, `rgb(34 34 34 / var(--a))`).
+  // Whole-call only, so `0 1px 2px rgb(var(--x))` never reaches here; `color()`
+  // keeps its own `color(<space>)` label.
+  if (
+    call.name !== "color" &&
+    RELATIVE_FUNCTIONS.has(call.name) &&
+    /\b(?:var|calc)\(/i.test(body)
+  ) {
+    return "functional-color(var/calc)";
   }
   if (call.name === "color") {
     const space = body.match(/^(--?[a-z][\w-]*|[a-z][\w-]*)/i)?.[1]?.toLowerCase();

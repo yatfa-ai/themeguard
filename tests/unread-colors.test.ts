@@ -56,6 +56,9 @@ describe("unreadColorSyntax — which syntax kept a token out", () => {
     ["color-mix(in oklch, #fff 90%, #000)", "color-mix"],
     ["oklch(from var(--x) l c h)", "relative-color"],
     ["rgb(from #123456 r g b / 50%)", "relative-color"],
+    ["hsl(var(--h) 0% 13.3%)", "functional-color(var/calc)"],
+    ["rgb(calc(34) 34 34)", "functional-color(var/calc)"],
+    ["rgb(34 34 34 / var(--a))", "functional-color(var/calc)"],
     ["color(display-p3 1 0 0)", "color(display-p3)"],
     ["color(rec2020 0.1 0.2 0.3)", "color(rec2020)"],
     ["currentColor", "currentColor"],
@@ -223,6 +226,31 @@ body { background: var(--bg); color: var(--ink); }
 });
 
 describe("unread-colors branch pins", () => {
+  it("relative-colour syntax keeps precedence over the var()/calc() label", () => {
+    expect(unreadColorSyntax("rgb(from var(--x) r g b)")).toBe("relative-color");
+    expect(unreadColorSyntax("hsl(from calc(1) h s l)")).toBe("relative-color");
+  });
+
+  it("lists a var()-argument colour function end to end, exit 0, with the JSON row shape", () => {
+    const path = sheet(
+      ":root{--h:0;--bg:#fff;--card:#eee}\n[data-theme=\"dark\"]{--bg:#222222;--card:hsl(var(--h) 0% 13.3%)}\n.x{background:var(--bg);color:var(--card)}",
+    );
+    const text = run(path);
+    expect(text.stdout).toContain("unread-colors (1)");
+    expect(text.stdout).toContain(
+      '[unread] --card (functional-color(var/calc)) in theme "dark", declared at line 2',
+    );
+    expect(text.stdout).toContain("No findings.");
+    expect(text.code).toBe(EXIT_OK);
+    const json = JSON.parse(run("--json", path).out[0] as string) as {
+      unreadColors: Record<string, unknown>[];
+    };
+    expect(json.unreadColors).toHaveLength(1);
+    expect(Object.keys(json.unreadColors[0]).sort()).toEqual(
+      ["declaration", "line", "syntax", "theme", "token"],
+    );
+  });
+
   it("a whole-value call followed by more value is not listed", () => {
     expect(unreadColorSyntax("color-mix(in oklch, red, blue) 10%")).toBeNull();
     expect(unreadColorSyntax("light-dark(#fff, #000) !important")).toBeNull();

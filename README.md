@@ -224,7 +224,9 @@ The boundary: values that are not a fixed colour themeguard can place in sRGB ar
 a `color-mix()` in a polar (`hsl`/`hwb`/`lch`/`oklch`), `xyz*`, `oklab` or `lab` space, with a hue
 interpolation method, or with an operand it cannot read (`currentColor`, a system colour, `light-dark()`,
 a `calc()`, or a `var()` that is unresolved, loops, or is not a colour), a `light-dark()` whose chosen arm
-does not resolve to a colour, relative colour syntax (`oklch(from var(--x) l c h)`), `color()` in any
+does not resolve to a colour, relative colour syntax (`oklch(from var(--x) l c h)`), an `rgb()` / `hsl()` / `hwb()` / `lab()` / `lch()` /
+`oklab()` / `oklch()` call with a `var()` or `calc()` argument (`hsl(var(--h) 0% 13.3%)`, named
+`functional-color(var/calc)` — inventory only, the `var()` is not substituted), `color()` in any
 space other than `srgb` (`display-p3`, `rec2020`, …), system colours, `currentColor` and a bare
 three-number value such as `255 255 255` (the Tailwind v3 `rgb(var(--x) / <alpha-value>)` channel shape —
 ambiguous without the consumer's wrapper, so named as `channel-triple` rather than guessed). A token with
@@ -232,7 +234,7 @@ such a value is classified `non-color` and is left out of the colour rules — b
 report's counted **`unread-colors`** section names every such token (`--bg (light-dark) in theme
 "root", declared at line 2`), with a per-theme headline of how many tokens that is of the theme's
 total, and prints a "nothing left out" line at zero. It lists only a value that *is* the unread syntax
-(one `light-dark()` / declined `color-mix()` / relative-colour / non-sRGB `color()` call, or `currentColor` / a
+(one `light-dark()` / declined `color-mix()` / relative-colour / `var()`- or `calc()`-argument colour-function / non-sRGB `color()` call, or `currentColor` / a
 system-colour keyword / a bare three-number `channel-triple`, on its own) — never a length, a font stack or a shadow — and it is facts, not
 findings: it never moves the exit code. In `--json` it is `unreadColors` — `{theme, token, syntax,
 line, declaration}` rows (plus `importOrigin` for a declaration spliced in over `@import`), always
