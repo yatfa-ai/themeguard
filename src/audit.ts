@@ -174,9 +174,7 @@ export interface AuditReport {
    * the audited stylesheet itself is not a second dead conjunct and earns the
    * clause.)
    */
-  readonly unmatchedSuppressions: readonly (
-    SuppressionEntry | SiteScopedSuppressionEntry | FileScopedSuppressionEntry
-  )[];
+  readonly unmatchedSuppressions: readonly AnySuppressionEntry[];
   /**
    * Findings the project's own RULE POLICY set aside — the rule each was
    * reported under is named in `AuditOptions.disabledRules`, the config's
@@ -263,9 +261,7 @@ export interface AuditOptions {
    * error — so a judgement that has outlived its defect can say so instead
    * of going silent.
    */
-  readonly suppressions?: readonly (
-    SuppressionEntry | SiteScopedSuppressionEntry | FileScopedSuppressionEntry
-  )[];
+  readonly suppressions?: readonly AnySuppressionEntry[];
 
   /**
    * The stylesheet being audited, normalized the same way the CLI normalizes
@@ -372,6 +368,13 @@ export interface SuppressionFileScope {
 export type FileScopedSuppressionEntry = SuppressionEntry & SuppressionFileScope;
 
 /**
+ * Every shape a suppression entry can take: unscoped, site-scoped or
+ * file-scoped. Spell the family through this alias so widening it is a
+ * one-line edit.
+ */
+export type AnySuppressionEntry = SuppressionEntry | SiteScopedSuppressionEntry | FileScopedSuppressionEntry;
+
+/**
  * A finding the caller has declared deliberate: the finding itself, kept
  * whole so the reader can still check the measurement it was reported with,
  * and the reason the user gave for setting it aside. The matching entry is
@@ -387,7 +390,7 @@ export interface SuppressedFinding {
    * scope included, and for a directive-sourced entry the site it was
    * recorded at.
    */
-  readonly entry: SuppressionEntry | SiteScopedSuppressionEntry | FileScopedSuppressionEntry;
+  readonly entry: AnySuppressionEntry;
 }
 
 /**
@@ -599,7 +602,7 @@ export interface IdentityTarget {
  * SAME predicate the findings do, and the two answers cannot drift.
  */
 export function matchesEntryIdentity(
-  entry: SuppressionEntry | SiteScopedSuppressionEntry | FileScopedSuppressionEntry,
+  entry: AnySuppressionEntry,
   finding: IdentityTarget,
 ): boolean {
   if (entry.rule !== finding.rule) return false;
@@ -636,7 +639,7 @@ export function matchesEntryIdentity(
  *   at all.
  */
 export function entryFileScope(
-  entry: SuppressionEntry | SiteScopedSuppressionEntry | FileScopedSuppressionEntry,
+  entry: AnySuppressionEntry,
 ): string | undefined {
   return "fileResolved" in entry ? entry.fileResolved : entry.file;
 }
@@ -733,9 +736,7 @@ const DISABLED_BY_POLICY = "[disabled by policy]";
  *   keyed on shape would fold them.
  */
 export function crossFileAims(
-  unmatched: readonly (
-    SuppressionEntry | SiteScopedSuppressionEntry | FileScopedSuppressionEntry
-  )[],
+  unmatched: readonly AnySuppressionEntry[],
   kept: readonly Finding[],
   resolved: ResolvedStylesheet,
 ): readonly (CrossFileAim | undefined)[] {
@@ -862,9 +863,7 @@ export interface ThemelessAim {
  *   SLOTS, and a map keyed on shape would fold two identical judgements.
  */
 export function themelessAims(
-  unmatched: readonly (
-    SuppressionEntry | SiteScopedSuppressionEntry | FileScopedSuppressionEntry
-  )[],
+  unmatched: readonly AnySuppressionEntry[],
   kept: readonly Finding[],
   auditedStylesheet?: string,
 ): readonly (ThemelessAim | undefined)[] {
@@ -1016,9 +1015,7 @@ export interface SkippedAim {
  *   SLOTS, and a map keyed on shape would fold two identical judgements.
  */
 export function skippedAims(
-  unmatched: readonly (
-    SuppressionEntry | SiteScopedSuppressionEntry | FileScopedSuppressionEntry
-  )[],
+  unmatched: readonly AnySuppressionEntry[],
   kept: readonly SkippedPair[],
   auditedStylesheet?: string,
 ): readonly (SkippedAim | undefined)[] {
@@ -1149,9 +1146,7 @@ export interface SiblingAim {
  *   SLOTS, and a map keyed on shape would fold two identical judgements.
  */
 export function siblingAims(
-  unmatched: readonly (
-    SuppressionEntry | SiteScopedSuppressionEntry | FileScopedSuppressionEntry
-  )[],
+  unmatched: readonly AnySuppressionEntry[],
   auditedStylesheet?: string,
 ): readonly (SiblingAim | undefined)[] {
   return unmatched.map((entry) => {
@@ -1259,7 +1254,7 @@ export function audit(
   // exported helper.
   const knownOrigins = closureOrigins(resolved);
   const matches = (
-    entry: SuppressionEntry | SiteScopedSuppressionEntry | FileScopedSuppressionEntry,
+    entry: AnySuppressionEntry,
     finding: Finding,
   ): boolean => {
     // Everything except the site, in one exported predicate — the half the
@@ -1335,10 +1330,7 @@ export function audit(
     }
     let index = -1;
     for (let i = 0; i < suppressions.length; i += 1) {
-      const candidate = suppressions[i] as
-        | SuppressionEntry
-        | SiteScopedSuppressionEntry
-        | FileScopedSuppressionEntry;
+      const candidate = suppressions[i] as AnySuppressionEntry;
       if (!matches(candidate, finding)) continue;
       // Booked whether or not it attributes: a later slot covering the same
       // finding matched, and the complement must not claim otherwise.
@@ -1349,7 +1341,7 @@ export function audit(
     else {
       // Attribution is the FIRST match, as it has always been: one row in
       // `suppressed`, carrying that entry's reason and identity.
-      const entry = suppressions[index] as SuppressionEntry | SiteScopedSuppressionEntry | FileScopedSuppressionEntry;
+      const entry = suppressions[index] as AnySuppressionEntry;
       suppressed.push({ finding, reason: entry.reason, entry });
     }
   }

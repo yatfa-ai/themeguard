@@ -323,6 +323,7 @@ import {
   skippedAims,
   siblingAims,
   themelessAims,
+  type AnySuppressionEntry,
   type CrossFileAim,
   type FileScopedSuppressionEntry,
   type SiblingAim,
@@ -581,7 +582,7 @@ function crossFileClause(aim: CrossFileAim | undefined): string {
  * composition stays honest if some shape ever carries both.
  */
 function themelessClause(
-  entry: SuppressionEntry | SiteScopedSuppressionEntry | FileScopedSuppressionEntry,
+  entry: AnySuppressionEntry,
   aim: ThemelessAim | undefined,
 ): string {
   return aim === undefined
@@ -660,7 +661,7 @@ function skippedClause(aim: SkippedAim | undefined): string {
  * sourceClause / crossFileClause / themelessClause family and composes last.
  */
 function disabledRuleClause(
-  entry: SuppressionEntry | SiteScopedSuppressionEntry | FileScopedSuppressionEntry,
+  entry: AnySuppressionEntry,
   reporting: ReadonlySet<RuleId>,
 ): string {
   return reporting.has(entry.rule)
