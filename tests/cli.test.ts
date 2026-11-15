@@ -13,7 +13,7 @@ import {
 } from "../src/cli.js";
 import { loadStylesheet } from "../src/load.js";
 import { resolveStylesheet } from "../src/resolve.js";
-import { FIXTURE_PATH, scratchDir } from "./fixture.js";
+import { FIXTURE_PATH, fixtureWriter, scratchDir } from "./fixture.js";
 import { expectReportKeyOrder } from "./report-keys.js";
 import { REPO_ROOT, buildCli, run, spawnBuilt } from "./run.js";
 
@@ -81,11 +81,7 @@ const TRANSLUCENT_CSS = `
  */
 const tmp = scratchDir("cli");
 
-function fixture(name: string, css: string): string {
-  const path = join(tmp, name);
-  writeFileSync(path, css, "utf8");
-  return path;
-}
+const fixture = fixtureWriter(tmp);
 
 const CLEAN_PATH = fixture("clean.css", CLEAN_CSS);
 const TRANSLUCENT_PATH = fixture("translucent.css", TRANSLUCENT_CSS);

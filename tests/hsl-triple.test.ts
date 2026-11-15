@@ -1,11 +1,9 @@
-import { writeFileSync } from "node:fs";
-import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { audit } from "../src/audit.js";
 import { parseColor, parseHslTriple, toCss } from "../src/color.js";
 import { resolveCss } from "../src/resolve.js";
 import { unreadColorSyntax } from "../src/rules/unread-colors.js";
-import { FIXTURE_PATH, scratchDir } from "./fixture.js";
+import { FIXTURE_PATH, fixtureWriter, scratchDir } from "./fixture.js";
 import { run } from "./run.js";
 
 /**
@@ -17,11 +15,7 @@ import { run } from "./run.js";
 
 const dir = scratchDir("hsl-triple");
 
-function sheet(name: string, css: string): string {
-  const path = join(dir, name);
-  writeFileSync(path, css);
-  return path;
-}
+const sheet = fixtureWriter(dir);
 
 const TRIPLE = `
 @layer base {

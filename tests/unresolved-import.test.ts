@@ -8,7 +8,7 @@ import { loadStylesheet } from "../src/load.js";
 import { parseStylesheet } from "../src/parse.js";
 import { readFileSync } from "node:fs";
 import { resolveStylesheet } from "../src/resolve.js";
-import { scratchDir } from "./fixture.js";
+import { fixtureWriter, scratchDir } from "./fixture.js";
 
 /**
  * Rule 8 — UNRESOLVED IMPORT.
@@ -32,11 +32,7 @@ import { scratchDir } from "./fixture.js";
 
 const tmp = scratchDir("unresolved-import");
 
-function cssFixture(name: string, css: string, base: string = tmp): string {
-  const path = join(base, name);
-  writeFileSync(path, css, "utf8");
-  return path;
-}
+const cssFixture = fixtureWriter(tmp);
 
 const findingsOf = (path: string) => audit(resolveStylesheet(loadStylesheet(path))).findings;
 
@@ -246,10 +242,9 @@ describe("the rule participates in the report machinery", () => {
   it("a config entry suppresses by rule id or by the specifier token — and the exit returns to 0", () => {
     const dir = join(tmp, "sup-entry");
     mkdirSync(dir);
-    const path = cssFixture(
+    const path = fixtureWriter(dir)(
       "sup.css",
       '@import "./gone.css";\n\n.x { color: red; }\n',
-      dir,
     );
     writeFileSync(
       join(dir, "themeguard.config.json"),
@@ -307,7 +302,7 @@ describe("the rule participates in the report machinery", () => {
     const dir = join(tmp, "unmatched");
     mkdirSync(dir);
     // The config is recorded against a broken edge…
-    const broken = cssFixture("un.css", '@import "./ghost.css";\n\n.x { color: red; }\n', dir);
+    const broken = fixtureWriter(dir)("un.css", '@import "./ghost.css";\n\n.x { color: red; }\n');
     writeFileSync(
       join(dir, "themeguard.config.json"),
       JSON.stringify({
