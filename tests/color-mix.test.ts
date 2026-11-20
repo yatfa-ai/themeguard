@@ -1,11 +1,14 @@
-// color-mix(in srgb | srgb-linear, A [N%], B [M%]) is evaluated, not left unread.
+// color-mix(in srgb | srgb-linear | oklab, A [N%], B [M%]) is evaluated, not left unread.
 //
 // Reference values are independent of src/color.ts: the four toast surfaces are
 // the hexes the calibration stylesheet's OWN comment hand-computed (application
 // .tailwind.css, "-> #123132 / #2A1C2D / #322B25 / #162749"), and the rest are
 // byte arithmetic done here from the CSS Color 5 rules (premultiplied alpha,
-// percentage normalisation). oklab/lab are deliberately NOT evaluated in v1 —
-// there is no independently computed reference to calibrate a mix against.
+// percentage normalisation). The oklab vectors were computed with a standalone
+// pure-Python sRGB -> OKLab -> sRGB implementation (Ottosson's published
+// M1/M2 matrices, linear-light decode, round-to-byte), sharing no code or
+// matrices with src/color.ts. `lab` is deliberately NOT evaluated — there is
+// no independently computed reference to calibrate a mix against.
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { audit } from "../src/audit.js";
@@ -75,8 +78,7 @@ describe("parseColor — color-mix() of literal colours", () => {
     ["polar space", "color-mix(in oklch, red, blue)"],
     ["hsl", "color-mix(in hsl, red, blue)"],
     ["hue method", "color-mix(in srgb longer hue, red, blue)"],
-    ["oklab (no reference in v1)", "color-mix(in oklab, red, blue)"],
-    ["lab (no reference in v1)", "color-mix(in lab, red, blue)"],
+    ["lab (no reference)", "color-mix(in lab, red, blue)"],
     ["xyz", "color-mix(in xyz, red, blue)"],
     ["currentColor operand", "color-mix(in srgb, currentColor 25%, transparent)"],
     ["system colour operand", "color-mix(in srgb, Canvas, red)"],
@@ -92,6 +94,79 @@ describe("parseColor — color-mix() of literal colours", () => {
     ["unbalanced", "color-mix(in srgb, rgb(1 2 3, blue)"],
   ])("declines %s with null — never a guess", (_label, value) => {
     expect(parseColor(value), value).toBeNull();
+  });
+});
+
+describe("color-mix(in oklab, …)", () => {
+  it("matches independently computed reference vectors", () => {
+    expect(hexOf("color-mix(in oklab, #22c55e 15%, #0f172a 85%)")).toBe("#152E34");
+    expect(hexOf("color-mix(in oklab, red, blue)")).toBe("#8C53A2");
+    expect(hexOf("color-mix(in oklab, white, black)")).toBe("#636363");
+    // a wrong space fails the first pin: the srgb mix of the same pair differs
+    expect(hexOf("color-mix(in srgb, #22c55e 15%, #0f172a 85%)")).toBe("#123132");
+  });
+
+  it("is a fixed point for an identical pair", () => {
+    for (const h of ["#123456", "#FEDCBA", "#00FF7F", "#808080", "#7F00FF"]) {
+      expect(hexOf(`color-mix(in oklab, ${h}, ${h})`), h).toBe(h);
+    }
+  });
+
+  it("interpolates premultiplied: a transparent operand fades without darkening", () => {
+    expect(cssOf("color-mix(in oklab, red, transparent)")).toBe("rgba(255, 0, 0, 0.5)");
+    expect(cssOf("color-mix(in oklab, transparent, transparent)")).toBe("rgba(0, 0, 0, 0)");
+  });
+
+  it("follows the CSS Color 5 percentage rules", () => {
+    expect(hexOf("color-mix(in oklab, #22c55e 15%, #0f172a)")).toBe("#152E34");
+    // a sum below 100 scales alpha by sum/100 and keeps the 50/50 colour
+    expect(cssOf("color-mix(in oklab, red 20%, blue 20%)")).toBe("rgba(140, 83, 162, 0.4)");
+  });
+
+  it("evaluates a nested mix (the inner result is quantised to bytes first)", () => {
+    expect(hexOf("color-mix(in oklab, color-mix(in oklab, white, black), black)")).toBe("#212121");
+    expect(hexOf("color-mix(in oklab, color-mix(in oklab, red, blue) 50%, #0f172a)")).toBe("#4B3463");
+  });
+
+  it("clips an out-of-gamut result per channel — no gamut mapping", () => {
+    expect(hexOf("color-mix(in oklab, #00ff00, #ff00ff)")).toBe("#C6B4B4");
+    expect(hexOf("color-mix(in oklab, #00ffff, #ff0000)")).toBe("#D2A993");
+  });
+
+  it("evaluates a var() operand in each theme's own view", () => {
+    const r = resolveCss(`
+:root { --accent: #22c55e; --surface: #0f172a; --wash: color-mix(in oklab, var(--accent) 15%, var(--surface)); }
+[data-theme="light"] { --surface: #ffffff; }
+`);
+    const root = r.token("--wash", ROOT_THEME);
+    expect(root?.kind).toBe("color");
+    expect(root?.resolvedValue).toBe("color-mix(in oklab, #22c55e 15%, #0f172a)");
+    expect(toHex(root?.color as never)).toBe("#152E34");
+    const light = r.token("--wash", "light");
+    expect(light?.kind).toBe("color");
+    expect(toHex(light?.color as never)).toBe("#E5F7E7");
+  });
+
+  it("reports the oklab twin of the srgb collision and leaves nothing unread", () => {
+    const twin = (space: string): string => `
+:root { --surface-a: color-mix(in ${space}, #22c55e 15%, #0f172a); --surface-b: color-mix(in ${space}, #22c55e 15%, #0f172a); }
+[data-theme="dark"] { --surface-a: #111111; --surface-b: #222222; }
+`;
+    for (const space of ["srgb", "oklab"]) {
+      const report = audit(resolveCss(twin(space)));
+      const hits = report.findings.filter((f) => f.rule === "collision");
+      expect(hits.map((f) => f.tokens), space).toEqual([["--surface-a", "--surface-b"]]);
+      expect(report.unreadColors, space).toEqual([]);
+    }
+  });
+
+  it("collides with its hex twin", () => {
+    const report = audit(
+      resolveCss(
+        ":root { --a: color-mix(in oklab, #22c55e 15%, #0f172a); --b: #152e34; }\n[data-theme=\"dark\"] { --a: #111111; --b: #222222; }",
+      ),
+    );
+    expect(report.findings.filter((f) => f.rule === "collision")).toHaveLength(1);
   });
 });
 

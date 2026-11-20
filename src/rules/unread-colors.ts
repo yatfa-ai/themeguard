@@ -7,7 +7,7 @@
  * are not colours (lengths, durations, font stacks, shadows), but a modern
  * stylesheet also writes colours in syntax the parser documents it does not
  * evaluate — a `light-dark()` whose chosen arm does not resolve to a colour,
- * `color-mix()` (in a space other than `srgb` / `srgb-linear`, or with an
+ * `color-mix()` (in a space other than `srgb` / `srgb-linear` / `oklab`, or with an
  * operand the parser cannot read), relative colour syntax
  * (`oklch(from var(--x) l c h)`), an rgb/hsl/hwb/lab/lch/oklab/oklch call with
  * a `var()` or `calc()` argument (`hsl(var(--h) 0% 13.3%)`), `color()` in a
@@ -19,13 +19,13 @@
  * counted, named, printed even at zero, and carrying no exit-code weight. It
  * only makes the omission visible. It is read off the resolver's own `kind`
  * fact, so a token the parser learns to read becomes `color` and drops out of
- * the list: that is what happened to `color-mix(in srgb|srgb-linear, …)`, which
+ * the list: that is what happened to `color-mix(in srgb|srgb-linear|oklab, …)`, which
  * the colour parser now evaluates (operands substituted per theme by the
  * resolver), and to `light-dark(A, B)`, which the resolver evaluates per theme
  * view — the dark view takes the dark arm, every other view the light arm — so
  * a token whose chosen arm resolves is a colour in that view and absent from
  * the list there, while the OTHER view (the one whose arm does not resolve)
- * still lists it. A `color-mix()` it declines — polar / `xyz*` / `oklab` / `lab`
+ * still lists it. A `color-mix()` it declines — polar / `xyz*` / `lab`
  * space, `currentColor` or a system colour operand, an unresolved or looping
  * `var()` operand — is still listed here.
  *

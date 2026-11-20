@@ -218,7 +218,7 @@ channel** into sRGB and quantised to 0–255, exactly like the legacy forms. The
 high-chroma `oklch()` that lies outside sRGB is clipped, so it can differ from what a wide-gamut display
 paints. A stylesheet written in `oklch()` therefore reports the same findings as its hex twin.
 
-`color-mix(in srgb | srgb-linear, A [N%], B [M%])` is evaluated too, over any operands themeguard already
+`color-mix(in srgb | srgb-linear | oklab, A [N%], B [M%])` is evaluated too, over any operands themeguard already
 reads (nested `color-mix()` included): CSS Color 5 percentage normalisation (both omitted is 50/50, one
 omitted is 100 minus the other, a sum above 100 is scaled, a sum below 100 multiplies the result's alpha;
 a negative or over-100 percentage, or `0% 0%`, is not a colour) and **premultiplied-alpha** interpolation,
@@ -226,9 +226,12 @@ so a `transparent` operand fades the mix without darkening it, quantised to 0–
 In the resolver a `var()` operand is replaced by that operand's resolved colour **in the same theme's
 view** — `color-mix(in srgb, var(--accent) 15%, var(--surface))` is one colour in `:root` and another in a
 theme that redefines `--surface` — and `resolvedValue` becomes the substituted text
-(`color-mix(in srgb, #22C55E 15%, #0F172A)`) while `declaredValue` stays as written. `oklab`/`lab` are
-deliberately **not** evaluated: themeguard has the conversion matrices but no independently computed
-reference to calibrate a mix against, so it declines rather than ship an unchecked number.
+(`color-mix(in srgb, #22C55E 15%, #0F172A)`) while `declaredValue` stays as written. An `oklab` mix
+interpolates L, a and b independently (premultiplied, same percentage rules) and converts back through
+the matrices an `oklab()` literal uses; a result outside the sRGB gamut is **clipped per channel**, exactly
+like an `oklch()` literal — there is no gamut mapping. `lab` is deliberately **not** evaluated:
+themeguard has the conversion matrices but no independently computed reference to calibrate a mix
+against, so it declines rather than ship an unchecked number.
 
 `light-dark(A, B)` is evaluated too, **per theme view**: a view named `dark` — the media query, the
 `.dark` class, `[data-theme=dark]`, compared case-insensitively, because the theme name is the only
@@ -252,7 +255,7 @@ any spelling (`.dark`, `[data-theme=dark]`, the media query) is the author speak
 themselves, and mints nothing.
 
 The boundary: values that are not a fixed colour themeguard can place in sRGB are not colours to it —
-a `color-mix()` in a polar (`hsl`/`hwb`/`lch`/`oklch`), `xyz*`, `oklab` or `lab` space, with a hue
+a `color-mix()` in a polar (`hsl`/`hwb`/`lch`/`oklch`), `xyz*` or `lab` space, with a hue
 interpolation method, or with an operand it cannot read (`currentColor`, a system colour, `light-dark()`,
 a `calc()`, or a `var()` that is unresolved, loops, or is not a colour), a `light-dark()` whose chosen arm
 does not resolve to a colour, relative colour syntax (`oklch(from var(--x) l c h)`), an `rgb()` / `hsl()` / `hwb()` / `lab()` / `lch()` /
@@ -1318,7 +1321,7 @@ facts and passes no judgement, the upper one judges those facts and nothing else
 |---|---|
 | `src/parse.ts` | Which blocks declare custom properties, in which of the four shapes — `:root` (or the same base scope spelled on the document element itself: `html`, `:where(html)`, `:is(html)`), `[data-theme=…]`, `@theme inline`, and a `prefers-color-scheme` `:root`/`html` block as its own theme — at which line, and every `var()` **use**, from every declaration rather than only the custom-property ones. |
 | `src/resolve.ts` | What each property resolves to **per theme**, following `var()` chains — through embedded primary-position references (`1px solid var(--c)`) as well as whole-value ones, re-marking a walk that stopped at a compound value `cycle` when the value it stopped at references a loop MEMBER in that theme's view — iterated to a fixed point, so a dependent several hops out is reached too — and minting, names-only, the loops no walk closes (an all-compound loop never completes a circuit from any seed), so their members carry the same fact and rule 6 judges them beside every other loop. Whole-value `color-mix()` and `light-dark()` evaluate to the colour the theme view paints; a base palette written in `light-dark()` with no declared dark theme gains the implicit `dark` view (`implicitThemes`). Theme absence, translucency, unresolved references and cycles are each represented explicitly — none of them is an error and none is guessed at. |
-| `src/color.ts` | Colour parsing (hex 3/4/6/8, `rgb()`/`rgba()`, `hsl()`/`hsla()`, `oklch()`, `oklab()`, `lab()`, `lch()`, `hwb()`, `color(srgb …)`, bare HSL channel triples on token values, named colours and `transparent`, alpha throughout; non-sRGB forms clip per channel, no gamut mapping; `color-mix(in srgb | srgb-linear, …)` of readable operands, premultiplied), WCAG relative luminance, CIE L\*, contrast ratio, source-over compositing. |
+| `src/color.ts` | Colour parsing (hex 3/4/6/8, `rgb()`/`rgba()`, `hsl()`/`hsla()`, `oklch()`, `oklab()`, `lab()`, `lch()`, `hwb()`, `color(srgb …)`, bare HSL channel triples on token values, named colours and `transparent`, alpha throughout; non-sRGB forms clip per channel, no gamut mapping; `color-mix(in srgb | srgb-linear | oklab, …)` of readable operands, premultiplied), WCAG relative luminance, CIE L\*, contrast ratio, source-over compositing. |
 | `src/audit.ts` | `audit(resolved)` — the nine rules in one pass, returning findings tagged `collision`, `dead-token`, `scale-collapse`, `family-consistency`, `unresolved-reference`, `cycle-reference`, `duplicate-declaration`, `unresolved-import` or `theme-partial-token`, plus the per-theme coverage inventory. Passing `suppressions` moves caller-declared findings out of `findings` and the counts into a `suppressed` leg, and the entries that matched nothing onto `unmatchedSuppressions`. Passing `disabledRules` moves a whole rule's output out of the report's live legs — findings off `findings` and the counts onto `suppressedDisabled`, and (for `scale-collapse`, the one rule with a second channel) skipped pairs off `skipped` onto `skippedDisabled` — the project-level policy face, checked before the per-entry match, so an entry naming a disabled rule stays unmatched and the report can say why. Also publishes the suppression matcher's own halves — `matchesEntryIdentity`, `findingSiteCoordinates`, `findingLinesIn`, `siteLineCovers`, `closureOrigins` — and the two reads over a FINISHED report that diagnose an unmatched judgement without suppressing anything: `crossFileAims`, which says which site-scoped judgement would govern a live finding one `@import` edge away, and `themelessAims`, which says which `theme`-scoped judgement names a rule that reports no theme at all. |
 | `src/config.ts` | `themeguard.config.json` — optional, discovered at or above the stylesheet (nearest ancestor wins; a config beside the stylesheet is the first hop). Parses and validates the `suppress` entries (strictly: an unhonourable config is an error naming the entry, never a silent skip) and the `suppress-rule` policy — an array of rule ids to turn off whole, validated against the same rule-id list the entries' `rule` field names, an unknown id an error naming the element — into the structured declarations `audit()` filters a finished report by. |
 | `src/rules/` | One module per question. Each docstring carries its judgement heuristics and, more usefully, what it deliberately does **not** report. `rules/coverage.ts` also carries the coverage inventory itself (its population includes `@property` registrations) — the facts rule 4 is measured over, printed by the CLI as an informational section and never an exit code. `rules/finding.ts` carries the shared citation the clauses are built from — `citeSite` for one site and `citeSiteList` for a list, which `positionClause` is now the `Declared at …` frame around, so a sibling clause needing the same file-aware spelling reads it rather than re-deriving it. It also declares `THEMELESS_RULES` — the five rules that report `theme: null` by construction, the stance the unmatched section's dead-theme-scope diagnosis reads rather than inferring from one run's findings. |

@@ -35,7 +35,7 @@
  * ── Whole-value function evaluation, per theme ──────────────────────────────
  * Two compound shapes do more than carry a loop edge — they are EVALUATED, per
  * theme view, into the colour that view paints: `color-mix()` (operands
- * substituted, srgb / srgb-linear only) and `light-dark(A, B)` (ONE arm per
+ * substituted, srgb / srgb-linear / oklab only) and `light-dark(A, B)` (ONE arm per
  * view — a dark view paints B, every other view paints A — the arm resolved
  * through the same operand walk). The substituted text becomes `resolvedValue`
  * while `declaredValue` stays as written; an arm or operand the evaluator
