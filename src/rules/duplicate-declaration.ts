@@ -41,7 +41,9 @@
  * within ONE scope object are judged, so a legitimate override never fires.
  * Not a same-value repeat. `--x: #FFF; --x: #FFF;` is harmless copy-paste
  * the cascade resolves identically; the predicate is DIFFERING values, so a
- * repeat that changes nothing audits green.
+ * repeat that changes nothing audits green. "Same" means the canonical colour
+ * where the text parses as one (`#fff` / `#FFFFFF` / `rgb(255 255 255)`), raw
+ * text otherwise (`4px`, `var(--x)`, `calc()`).
  * Not theme-scoped. Duplicate-ness is a fact about the SOURCE block — the
  * same fact in every theme's view — so the finding carries `theme: null`
  * (dead-token's stylesheet-wide stance).
@@ -87,6 +89,7 @@
  * question inside one scope, and references do not cross files).
  */
 
+import { parseTokenColor, toCss } from "../color.js";
 import type { ResolvedStylesheet } from "../resolve.js";
 import type { Finding } from "./finding.js";
 import { siteFromPosition, siteString } from "./finding.js";
@@ -104,6 +107,17 @@ interface Site {
    * whichever file the reader had open.
    */
   readonly origin?: string;
+}
+
+/**
+ * The comparison key for "differing values": the canonical colour when the
+ * declared text parses as one (`#fff`, `#FFF`, `#ffffff`, `rgb(255 255 255)`
+ * are one colour), the raw text otherwise. Only the duplicate decision and the
+ * shadowed-site choice use it — messages and evidence keep the declared text.
+ */
+function valueKey(value: string): string {
+  const c = parseTokenColor(value);
+  return c === null ? value : toCss(c);
 }
 
 export function duplicateDeclarationRule(
@@ -137,7 +151,7 @@ export function duplicateDeclarationRule(
       if (sites.length < 2) continue;
       // The predicate: differing values. A same-value repeat resolves to the
       // identical cascade outcome and is not a finding.
-      const values = new Set(sites.map((s) => s.value));
+      const values = new Set(sites.map((s) => valueKey(s.value)));
       if (values.size < 2) continue;
 
       // The winner is the LAST declaration — what the cascade keeps. The
@@ -149,7 +163,7 @@ export function duplicateDeclarationRule(
       let shadow = sites[0] as Site;
       for (let i = sites.length - 2; i >= 0; i--) {
         const candidate = sites[i] as Site;
-        if (candidate.value !== winner.value) {
+        if (valueKey(candidate.value) !== valueKey(winner.value)) {
           shadow = candidate;
           break;
         }
