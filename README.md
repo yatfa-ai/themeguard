@@ -12,7 +12,8 @@
 1. **Value collisions** — two variables that must differ hold byte-identical colours.
    A real one: `--app-border` equalled `--app-surface-raised`, so a panel's 1px border was literally
    invisible. It survived three and a half months and was worked around with a third token rather
-   than fixed.
+   than fixed. "Same colour" means the canonical colour, not the source text: `#fff`, `#FFF` and
+   `#ffffff` are one colour, so a pair spelled differently still collides and still counts as restated.
 2. **Dead variables** — declared, referenced nowhere.
 3. **Ramp collapse across themes** — `--text-muted` and `--text-faint` must stay apart by eye. If they
    converge in one theme, the text hierarchy is gone. Measured in CIE L\* (ΔL\* ≥ 4), **not** in

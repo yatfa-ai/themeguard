@@ -88,6 +88,7 @@
 
 import type { ResolvedStylesheet } from "../resolve.js";
 import { positionClause, siteFromToken, type Finding, type FindingSite } from "./finding.js";
+import { toCss } from "../color.js";
 import { TokenNames, surfaceCandidates } from "./tokens.js";
 
 /** A set of names that hold the same value in every theme. */
@@ -105,7 +106,11 @@ export function collisionRule(
 
   const colorValue = (name: string, theme: string): string | null => {
     const token = resolved.token(name, theme);
-    return token !== undefined && token.kind === "color" ? token.resolvedValue : null;
+    // The canonical key `resolved.collisionGroups` groups by, so "same colour" has
+    // ONE definition: `#fff`, `#FFF` and `#ffffff` are one colour, not three strings.
+    return token !== undefined && token.kind === "color" && token.color !== null
+      ? toCss(token.color)
+      : null;
   };
 
   // A theme SPEAKS about a name when it declares the name itself. An inherited
