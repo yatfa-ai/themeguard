@@ -43,7 +43,11 @@
  * the cascade resolves identically; the predicate is DIFFERING values, so a
  * repeat that changes nothing audits green. "Same" means the canonical colour
  * where the text parses as one (`#fff` / `#FFFFFF` / `rgb(255 255 255)`), raw
- * text otherwise (`4px`, `var(--x)`, `calc()`).
+ * text otherwise (`4px`, `var(--x)`, `calc()`). A bare HSL channel triple
+ * (`222 47% 11%`) and the full colour `hsl(222 47% 11%)` are DIFFERENT forms,
+ * not spellings of one value: the triple is consumed as `hsl(var(--x))`, and a
+ * later full colour would turn every such consumer into `hsl(hsl(…))`. A
+ * triple repeated with different spacing is still the same value.
  * Not theme-scoped. Duplicate-ness is a fact about the SOURCE block — the
  * same fact in every theme's view — so the finding carries `theme: null`
  * (dead-token's stylesheet-wide stance).
@@ -89,7 +93,7 @@
  * question inside one scope, and references do not cross files).
  */
 
-import { parseTokenColor, toCss } from "../color.js";
+import { parseColor, parseHslTriple, toCss } from "../color.js";
 import type { ResolvedStylesheet } from "../resolve.js";
 import type { Finding } from "./finding.js";
 import { siteFromPosition, siteString } from "./finding.js";
@@ -111,13 +115,18 @@ interface Site {
 
 /**
  * The comparison key for "differing values": the canonical colour when the
- * declared text parses as one (`#fff`, `#FFF`, `#ffffff`, `rgb(255 255 255)`
- * are one colour), the raw text otherwise. Only the duplicate decision and the
- * shadowed-site choice use it — messages and evidence keep the declared text.
+ * declared text parses as a full colour (`#fff`, `#FFF`, `#ffffff`,
+ * `rgb(255 255 255)` are one colour), the canonical triple — tagged so it never
+ * equals the colour — when it is a bare HSL channel triple (`222 47% 11%` and
+ * `222  47%  11%` are one triple, but not `hsl(222 47% 11%)`), the raw text
+ * otherwise. Only the duplicate decision and the shadowed-site choice use it —
+ * messages and evidence keep the declared text.
  */
 function valueKey(value: string): string {
-  const c = parseTokenColor(value);
-  return c === null ? value : toCss(c);
+  const c = parseColor(value);
+  if (c !== null) return toCss(c);
+  const t = parseHslTriple(value);
+  return t === null ? value : `triple:${toCss(t)}`;
 }
 
 export function duplicateDeclarationRule(
