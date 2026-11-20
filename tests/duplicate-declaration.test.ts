@@ -180,6 +180,30 @@ describe("rule 7 — duplicate declaration, the shapes that used to pass silent"
     }
   });
 
+  it("a bare HSL triple followed by the equal hsl() colour is a duplicate, naming both declared texts", () => {
+    const css = `:root {\n  --background: 222 47% 11%;\n  --background: hsl(222 47% 11%);\n}\nbody { background: hsl(var(--background)); }\n`;
+    const findings = duplicateDeclarationRule(resolveCss(css));
+    expect(findings).toHaveLength(1);
+    expect(findings[0]!.message).toContain(
+      "222 47% 11% at :root:2, shadowed by hsl(222 47% 11%) at :root:3",
+    );
+    expect(findings[0]!.evidence["values"]).toEqual(["222 47% 11%", "hsl(222 47% 11%)"]);
+  });
+
+  it("the reverse order (hsl() colour then the triple) is a duplicate too", () => {
+    const css = `:root {\n  --background: hsl(222 47% 11%);\n  --background: 222 47% 11%;\n}\nbody { background: hsl(var(--background)); }\n`;
+    const findings = duplicateDeclarationRule(resolveCss(css));
+    expect(findings).toHaveLength(1);
+    expect(findings[0]!.message).toContain(
+      "hsl(222 47% 11%) at :root:2, shadowed by 222 47% 11% at :root:3",
+    );
+  });
+
+  it("NEGATIVE — a triple repeated with different whitespace is not a duplicate", () => {
+    const css = `:root { --background: 222 47% 11%; --background: 222  47%  11%; }\nbody { background: hsl(var(--background)); }\n`;
+    expect(duplicateDeclarationRule(resolveCss(css))).toHaveLength(0);
+  });
+
   it("a pair differing in canonical colour still fires, and prints the raw spellings", () => {
     const css = `:root {\n  --b: #FF0000;\n  --b: #00ff00;\n}\n.btn { color: var(--b); }\n`;
     const findings = duplicateDeclarationRule(resolveCss(css));
