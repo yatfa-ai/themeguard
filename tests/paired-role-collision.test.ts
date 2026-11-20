@@ -129,3 +129,59 @@ describe("collision — a surface and its own foreground (paired roles)", () => 
     expect(surfaceCandidates("--primary")).toEqual([]);
   });
 });
+
+describe("collision — 'same colour' is the canonical colour, not the source spelling", () => {
+  const sheet = (root: string, dark: string) =>
+    `${root}\n${dark}\na{border-color:var(--app-border);background:var(--app-surface-raised);}`;
+
+  it("treats #fff / #ffffff restated in root and equal in dark as lockstep, not divergent", () => {
+    const found = only(
+      sheet(
+        `:root { --app-border: #fff; --app-surface-raised: #ffffff; }`,
+        `.dark { --app-border: #111111; --app-surface-raised: #111111; }`,
+      ),
+    );
+    expect(found).toEqual([]);
+  });
+
+  it("still reports a #fff/#ffffff root pair that genuinely diverges in dark, naming dark", () => {
+    const found = only(
+      sheet(
+        `:root { --app-border: #fff; --app-surface-raised: #ffffff; }`,
+        `.dark { --app-border: #111111; --app-surface-raised: #222222; }`,
+      ),
+    );
+    expect(found).toHaveLength(1);
+    expect(found[0]?.theme).toBe("root");
+    expect(found[0]?.evidence.corroboration).toBe('divergent in "dark"');
+  });
+
+  it("an equality spelled two ways and restated nowhere is unwitnessed, never divergent", () => {
+    const found = only(
+      sheet(
+        `:root { --app-border: #FFF; --app-surface-raised: rgb(255 255 255); }`,
+        ``,
+      ),
+    );
+    expect(found).toHaveLength(1);
+    expect(found[0]?.evidence.corroboration).toBe("unwitnessed");
+  });
+
+  it("the paired-role branch witnesses a restated equality across spellings", () => {
+    const found = only(
+      `:root { --primary:#fff; --primary-foreground:#ffffff; }
+       .dark { --primary:#111111; --primary-foreground:#111111; }`,
+    );
+    // Both themes state the equality; neither is "declared apart" in the other.
+    for (const f of found) expect(f.evidence.corroboration).not.toMatch(/^divergent/);
+  });
+
+  it("the paired-role branch still names a theme that genuinely declares them apart", () => {
+    const [f] = only(
+      `:root { --primary:#2563eb; --primary-foreground:#fff; }
+       .dark { --primary:#FFF; --primary-foreground:#ffffff; }`,
+    );
+    expect(f?.theme).toBe("dark");
+    expect(f?.evidence.corroboration).toBe('divergent in "root"');
+  });
+});
