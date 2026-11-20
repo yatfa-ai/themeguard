@@ -55,7 +55,8 @@
    one per loop per author: a loop the base declarations (or the `@theme inline` alias namespace)
    author is reported once for the stylesheet, and a loop a theme's own declarations close is
    reported for that theme — a theme that merely inherits a root-authored loop never re-reports it.
-7. **Duplicate declarations** — one name declared **twice in one scope** with differing values. The
+7. **Duplicate declarations** — one name declared **twice in one scope** with differing values (a repeat of the
+   same colour in a different spelling — `#fff` then `#ffffff` — is not a duplicate). The
    cascade keeps the last declaration and silently discards the rest, so the file the author reads
    says one thing and the browser paints another; until this rule the shape audited green, and the
    report's own coverage inventory even deduped it into one token. The finding is one per source

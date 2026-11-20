@@ -167,6 +167,45 @@ describe("rule 7 — duplicate declaration, the shapes that used to pass silent"
     expect(report.countsByRule["dead-token"]).toBe(1);
   });
 
+  it("NEGATIVE — one colour spelled two ways is not a duplicate", () => {
+    for (const [a, b] of [
+      ["#fff", "#ffffff"],
+      ["#FFF", "#fff"],
+      ["rgb(255 255 255)", "#fff"],
+      ["#FF0000", "red"],
+      ["hsl(0 0% 100%)", "#ffffff"],
+    ] as const) {
+      const css = `:root { --accent: ${a}; --accent: ${b}; }\n.btn { color: var(--accent); }\n`;
+      expect(audit(resolveCss(css)).findings, `${a} / ${b}`).toHaveLength(0);
+    }
+  });
+
+  it("a pair differing in canonical colour still fires, and prints the raw spellings", () => {
+    const css = `:root {\n  --b: #FF0000;\n  --b: #00ff00;\n}\n.btn { color: var(--b); }\n`;
+    const findings = duplicateDeclarationRule(resolveCss(css));
+    expect(findings).toHaveLength(1);
+    expect(findings[0]!.message).toContain("#FF0000 at :root:2, shadowed by #00ff00 at :root:3");
+    expect(findings[0]!.evidence["values"]).toEqual(["#FF0000", "#00ff00"]);
+  });
+
+  it("three declarations #fff, #00aa00, #ffffff fire once and name the #00aa00 site as shadowed", () => {
+    const css = `:root {\n  --a: #fff;\n  --a: #00aa00;\n  --a: #ffffff;\n}\n.btn { color: var(--a); }\n`;
+    const findings = duplicateDeclarationRule(resolveCss(css));
+    expect(findings).toHaveLength(1);
+    const f = findings[0]!;
+    expect(f.evidence["shadowedValue"]).toBe("#00aa00");
+    expect(f.evidence["winnerValue"]).toBe("#ffffff");
+    expect(f.message).toContain("#00aa00 at :root:3, shadowed by #ffffff at :root:4");
+    expect(f.evidence["values"]).toEqual(["#fff", "#00aa00", "#ffffff"]);
+  });
+
+  it("non-colour values still compare as raw text", () => {
+    const same = `:root { --gap: 4px; --gap: 4px; }\n.a { margin: var(--gap); }\n`;
+    expect(audit(resolveCss(same)).findings).toHaveLength(0);
+    const diff = `:root { --gap: 4px; --gap: 8px; }\n.a { margin: var(--gap); }\n`;
+    expect(duplicateDeclarationRule(resolveCss(diff))).toHaveLength(1);
+  });
+
   it("a selector-list block yields ONE finding, not one per scope half — and names the full prelude", () => {
     // One source block, two Scopes (`:root` and `[data-theme="dark"]`) over
     // the same declarations: the emission is deduped to one finding, and the
