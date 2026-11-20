@@ -434,7 +434,7 @@ function parseHsl(body: string): Color | null {
   if (!split) return null;
   const [rawH, rawS, rawL] = split.parts;
   const h = hueDegrees(rawH) ?? NaN;
-  const s = Number(rawS.replace(/%$/, "")) / 100;
+  const s = Math.max(0, Number(rawS.replace(/%$/, "")) / 100);
   const l = Number(rawL.replace(/%$/, "")) / 100;
   if (![h, s, l].every(Number.isFinite)) return null;
   const a = parseAlpha(split.alpha);
