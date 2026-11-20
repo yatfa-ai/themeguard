@@ -89,7 +89,7 @@ const MODERN = /^(oklch|oklab|lab|lch|hwb|color)\(\s*([^)]*)\)$/i;
  * `color(srgb r g b)` — in their space-separated `/ alpha` form only (CSS has no
  * comma form for them), with percentage or number channels, the `none` keyword
  * read as 0, and hue units `deg`/`grad`/`rad`/`turn`; the CSS named-colour
- * keywords plus `transparent`; and `color-mix(in srgb|srgb-linear, A [N%], B
+ * keywords plus `transparent`; and `color-mix(in srgb|srgb-linear|oklab, A [N%], B
  * [M%])` of operands this function itself reads (see {@link mixColors}).
  *
  * Every non-sRGB form is converted with the standard CSS Color Module Level 4
@@ -101,7 +101,7 @@ const MODERN = /^(oklch|oklab|lab|lch|hwb|color)\(\s*([^)]*)\)$/i;
  *
  * Returns `null` — never a guess — for anything that is not a colour this file
  * can place in sRGB: a length, a duration, a font stack, a box-shadow list, a
- * `color-mix()` outside the rectangular sRGB spaces (polar, `xyz*`, `oklab`,
+ * `color-mix()` outside the rectangular spaces it evaluates (polar, `xyz*`,
  * `lab`) or with an operand this function cannot read (`var()`, `currentColor`,
  * a system colour), a `light-dark()` expression, relative colour syntax
  * (`oklch(from var(--x) l c h)`), a non-sRGB `color()` space, a system colour,
@@ -298,11 +298,14 @@ const srgbToLinear = (c: number): number => {
 /**
  * `color-mix(in <space>, a pa%, b pb%)` for the rectangular spaces whose
  * conversion is a closed form from the sRGB bytes this file already holds:
- * `srgb` and `srgb-linear`. Any other space — the polar ones (`hsl`, `hwb`,
- * `lch`, `oklch`, whose hue interpolation needs a method), `xyz*`, and
- * `oklab`/`lab` — returns `null`: `oklab`/`lab` have the forward matrices here
- * but no independently computed reference to calibrate a mix against, so v1
- * declines them rather than ship an unchecked number.
+ * `srgb`, `srgb-linear` and `oklab` (L, a and b interpolate independently; the
+ * result converts back through the same matrices an `oklab()` literal uses and
+ * CLIPS per channel into sRGB — there is no gamut mapping, so an out-of-gamut
+ * mix clips exactly like an `oklch()` literal). Any other space — the polar
+ * ones (`hsl`, `hwb`, `lch`, `oklch`, whose hue interpolation needs a method),
+ * `xyz*`, and `lab` — returns `null`: `lab` has the back matrices here but no
+ * independently computed reference to calibrate a mix against, so it is
+ * declined rather than shipping an unchecked number.
  *
  * Percentages follow CSS Color 5: both omitted is 50/50; one omitted is
  * 100 minus the other; a negative or over-100 percentage, or both zero, is
@@ -318,7 +321,7 @@ export function mixColors(
   b: Color,
   pb: number | null,
 ): Color | null {
-  if (space !== "srgb" && space !== "srgb-linear") return null;
+  if (space !== "srgb" && space !== "srgb-linear" && space !== "oklab") return null;
   for (const p of [pa, pb]) if (p !== null && (!Number.isFinite(p) || p < 0 || p > 100)) return null;
   let p1: number;
   let p2: number;
@@ -338,6 +341,20 @@ export function mixColors(
   const wb = p2 * b.a;
   const weight = wa + wb;
   if (weight === 0) return rgba(0, 0, 0, 0);
+  if (space === "oklab") {
+    // Premultiplied mix of L, a, b, then back to sRGB through the matrices an
+    // `oklab()` literal uses; encodeSrgb clips each channel (no gamut mapping).
+    const la = srgbBytesToOklab(a);
+    const lb = srgbBytesToOklab(b);
+    const lab = [0, 1, 2].map((i) => (wa * la[i] + wb * lb[i]) / weight) as [number, number, number];
+    const lin = oklabToLinearSrgb(lab[0], lab[1], lab[2]);
+    return rgba(
+      encodeSrgb(lin[0]) * 255,
+      encodeSrgb(lin[1]) * 255,
+      encodeSrgb(lin[2]) * 255,
+      (weight / sum) * alphaScale,
+    );
+  }
   const linear = space === "srgb-linear";
   const to = (c: number): number => (linear ? srgbToLinear(c) : c);
   const out = [0, 1, 2].map((i) => {
@@ -615,6 +632,29 @@ const XYZ_D50_TO_D65: Mat3 = [
   [0.012314014864481998, -0.020507649298898964, 1.330365926242124],
 ];
 const D50_WHITE: Vec3 = [0.3457 / 0.3585, 1, (1 - 0.3457 - 0.3585) / 0.3585];
+
+// Forward direction (linear sRGB to OKLab), CSS Color Module Level 4 sample code.
+const LINEAR_SRGB_TO_XYZ_D65: Mat3 = [
+  [0.41239079926595934, 0.357584339383878, 0.1804807884018343],
+  [0.21263900587151027, 0.715168678767756, 0.07219231536073371],
+  [0.01933081871559182, 0.11919477979462598, 0.9505321522496607],
+];
+const XYZ_D65_TO_LMS: Mat3 = [
+  [0.819022437996703, 0.3619062600528904, -0.1288737815209879],
+  [0.0329836539323885, 0.9292868615863434, 0.0361446663506424],
+  [0.0481771893596242, 0.2642395317527308, 0.6335478284694309],
+];
+const LMS_TO_OKLAB: Mat3 = [
+  [0.210454268309314, 0.7936177747023054, -0.0040720430116193],
+  [1.9779985324311684, -2.42859224204858, 0.450593709617411],
+  [0.0259040424655478, 0.7827717124575296, -0.8086757549230774],
+];
+
+/** The operand's 0–255 sRGB bytes as OKLab [L, a, b] (alpha is the caller's). */
+function srgbBytesToOklab(c: Color): [number, number, number] {
+  const lms = mul(XYZ_D65_TO_LMS, mul(LINEAR_SRGB_TO_XYZ_D65, [srgbToLinear(c.r), srgbToLinear(c.g), srgbToLinear(c.b)]));
+  return mul(LMS_TO_OKLAB, [Math.cbrt(lms[0]), Math.cbrt(lms[1]), Math.cbrt(lms[2])]);
+}
 
 function oklabToLinearSrgb(L: number, a: number, b: number): [number, number, number] {
   const lms = mul(OKLAB_TO_LMS, [L, a, b]);
