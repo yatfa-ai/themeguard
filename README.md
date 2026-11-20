@@ -201,7 +201,7 @@ condition-aware tables, which this package does not pretend to have.
 A token is judged only if its value is a colour themeguard can place in sRGB. Recognised:
 
 - hex (`#RGB`, `#RGBA`, `#RRGGBB`, `#RRGGBBAA`);
-- `rgb()`/`rgba()` and `hsl()`/`hsla()`, in the legacy comma and the modern space + `/ alpha` syntax, with hue units `deg`/`grad`/`rad`/`turn` on `hsl()`; A negative saturation clamps to 0 (CSS Color 4), so `hsl(120 -10% 50%)` is `#808080`; saturation above 100% is not clamped.
+- `rgb()`/`rgba()` and `hsl()`/`hsla()`, in the legacy comma and the modern space + `/ alpha` syntax, with hue units `deg`/`grad`/`rad`/`turn` on `hsl()`; a negative saturation clamps to 0 (CSS Color 4), so `hsl(120 -10% 50%)` is `#808080`; saturation above 100% is not clamped.
 - a custom property holding a **bare HSL channel triple** — exactly `<hue> <pct> <pct>`, optionally `/ <alpha>`
   (`--background: 222 47% 11%`, the shadcn/ui and Tailwind v3 convention, consumed as
   `hsl(var(--background))`) — read as the `hsl()` of the same channels, so it reports exactly what
