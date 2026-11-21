@@ -113,8 +113,9 @@ Naming a `.vue`, `.svelte`, `.astro`, `.html` or `.htm` file audits the CSS insi
 column numbers; an `@import` inside a block resolves relative to the host file. A block that is not CSS
 (`lang="scss"`, `sass`, `less`, `stylus`, `styl`, or a `type` other than `text/css`) is not parsed — a
 notice on stderr says so — and a host file with no CSS `<style>` block at all (none, or only
-preprocessor blocks) exits 2 with a named diagnostic rather than a green "No findings.". Directory
-arguments still discover `*.css` only; name component files explicitly.
+preprocessor blocks) exits 2 with a named diagnostic rather than a green "No findings.". A directory
+argument discovers `.vue`, `.svelte` and `.astro` components too (see [Directories](#directories--themeguard-dir));
+`.html`/`.htm` stay named-only.
 
 The base scope is the document element. `:root` names the `html` element with class-level
 specificity, and a palette spelled on the element itself is the same base scope: `html { … }`,
@@ -334,7 +335,8 @@ silently poisons.
 
 ### Directories — `themeguard <dir>`
 
-A positional that is a **directory** stands for the `*.css` files under it, so a CI job or a pre-commit
+A positional that is a **directory** stands for the `*.css` files and the `.vue` / `.svelte` / `.astro`
+components with a CSS `<style>` block under it, so a CI job or a pre-commit
 hook does not depend on shell glob expansion (which cmd.exe and PowerShell do not do, and which quoted
 CI globs deliver literally):
 
@@ -344,14 +346,22 @@ npx themeguard --json web/ admin/panel.css
 ```
 
 - Discovery is **recursive** and the files are audited in **sorted** order (a plain string sort of the
-  paths, independent of locale); positionals keep their argument order. `*.css` only — `.pcss` and `.scss`
-  are not discovered.
+  paths, independent of locale); positionals keep their argument order. `.pcss` and `.scss` are not
+  discovered, and neither are `.html` / `.htm` — in a directory they are mostly build output and pages, so
+  they stay named-only (name one and its `<style>` blocks are audited).
+- A discovered **component without a CSS `<style>` block** (none at all, or only `lang="scss"`-style
+  preprocessor blocks) is **skipped, not an error**; one note on stderr counts the skipped components and
+  names the non-CSS block kinds. A component you **name** without one still exits `2`, as above. An
+  `@import` inside a component's `<style>` folds the partial into that component like any other import.
+  Auditing stays per file: a token declared in one component's `:root` and read only in another component
+  is a dead token in the first.
 - `node_modules` and dot-directories (`.git`, `.cache`, …) are skipped, at any depth.
 - Symlinked **directories are not followed**, which rules out cycles; a symlink to a `*.css` file is
   discovered like the file it points at.
 - Each discovered file is audited exactly as a named file is: its own import closure, its own nearest
   config, the same `themeguard — <path>` header (or NDJSON line), and the same `2 > 1 > 0` aggregate.
-- A directory with no `*.css` file is a **usage error**: exit `2` with `themeguard: no *.css files found
+- A directory with no `*.css` file and no component with a CSS `<style>` block is a **usage error**: exit
+  `2` with `themeguard: no *.css or component (.vue/.svelte/.astro) files with a CSS <style> block found
   in <dir>` on stderr, before anything is audited — never a silent green.
 - **Imported partials are folded.** A discovered file that another discovered file `@import`s (directly or
   through the closure) is not audited as an entry of its own: its findings already arrive through the
