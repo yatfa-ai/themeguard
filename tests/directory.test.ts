@@ -261,14 +261,109 @@ describe("directory arguments", () => {
       expect(result.err).toEqual([NO_FILES(dir)]);
     });
 
-    it("skips a style-less component beside a CSS file and counts it once on stderr", () => {
+    it("skips a style-less component beside a CSS file and counts it once on stderr, then names it", () => {
       const dir = tree({ "a.css": CLEAN, "b.vue": NO_STYLE, "c.vue": SCSS_ONLY, "d.svelte": NO_STYLE });
       const result = run(dir);
       expect(result.code).toBe(EXIT_OK);
       expect(audited(result.out)).toEqual([join(dir, "a.css")]);
       expect(result.err).toEqual([
         'themeguard: 3 components skipped (no CSS <style> block; non-CSS blocks: lang="scss")',
+        `  ${join(dir, "c.vue")} [lang="scss"]`,
+        `  ${join(dir, "b.vue")} [no <style>]`,
+        `  ${join(dir, "d.svelte")} [no <style>]`,
       ]);
+    });
+
+    describe("naming the skipped components", () => {
+      const LESS_ONLY = "<template><p>hi</p></template>\n<style lang=\"less\">@a: 1;</style>\n";
+      const skippedTree = (): string =>
+        tree({
+          "ok.vue": COLLIDING,
+          "S1.vue": SCSS_ONLY,
+          "deep/S2.vue": LESS_ONLY,
+          "deep/Plain.vue": NO_STYLE,
+          "A.svelte": NO_STYLE,
+        });
+
+      it("lists each component, preprocessor ones first, each group in path order", () => {
+        const dir = skippedTree();
+        const result = run(dir);
+        expect(result.err).toEqual([
+          'themeguard: 4 components skipped (no CSS <style> block; non-CSS blocks: lang="scss", lang="less")',
+          `  ${join(dir, "S1.vue")} [lang="scss"]`,
+          `  ${join(dir, "deep", "S2.vue")} [lang="less"]`,
+          `  ${join(dir, "A.svelte")} [no <style>]`,
+          `  ${join(dir, "deep", "Plain.vue")} [no <style>]`,
+        ]);
+      });
+
+      it("caps the list at 20 and discloses the cut", () => {
+        const files: Record<string, string> = { "a.css": CLEAN };
+        for (let i = 0; i < 23; i++) files[`c${String(i).padStart(2, "0")}.vue`] = NO_STYLE;
+        const dir = tree(files);
+        const err = run(dir).err;
+        expect(err).toHaveLength(1 + 20 + 1);
+        expect(err[1]).toBe(`  ${join(dir, "c00.vue")} [no <style>]`);
+        expect(err[20]).toBe(`  ${join(dir, "c19.vue")} [no <style>]`);
+        expect(err[21]).toBe("  and 3 more");
+        expect(err[0]).toMatch(/^themeguard: 23 components skipped/);
+      });
+
+      it("does not cut a list of exactly 20", () => {
+        const files: Record<string, string> = { "a.css": CLEAN };
+        for (let i = 0; i < 20; i++) files[`c${String(i).padStart(2, "0")}.vue`] = NO_STYLE;
+        const err = run(tree(files)).err;
+        expect(err).toHaveLength(21);
+        expect(err.join("\n")).not.toMatch(/and \d+ more/);
+      });
+
+      it("emits a trailing skippedComponents record under --json, uncapped", () => {
+        const dir = skippedTree();
+        const result = run("--json", dir);
+        const lines = result.out.map((l) => JSON.parse(l) as Record<string, unknown>);
+        expect(lines.slice(0, -1).every((l) => typeof l.path === "string")).toBe(true);
+        expect(lines.at(-1)).toEqual({
+          skippedComponents: [
+            { path: join(dir, "S1.vue"), kinds: ['lang="scss"'] },
+            { path: join(dir, "deep", "S2.vue"), kinds: ['lang="less"'] },
+            { path: join(dir, "A.svelte"), kinds: [] },
+            { path: join(dir, "deep", "Plain.vue"), kinds: [] },
+          ],
+        });
+        expect(lines.filter((l) => "skippedComponents" in l)).toHaveLength(1);
+        expect(lines.filter((l) => "skippedComponents" in l)[0]).not.toHaveProperty("path");
+
+        const many: Record<string, string> = { "a.css": CLEAN };
+        for (let i = 0; i < 23; i++) many[`c${String(i).padStart(2, "0")}.vue`] = NO_STYLE;
+        const big = JSON.parse(run("--json", tree(many)).out.at(-1) as string) as { skippedComponents: unknown[] };
+        expect(big.skippedComponents).toHaveLength(23);
+      });
+
+      it("prints no record, and changes no byte, when nothing is skipped", () => {
+        const dir = tree({ "a.css": CLEAN, "B.vue": COLLIDING });
+        const result = run("--json", dir);
+        expect(result.out.join("\n")).not.toMatch(/skippedComponents/);
+        expect(result.out.map((l) => JSON.parse(l) as { path?: string }).every((l) => l.path !== undefined)).toBe(true);
+        expect(result.err).toEqual([]);
+      });
+
+      it("keeps --github prose-only and the exit codes unchanged", () => {
+        const dir = tree({ "a.css": CLEAN, "S1.vue": SCSS_ONLY });
+        const github = run("--github", dir);
+        expect(github.code).toBe(EXIT_OK);
+        expect(github.stdout).not.toMatch(/skippedComponents/);
+        expect(github.err).toHaveLength(2);
+        expect(run("--json", dir).code).toBe(EXIT_OK);
+        const dead = tree({ "a.css": DEAD, "S1.vue": SCSS_ONLY });
+        expect(run("--json", dead).code).toBe(EXIT_FINDINGS);
+      });
+
+      it("does not list a component the user also named explicitly", () => {
+        const dir = tree({ "a.css": CLEAN, "B.vue": NO_STYLE, "S1.vue": SCSS_ONLY });
+        const result = run("--json", dir, join(dir, "B.vue"));
+        expect(result.code).toBe(EXIT_ERROR);
+        expect(result.stderr).not.toMatch(/B\.vue \[/);
+      });
     });
 
     it("lets the CSS file decide the exit when a component is skipped", () => {
