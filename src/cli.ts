@@ -391,9 +391,10 @@ export const HELP = [
   USAGE,
   "",
   "Audits the colour custom properties of CSS stylesheets.",
-  "A directory argument stands for the *.css files under it (recursive, sorted;",
-  "node_modules, dot-directories and symlinked directories are skipped); a file",
-  "another discovered file @imports is audited through its importer, not alone.",
+  "A directory argument stands for the *.css files and the .vue/.svelte/.astro",
+  "components with a CSS <style> block under it (recursive, sorted; node_modules,",
+  "dot-directories and symlinked directories are skipped); a file another",
+  "discovered file @imports is audited through its importer, not alone.",
   "",
   "options:",
   "  --json       print one NDJSON report object per stylesheet instead of prose",
@@ -869,7 +870,8 @@ export function runCli(args: readonly string[], io: CliIo): number {
 /**
  * Expand directory positionals into the stylesheets under them, in argument
  * order (a directory's files sorted), or `null` after a diagnostic when a
- * directory holds no `*.css` at all — a usage error, never a silent green.
+ * directory holds no `*.css` and no component with a CSS `<style>` block — a
+ * usage error, never a silent green.
  * Positionals that are not directories pass through untouched, so named files
  * (and paths that do not exist) behave byte-for-byte as before. A file named
  * explicitly is never folded and is audited once even if a directory also
@@ -882,11 +884,14 @@ function expandDirectories(paths: readonly string[], io: CliIo): string[] | null
   const explicit = new Set(paths.filter((p) => !isDirectory(p)).map((p) => resolve(p)));
   const discovered: string[] = [];
   const perPath = new Map<number, string[]>();
+  const skippedComponents = new Map<string, readonly string[]>();
   for (const [index, path] of paths.entries()) {
     if (!isDirectory(path)) continue;
     let files: string[];
     try {
-      files = discoverCss(path);
+      const found = discoverCss(path);
+      files = found.files;
+      for (const s of found.skipped) skippedComponents.set(resolve(s.path), s.kinds);
     } catch (error) {
       // A directory the walk cannot read (permissions, removed mid-walk) is a
       // tool failure, not a finding: exit 2, never the findings code.
@@ -895,7 +900,7 @@ function expandDirectories(paths: readonly string[], io: CliIo): string[] | null
       return null;
     }
     if (files.length === 0) {
-      io.err(`themeguard: no *.css files found in ${path}`);
+      io.err(`themeguard: no *.css or component (.vue/.svelte/.astro) files with a CSS <style> block found in ${path}`);
       return null;
     }
     perPath.set(index, files);
@@ -904,6 +909,18 @@ function expandDirectories(paths: readonly string[], io: CliIo): string[] | null
       if (explicit.has(abs) || discovered.some((d) => resolve(d) === abs)) continue;
       discovered.push(file);
     }
+  }
+
+  // A component skipped in one directory but named explicitly stays an error
+  // of the named file, not a skip; a component another directory argument
+  // discovered with CSS cannot be in the map (same file, same verdict).
+  const skippedKinds = [...skippedComponents].filter(([abs]) => !explicit.has(abs));
+  if (skippedKinds.length > 0) {
+    const kinds = [...new Set(skippedKinds.flatMap(([, k]) => k))];
+    io.err(
+      `themeguard: ${skippedKinds.length} ${skippedKinds.length === 1 ? "component" : "components"} skipped ` +
+        `(no CSS <style> block${kinds.length > 0 ? `; non-CSS blocks: ${kinds.join(", ")}` : ""})`,
+    );
   }
 
   const { entries, folded } = foldPartials(discovered);

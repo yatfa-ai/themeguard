@@ -10,6 +10,14 @@ const CLEAN = ":root { --a: #fff; }\n.x { color: var(--a); }\n";
 /** A stylesheet whose one token nothing reads: a dead-token finding. */
 const DEAD = ":root { --dead: #fff; }\n";
 
+/** A component whose `<style>` holds a real `--a`/`--b` token collision. */
+const COLLIDING = "<template><p class=\"x\">hi</p></template>\n<style>\n:root { --a: #fff; --b: #fff; }\n.x { color: var(--a); background: var(--b); }\n</style>\n";
+/** A component with no CSS `<style>` block. */
+const NO_STYLE = "<template><p>hi</p></template>\n";
+const SCSS_ONLY = "<template><p>hi</p></template>\n<style lang=\"scss\">$a: 1;</style>\n";
+const NO_FILES = (dir: string): string =>
+  `themeguard: no *.css or component (.vue/.svelte/.astro) files with a CSS <style> block found in ${dir}`;
+
 let root: string;
 let counter = 0;
 
@@ -109,14 +117,14 @@ describe("directory arguments", () => {
     ]);
   });
 
-  it("is a usage error, never a green, for a directory with no *.css", () => {
+  it("is a usage error, never a green, for a directory with no *.css or CSS component", () => {
     const empty = tree({});
     const onlyOther = tree({ "readme.md": "x", "node_modules/p/x.css": DEAD });
     for (const dir of [empty, onlyOther]) {
       const result = run(dir);
       expect(result.code).toBe(EXIT_ERROR);
       expect(result.out).toEqual([]);
-      expect(result.err).toEqual([`themeguard: no *.css files found in ${dir}`]);
+      expect(result.err).toEqual([NO_FILES(dir)]);
     }
   });
 
@@ -218,5 +226,97 @@ describe("directory arguments", () => {
       join(one, "z.css"),
       join(two, "a.css"),
     ]);
+  });
+
+  describe("component files (.vue/.svelte/.astro)", () => {
+    it("audits a component beside a stylesheet, with the component's own lines", () => {
+      const dir = tree({ "src/A.vue": COLLIDING, "src/theme.css": CLEAN });
+      const result = run(dir);
+      expect(result.code).toBe(EXIT_FINDINGS);
+      expect(audited(result.out)).toEqual([join(dir, "src/A.vue"), join(dir, "src/theme.css")]);
+      expect(result.out.join("\n")).toMatch(/collision \(1\)/);
+      expect(result.err).toEqual([]);
+    });
+
+    it("audits a components-only directory, all three extensions", () => {
+      const dir = tree({ "a.vue": CLEAN.replace(/^/, "<style>") + "</style>", "b.svelte": COLLIDING, "c.astro": COLLIDING });
+      const result = run(dir);
+      expect(result.code).toBe(EXIT_FINDINGS);
+      expect(audited(result.out)).toEqual(["a.vue", "b.svelte", "c.astro"].map((r) => join(dir, r)));
+    });
+
+    it("leaves .html and .htm named-only", () => {
+      const dir = tree({ "page.html": COLLIDING, "page.htm": COLLIDING, "a.css": CLEAN });
+      const result = run(dir);
+      expect(result.code).toBe(EXIT_OK);
+      expect(audited(result.out)).toEqual([join(dir, "a.css")]);
+      expect(result.err).toEqual([]);
+    });
+
+    it("exits 2 with the reworded message when no component has a CSS block", () => {
+      const dir = tree({ "a.vue": NO_STYLE, "b.svelte": SCSS_ONLY });
+      const result = run(dir);
+      expect(result.code).toBe(EXIT_ERROR);
+      expect(result.out).toEqual([]);
+      expect(result.err).toEqual([NO_FILES(dir)]);
+    });
+
+    it("skips a style-less component beside a CSS file and counts it once on stderr", () => {
+      const dir = tree({ "a.css": CLEAN, "b.vue": NO_STYLE, "c.vue": SCSS_ONLY, "d.svelte": NO_STYLE });
+      const result = run(dir);
+      expect(result.code).toBe(EXIT_OK);
+      expect(audited(result.out)).toEqual([join(dir, "a.css")]);
+      expect(result.err).toEqual([
+        'themeguard: 3 components skipped (no CSS <style> block; non-CSS blocks: lang="scss")',
+      ]);
+    });
+
+    it("lets the CSS file decide the exit when a component is skipped", () => {
+      const dir = tree({ "a.css": DEAD, "b.vue": SCSS_ONLY });
+      expect(run(dir).code).toBe(EXIT_FINDINGS);
+    });
+
+    it("folds a partial imported from a component's <style>", () => {
+      const dir = tree({
+        "tokens.css": ":root { --t: #fff; }\n",
+        "A.vue": '<template><p class="x">hi</p></template>\n<style>\n@import "./tokens.css";\n.x { color: var(--t); }\n</style>\n',
+      });
+      const result = run(dir);
+      expect(result.code).toBe(EXIT_OK);
+      expect(audited(result.out)).toEqual([join(dir, "A.vue")]);
+      expect(result.err).toEqual([
+        "themeguard: 1 file folded into importers (imported by another discovered stylesheet, audited through it)",
+      ]);
+    });
+
+    it("never reads markup as an import edge", () => {
+      const dir = tree({
+        "tokens.css": ":root { --t: #fff; }\n.y { color: var(--t); }\n",
+        "A.vue": '<template><a href="x">@import "./tokens.css";</a></template>\n' + COLLIDING,
+      });
+      const result = run(dir);
+      expect(audited(result.out)).toEqual([join(dir, "A.vue"), join(dir, "tokens.css")]);
+      expect(result.err).toEqual([]);
+    });
+
+    it("still skips node_modules and dot-directories", () => {
+      const dir = tree({
+        "a.css": CLEAN,
+        "node_modules/p/X.vue": COLLIDING,
+        ".cache/Y.svelte": COLLIDING,
+      });
+      const result = run(dir);
+      expect(result.code).toBe(EXIT_OK);
+      expect(audited(result.out)).toEqual([join(dir, "a.css")]);
+    });
+
+    it("keeps a named style-less component fatal, even when its directory is also given", () => {
+      const dir = tree({ "a.css": CLEAN, "B.vue": NO_STYLE });
+      const named = run(join(dir, "B.vue"));
+      expect(named.code).toBe(EXIT_ERROR);
+      const both = run(dir, join(dir, "B.vue"));
+      expect(both.code).toBe(EXIT_ERROR);
+      expect(both.err.join("\n")).not.toMatch(/skipped/);
+    });
   });
 });
