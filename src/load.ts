@@ -128,6 +128,7 @@
 import { readFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { CONFIG_FILENAME, ConfigError } from "./config.js";
+import { extractStyleBlocks, isHostFile } from "./styleblocks.js";
 import { DirectiveError, scanIgnoreDirectives, type IgnoreDirective } from "./directives.js";
 import {
   parseStylesheet,
@@ -162,6 +163,23 @@ export interface LoadOptions {
   readonly themeAttributes?: readonly string[];
   /** The governing config's path, cited by the unrecognised-theme refusal. */
   readonly configPath?: string;
+  /**
+   * Receives a one-line notice for a recoverable oddity in the input — today,
+   * a `<style>` block of a host file skipped because it is not CSS. Absent: dropped.
+   */
+  readonly warn?: (message: string) => void;
+}
+
+/**
+ * Thrown when a named `.vue` / `.svelte` / `.astro` / `.html` / `.htm` file has
+ * no CSS `<style>` block to audit — none at all, or only preprocessor blocks
+ * (`lang="scss"`). The caller's exit 2 ("cannot audit"), never a green.
+ */
+export class StyleBlockError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "StyleBlockError";
+  }
 }
 
 /**
@@ -261,7 +279,26 @@ export function loadStylesheet(entryPath: string, options?: LoadOptions): Styles
   const visited = new Set<string>([entryAbsolute]);
 
   const load = (filePath: string): Stylesheet => {
-    const text = readFileSync(filePath, "utf8");
+    let text = readFileSync(filePath, "utf8");
+    if (isHostFile(filePath)) {
+      // A markup host: audit only its CSS `<style>` bodies, in place, so the
+      // citations keep the file's own lines and columns.
+      const blocks = extractStyleBlocks(text);
+      const label = filePath === entryAbsolute ? entryPath : relative(entryDir, filePath);
+      for (const kind of blocks.skipped) {
+        options?.warn?.(
+          `${label}: skipped a <style ${kind}> block — not CSS, themeguard does not evaluate preprocessors`,
+        );
+      }
+      if (blocks.css === 0) {
+        throw new StyleBlockError(
+          blocks.skipped.length === 0
+            ? `no <style> block in ${label}`
+            : `no CSS <style> block in ${label} — only ${blocks.skipped.join(", ")} (preprocessor blocks are not evaluated; point themeguard at the compiled CSS)`,
+        );
+      }
+      text = blocks.text;
+    }
     const sheet = parseStylesheet(text, { themes: configured, themeAttributes: configuredAttributes });
     // Imported content FIRST, the file's own second. Every collected `@import`
     // precedes the first qualified rule (the parser collects nothing later),

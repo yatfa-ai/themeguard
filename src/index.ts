@@ -152,7 +152,8 @@ export {
   type UnresolvedImport,
 } from "./parse.js";
 
-export { loadStylesheet, type LoadOptions } from "./load.js";
+export { loadStylesheet, StyleBlockError, type LoadOptions } from "./load.js";
+export { extractStyleBlocks, HOST_EXTENSIONS, type StyleBlocks } from "./styleblocks.js";
 
 export {
   resolveCss,

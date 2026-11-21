@@ -108,6 +108,14 @@ Any CSS that declares custom properties — `:root`, `[data-theme="…"]`, the c
 away before themeguard sees anything: point it at the compiled CSS and it works, but the link back to
 the source names is lost.
 
+Naming a `.vue`, `.svelte`, `.astro`, `.html` or `.htm` file audits the CSS inside its `<style>` blocks
+(any attributes — `scoped`, `lang="css"`, `media`, `is:global`), reported at the file's own line and
+column numbers; an `@import` inside a block resolves relative to the host file. A block that is not CSS
+(`lang="scss"`, `sass`, `less`, `stylus`, `styl`, or a `type` other than `text/css`) is not parsed — a
+notice on stderr says so — and a host file with no CSS `<style>` block at all (none, or only
+preprocessor blocks) exits 2 with a named diagnostic rather than a green "No findings.". Directory
+arguments still discover `*.css` only; name component files explicitly.
+
 The base scope is the document element. `:root` names the `html` element with class-level
 specificity, and a palette spelled on the element itself is the same base scope: `html { … }`,
 `:where(html) { … }` and `:is(html) { … }` all file where a `:root` block does, so every

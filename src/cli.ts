@@ -341,7 +341,7 @@ import {
 } from "./config.js";
 import { DirectiveError } from "./directives.js";
 import { discoverCss, foldPartials, isDirectory } from "./discover.js";
-import { loadStylesheet } from "./load.js";
+import { loadStylesheet, StyleBlockError } from "./load.js";
 import { resolveStylesheet } from "./resolve.js";
 import type { TokenKind } from "./resolve.js";
 import type { Stylesheet } from "./parse.js";
@@ -1035,8 +1035,13 @@ function auditStylesheet(
       themes: configDocument?.themes,
       themeAttributes: configDocument?.themeAttributes,
       configPath: configHome ?? undefined,
+      warn: (message) => io.err(`themeguard: ${message}`),
     });
   } catch (error) {
+    if (error instanceof StyleBlockError) {
+      io.err(`themeguard: ${error.message}`);
+      return EXIT_ERROR;
+    }
     if (error instanceof DirectiveError) {
       io.err(`themeguard: ${error.message}`);
       return EXIT_ERROR;
