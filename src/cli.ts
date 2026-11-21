@@ -245,6 +245,16 @@
  *     before it are already on stdout — the same contract the prose reports
  *     have had since 0.1.7.
  *
+ * ONE more record is the CLI's own, and it is a LINE rather than a key: when a
+ * directory argument skipped components (no CSS `<style>` block), a FINAL line
+ * `{"skippedComponents":[{"path":…,"kinds":[…]}]}` follows the per-file
+ * reports — preprocessor components first, then style-less ones, each group in
+ * path order, uncapped (the stderr list is capped; the data is not). It has no
+ * `path`/`findings` key, so `jq 'select(.path)'` consumers skip it, and it is
+ * printed only when non-empty, so a run that skipped nothing is byte-identical
+ * to before. It is not printed when the run ends early with exit 2. `--github`
+ * stays prose-only on stderr: no annotation without a line.
+ *
  * ── `--github`: annotations beside the number (0.1.36) ─────────────────────
  * The second renderer. With `--github`, stdout carries one GitHub workflow
  * command per site of each UNSUPPRESSED finding — `::warning file=…,line=…,
@@ -340,7 +350,7 @@ import {
   type SuppressionEntry,
 } from "./config.js";
 import { DirectiveError } from "./directives.js";
-import { discoverCss, foldPartials, isDirectory } from "./discover.js";
+import { discoverCss, foldPartials, isDirectory, type SkippedComponent } from "./discover.js";
 import { loadStylesheet, StyleBlockError } from "./load.js";
 import { resolveStylesheet } from "./resolve.js";
 import type { TokenKind } from "./resolve.js";
@@ -834,8 +844,9 @@ export function runCli(args: readonly string[], io: CliIo): number {
   // is what survives the loop and turns into the aggregated exit.
   let anyFindings = false;
 
-  const targets = expandDirectories(paths, io);
-  if (targets === null) return EXIT_ERROR;
+  const expansion = expandDirectories(paths, io);
+  if (expansion === null) return EXIT_ERROR;
+  const { targets, skipped: skippedComponents } = expansion;
 
   const collected: CollectedReport[] = [];
   const collect = suppressEntries ? (item: CollectedReport) => collected.push(item) : undefined;
@@ -850,6 +861,13 @@ export function runCli(args: readonly string[], io: CliIo): number {
       return EXIT_ERROR;
     }
     if (outcome === EXIT_FINDINGS) anyFindings = true;
+  }
+
+  // `--json`: the directory walk's skipped components, as ONE trailing record
+  // beside the per-file reports — only when there is something to say, so a
+  // run that skipped nothing is byte-identical to before.
+  if (json && skippedComponents.length > 0) {
+    io.out(JSON.stringify({ skippedComponents: skippedComponents.map(({ path, kinds }) => ({ path, kinds })) }));
   }
 
   // `--suppress-entries`: the document is emitted only once EVERY stylesheet
@@ -867,6 +885,9 @@ export function runCli(args: readonly string[], io: CliIo): number {
   return anyFindings ? EXIT_FINDINGS : EXIT_OK;
 }
 
+/** How many skipped components the directory-run note names before `and N more`. */
+const SKIPPED_LIST_CAP = 20;
+
 /**
  * Expand directory positionals into the stylesheets under them, in argument
  * order (a directory's files sorted), or `null` after a diagnostic when a
@@ -876,22 +897,32 @@ export function runCli(args: readonly string[], io: CliIo): number {
  * (and paths that do not exist) behave byte-for-byte as before. A file named
  * explicitly is never folded and is audited once even if a directory also
  * discovers it; discovered partials are folded into their importers (see
- * {@link foldPartials}) and counted in one note on `io.err`.
+ * {@link foldPartials}) and counted in one note on `io.err`. Components the walk
+ * skipped (no CSS `<style>` block) are counted in one note on `io.err`, then
+ * named one per line (preprocessor ones first, capped at
+ * {@link SKIPPED_LIST_CAP} with `and N more`), and returned so `--json` can
+ * emit them as a trailing `skippedComponents` record.
  */
-function expandDirectories(paths: readonly string[], io: CliIo): string[] | null {
-  if (!paths.some(isDirectory)) return [...paths];
+function expandDirectories(
+  paths: readonly string[],
+  io: CliIo,
+): { targets: string[]; skipped: SkippedComponent[] } | null {
+  if (!paths.some(isDirectory)) return { targets: [...paths], skipped: [] };
 
   const explicit = new Set(paths.filter((p) => !isDirectory(p)).map((p) => resolve(p)));
   const discovered: string[] = [];
   const perPath = new Map<number, string[]>();
-  const skippedComponents = new Map<string, readonly string[]>();
+  const skippedComponents = new Map<string, SkippedComponent>();
   for (const [index, path] of paths.entries()) {
     if (!isDirectory(path)) continue;
     let files: string[];
     try {
       const found = discoverCss(path);
       files = found.files;
-      for (const s of found.skipped) skippedComponents.set(resolve(s.path), s.kinds);
+      for (const s of found.skipped) {
+        const abs = resolve(s.path);
+        if (!skippedComponents.has(abs)) skippedComponents.set(abs, s);
+      }
     } catch (error) {
       // A directory the walk cannot read (permissions, removed mid-walk) is a
       // tool failure, not a finding: exit 2, never the findings code.
@@ -914,13 +945,25 @@ function expandDirectories(paths: readonly string[], io: CliIo): string[] | null
   // A component skipped in one directory but named explicitly stays an error
   // of the named file, not a skip; a component another directory argument
   // discovered with CSS cannot be in the map (same file, same verdict).
-  const skippedKinds = [...skippedComponents].filter(([abs]) => !explicit.has(abs));
-  if (skippedKinds.length > 0) {
-    const kinds = [...new Set(skippedKinds.flatMap(([, k]) => k))];
+  // Preprocessor components lead (they are the real coverage holes), the
+  // style-less ones follow; each group keeps discovery order.
+  const skippedAll = [...skippedComponents]
+    .filter(([abs]) => !explicit.has(abs))
+    .map(([, s]) => s);
+  const skipped = [
+    ...skippedAll.filter((s) => s.kinds.length > 0),
+    ...skippedAll.filter((s) => s.kinds.length === 0),
+  ];
+  if (skipped.length > 0) {
+    const kinds = [...new Set(skipped.flatMap((s) => s.kinds))];
     io.err(
-      `themeguard: ${skippedKinds.length} ${skippedKinds.length === 1 ? "component" : "components"} skipped ` +
+      `themeguard: ${skipped.length} ${skipped.length === 1 ? "component" : "components"} skipped ` +
         `(no CSS <style> block${kinds.length > 0 ? `; non-CSS blocks: ${kinds.join(", ")}` : ""})`,
     );
+    for (const s of skipped.slice(0, SKIPPED_LIST_CAP)) {
+      io.err(`  ${s.path} ${s.kinds.length > 0 ? `[${s.kinds.join(", ")}]` : "[no <style>]"}`);
+    }
+    if (skipped.length > SKIPPED_LIST_CAP) io.err(`  and ${skipped.length - SKIPPED_LIST_CAP} more`);
   }
 
   const { entries, folded } = foldPartials(discovered);
@@ -948,7 +991,7 @@ function expandDirectories(paths: readonly string[], io: CliIo): string[] | null
       }
     }
   }
-  return targets;
+  return { targets, skipped };
 }
 
 /**

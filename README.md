@@ -350,8 +350,17 @@ npx themeguard --json web/ admin/panel.css
   discovered, and neither are `.html` / `.htm` — in a directory they are mostly build output and pages, so
   they stay named-only (name one and its `<style>` blocks are audited).
 - A discovered **component without a CSS `<style>` block** (none at all, or only `lang="scss"`-style
-  preprocessor blocks) is **skipped, not an error**; one note on stderr counts the skipped components and
-  names the non-CSS block kinds. A component you **name** without one still exits `2`, as above. An
+  preprocessor blocks) is **skipped, not an error** — it never moves the exit code. One note on stderr
+  counts the skipped components and names the non-CSS block kinds, then lists each skipped component on
+  its own indented line, as the walk produced the path: `[lang="scss"]` (the actual non-CSS kinds — a real
+  coverage hole) or `[no <style>]` (markup only). Preprocessor components come first, each group in path
+  order; the list stops at 20 with a trailing `and N more`. With `--json`, a final stdout line
+  `{"skippedComponents":[{"path":"src/S1.vue","kinds":["lang=\"scss\""]},{"path":"src/Plain.vue","kinds":[]}]}`
+  follows the per-file reports — the same order, **not capped**, printed only when something was skipped
+  (so a run that skipped nothing is byte-identical to before) and not printed when the run ends early
+  with exit `2`. It has no `path`/`findings` key at the top level, so `jq 'select(.path)'` consumers are
+  unaffected. `--github` keeps the list on stderr only (no annotation without a line). A component you
+  **name** without one still exits `2`, as above, and is not listed as skipped. An
   `@import` inside a component's `<style>` folds the partial into that component like any other import.
   Auditing stays per file: a token declared in one component's `:root` and read only in another component
   is a dead token in the first.

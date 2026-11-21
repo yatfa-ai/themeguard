@@ -12,7 +12,7 @@
  *     paths, so the order never depends on the locale). `.html`/`.htm` are
  *     host files too but stay named-only: in a directory they are mostly build
  *     output and pages. A component with no CSS `<style>` block is SKIPPED
- *     (reported to the caller, which counts it), never fatal; a component NAMED
+ *     (reported to the caller, which names it, sorted like `files`), never fatal; a component NAMED
  *     on the command line without one still fails fast.
  *   - `node_modules` and dot-directories are skipped.
  *   - Symlinked DIRECTORIES are not followed, which rules out cycles. A
@@ -100,6 +100,9 @@ export function discoverCss(dir: string): Discovery {
   };
   walk(dir);
   const byPath = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+  // Sorted like `files`: `readdirSync` order is filesystem-dependent, and the
+  // CLI names the skipped components, so the order must not be.
+  skipped.sort((a, b) => byPath(a.path, b.path));
   return { files: found.sort(byPath), skipped };
 }
 
