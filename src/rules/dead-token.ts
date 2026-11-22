@@ -25,6 +25,12 @@
  * about a build-time API surface, not a special case for one framework — any
  * layer whose consumers are generated has the same property.
  *
+ * The same reasoning exempts a plain `@theme { --color-brand-500: #… }` block's
+ * names, and ONLY from this rule: `bg-brand-500` is generated from it and is
+ * invisible here. Unlike the alias layer those literals are the palette, so
+ * every other rule judges them like any `:root` token (see
+ * {@link TokenNames.themeLayer}).
+ *
  * ── Uses are read from EVERY declaration, not only custom-property ones ────
  * `--sidebar-width` is declared in `:root` and used once, by
  * `.app-sidebar { width: var(--sidebar-width) }` — a block that declares no
@@ -78,6 +84,11 @@ export function deadTokenRule(
   for (const [name, sites] of [...declaredAt.entries()].sort(([a], [b]) => a.localeCompare(b))) {
     if (referenced.has(name)) continue;
     if (names.isAlias(name)) continue;
+    // A plain `@theme` name is consumed by the utilities Tailwind generates
+    // from it (`--color-brand-500` → `bg-brand-500`), which no source read of
+    // this stylesheet can see — the same unreachable-consumer reason the alias
+    // layer is exempt, and the ONLY judgement it is exempt from.
+    if (names.isThemeLayer(name)) continue;
     findings.push({
       rule: "dead-token",
       theme: null,

@@ -102,6 +102,22 @@ export class TokenNames {
    * every alias as a collision with the token it aliases.
    */
   readonly aliasLayer: ReadonlySet<string>;
+  /**
+   * The names declared in a plain Tailwind v4 `@theme { … }` block (`@theme`,
+   * `@theme static`, `@theme default`) — the palette Tailwind turns into
+   * utilities (`--color-brand-500` → `bg-brand-500`).
+   *
+   * Unlike {@link aliasLayer} these are judged declarations: the literals ARE
+   * the palette, so collision, scale-collapse, duplicate-declaration, coverage
+   * and family-consistency read them like any `:root` token, and
+   * {@link isAlias} is false for them. The one thing a source read cannot
+   * establish is whether they are USED — their consumers are generated
+   * utilities that do not appear in the stylesheet — so `dead-token` alone
+   * skips them, through {@link isThemeLayer}. A name also declared by an
+   * ordinary scope is still in this set: the exemption is by name, because the
+   * utility consumer reaches the name whichever scope won the cascade.
+   */
+  readonly themeLayer: ReadonlySet<string>;
 
   /**
    * The names an `@property` registration gives an initial value (see
@@ -117,14 +133,17 @@ export class TokenNames {
   constructor(resolved: ResolvedStylesheet) {
     const declared = new Set<string>();
     const alias = new Set<string>();
+    const themeLayer = new Set<string>();
     for (const scope of resolved.stylesheet.scopes) {
       for (const d of scope.declarations) {
         declared.add(d.name);
         if (scope.kind === "theme-inline") alias.add(d.name);
+        if (scope.atTheme) themeLayer.add(d.name);
       }
     }
     this.declared = declared;
     this.aliasLayer = alias;
+    this.themeLayer = themeLayer;
     this.registered = new Set(registeredInitialValues(resolved.stylesheet.registrations).keys());
   }
 
@@ -140,6 +159,14 @@ export class TokenNames {
   /** True for a name in the `@theme inline` alias namespace. */
   isAlias(name: string): boolean {
     return this.aliasLayer.has(name);
+  }
+
+  /**
+   * True for a name declared in a plain `@theme { … }` block — judged like any
+   * palette token, but never reported dead (see {@link themeLayer}).
+   */
+  isThemeLayer(name: string): boolean {
+    return this.themeLayer.has(name);
   }
 
   /**

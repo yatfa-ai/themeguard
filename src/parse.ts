@@ -147,6 +147,11 @@ export interface Scope {
    * the sweep's "last declaration wins" lands on the browser's winner across
    * spellings, not just within one:
    *
+   *   - `-1` — a plain Tailwind v4 `@theme { … }` block ({@link atTheme}).
+   *     Tailwind emits `@theme` variables into `@layer theme { :root, :host
+   *     { … } }`, and any unlayered declaration beats any layered one whatever
+   *     its specificity, so every unlayered `:root` / `html` / `:where(html)`
+   *     override outranks it. The lowest rank, below `:where(html)`.
    *   - `0` — reached through a zero-specificity grouping: `:where(html)`.
    *   - `1` — the bare document element: `html { … }`, and `:is(html)` (a
    *     grouping takes its argument's specificity, and the argument is `html`).
@@ -166,6 +171,19 @@ export interface Scope {
    * argument (`:is(html)` ranks 1, the bare element's own specificity).
    */
   readonly baseRank?: number;
+  /**
+   * True on the `root`-kind scope a plain Tailwind v4 `@theme { … }` block
+   * (`@theme`, `@theme static`, `@theme default`) opens — the block whose
+   * literals ARE the palette — and absent on every other scope. It is a
+   * provenance flag, not a kind: the scope folds into the base table like any
+   * `:root` scope (at {@link BASE_RANK_THEME}, the lowest rank), and the flag
+   * is only what lets the one rule that must treat it differently
+   * (`dead-token`, whose consumers are generated utilities a source read
+   * cannot see) and the one label that names it (`declared in @theme at …`)
+   * tell it apart. `@theme inline` / `@theme inline reference` is the alias
+   * namespace and stays `kind === "theme-inline"`; it never carries this flag.
+   */
+  readonly atTheme?: true;
   /**
    * The imported file this scope was spliced from — the target's path relative
    * to the audit's ENTRY file, normalized (`tokens.css`, `shared/props.css`) —
@@ -959,6 +977,33 @@ const BASE_RANK_ELEMENT = 1;
  * keeps that reading byte for byte.
  */
 const BASE_RANK_ROOT = 2;
+/**
+ * A plain Tailwind v4 `@theme` block. Checked against the Tailwind v4 docs and
+ * source (theme.mdx "Default theme variables": `@import "./theme.css"
+ * layer(theme)`; `compile()` in `packages/tailwindcss/src/index.ts` replaces the
+ * first `@theme` rule with `:root, :host { … }` carrying every merged `@theme`
+ * block, with later blocks overriding earlier ones): the variables land in
+ * `@layer theme`, which unlayered author CSS always beats. So the block ranks
+ * BELOW the weakest unlayered base spelling, `:where(html)`.
+ */
+const BASE_RANK_THEME = -1;
+
+/**
+ * Whether an `@theme` prelude is the alias namespace (`inline`, which includes
+ * `inline reference`) or a palette declaration (plain, `static`, `default`,
+ * `reference`, `prefix(…)`). Tailwind reads the params as space-separated
+ * options (`parseThemeOptions`); `inline` anywhere among them makes every
+ * entry a `var()` pointer at a palette declared elsewhere, so it is the one
+ * option that changes what the block IS.
+ */
+function themeAtRuleKind(raw: string): "theme-inline" | "palette" | null {
+  const m = raw.match(/^@theme(?=\s|$)(.*)$/is);
+  if (m === null) return null;
+  // `prefix(…)` is an option with an argument; blank it so a prefix literally
+  // named `inline` is not read as the option.
+  const options = (m[1] as string).replace(/prefix\([^)]*\)/gi, " ").trim().split(/\s+/);
+  return options.some((o) => o.toLowerCase() === "inline") ? "theme-inline" : "palette";
+}
 
 function classifyOne(
   selector: string,
@@ -967,7 +1012,10 @@ function classifyOne(
   inheritedRank: number | null,
 ): { kind: Exclude<ScopeKind, "other">; theme: string | null; matched: string; baseRank?: number }[] {
   const raw = selector.trim();
-  if (/^@theme\b/i.test(raw)) return [{ kind: "theme-inline", theme: null, matched: raw }];
+  const themeAt = themeAtRuleKind(raw);
+  if (themeAt === "theme-inline") return [{ kind: "theme-inline", theme: null, matched: raw }];
+  if (themeAt === "palette")
+    return [{ kind: "root", theme: null, matched: raw, baseRank: BASE_RANK_THEME }];
 
   const compounds = splitCombinators(raw);
   // A combinator means the subject is not the scope but something within it.
@@ -1413,8 +1461,10 @@ export function parseStylesheet(source: string, options?: ParseOptions): Stylesh
           const bodyStart = blockStart + 1;
           const body = css.slice(bodyStart, i);
           const matches = classifySelectors(selector, recognition);
-          const isNestingAtRule =
-            selector.startsWith("@") && matches[0].kind !== "theme-inline";
+          // `@theme` is an at-rule that DECLARES (its body is custom
+          // properties), so it takes the qualified-rule path below whatever
+          // its options — `inline` or not.
+          const isNestingAtRule = selector.startsWith("@") && themeAtRuleKind(selector) === null;
           if (isNestingAtRule) {
             // `@property --name { … }` registers a custom property; its body
             // is descriptors, not declarations, so it yields a registration
@@ -1513,6 +1563,7 @@ export function parseStylesheet(source: string, options?: ParseOptions): Stylesh
                   // The declaring spelling's cascade rank — root scopes
                   // only, the key the resolver's base fold sorts on.
                   ...(kind === "root" ? { baseRank } : {}),
+                  ...(themeAtRuleKind(matchedSelector) === "palette" ? { atTheme: true as const } : {}),
                   line: lines[blockStart] ?? 1,
                   declarations,
                 });

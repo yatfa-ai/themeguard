@@ -168,6 +168,14 @@ export interface ResolvedToken {
   /** 1-based line of the declaration this token resolves from. */
   readonly line: number;
   /**
+   * True when the winning declaration is inside a plain Tailwind v4
+   * `@theme { … }` block ({@link Scope.atTheme}); absent otherwise. A
+   * provenance fact for labels only (`declared in @theme at …`) — the token's
+   * `origin` stays `"declared"` (or `"inherited"` in a theme that inherits it),
+   * because the block folds into the base table like any `:root` scope.
+   */
+  readonly atTheme?: true;
+  /**
    * The imported file the winning declaration was spliced from — same
    * spelling as {@link Scope.origin}: the target's path relative to the
    * audit's ENTRY file. Set only when that declaration arrived over an
@@ -441,15 +449,20 @@ function mintNamesOnlyCycles(
   }
 }
 
-interface ScopeTable {
-  readonly theme: string;
-  readonly declarations: Map<string, { value: string; line: number; from?: string }>;
+interface TableEntry {
+  value: string;
+  line: number;
+  from?: string;
+  atTheme?: true;
 }
 
-function tableFor(
-  scopes: readonly Scope[],
-): Map<string, { value: string; line: number; from?: string }> {
-  const map = new Map<string, { value: string; line: number; from?: string }>();
+interface ScopeTable {
+  readonly theme: string;
+  readonly declarations: Map<string, TableEntry>;
+}
+
+function tableFor(scopes: readonly Scope[]): Map<string, TableEntry> {
+  const map = new Map<string, TableEntry>();
   for (const scope of scopes) {
     for (const d of scope.declarations) {
       // Last declaration wins, as the cascade does within one origin. The fold
@@ -465,7 +478,12 @@ function tableFor(
       // served) — so "last" is the browser's winner across spellings and files
       // alike, and the winner's `from` travels with it for the rules'
       // citations.
-      map.set(d.name, { value: d.value, line: d.line, from: scope.origin });
+      map.set(d.name, {
+        value: d.value,
+        line: d.line,
+        from: scope.origin,
+        ...(scope.atTheme ? { atTheme: true as const } : {}),
+      });
     }
   }
   return map;
@@ -560,7 +578,7 @@ export function resolveStylesheet(sheet: Stylesheet): ResolvedStylesheet {
   const lookup = (
     name: string,
     theme: string,
-  ): { value: string; line: number; from?: string; origin: TokenOrigin } | null => {
+  ): (TableEntry & { origin: TokenOrigin }) | null => {
     const own = themeTables.get(theme)?.declarations.get(name);
     if (own) return { ...own, origin: "declared" };
     if (theme !== ROOT_THEME) {
@@ -762,6 +780,7 @@ export function resolveStylesheet(sheet: Stylesheet): ResolvedStylesheet {
         missingReference,
         line: found.line,
         ...(found.from !== undefined ? { importOrigin: found.from } : {}),
+        ...(found.atTheme ? { atTheme: true as const } : {}),
       });
       if (found.origin === "inherited") {
         absences.push({ name, theme, inheritedValue: found.value });

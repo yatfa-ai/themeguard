@@ -1624,12 +1624,14 @@ export function formatReport(
         const site = citeSite({ line: row.line, origin: row.importOrigin });
         const where =
           row.declaration === "inherited"
-            ? `inherited from :root, declared at ${site}`
+            ? `inherited from :root, declared ${row.atTheme ? "in @theme " : ""}at ${site}`
             : row.declaration === "theme-inline"
               ? `declared in @theme inline at ${site}`
               : row.declaration === "registered"
                 ? `registered by @property at ${site}`
-                : `declared at ${site}`;
+                : row.atTheme
+                  ? `declared in @theme at ${site}`
+                  : `declared at ${site}`;
         lines.push(`    [unread] ${row.token} (${row.syntax}) in theme "${theme}", ${where}`);
       }
     }

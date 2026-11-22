@@ -69,6 +69,13 @@ export interface UnreadColor {
   readonly declaration: TokenOrigin | "registered";
   /** The imported file the declaration was spliced from; absent for the entry file. */
   readonly importOrigin?: string;
+  /**
+   * True when the winning declaration sits in a plain Tailwind v4 `@theme { … }`
+   * block ({@link ResolvedToken.atTheme}); absent otherwise, so every row of a
+   * sheet with no such block is unchanged. Names the declaring block for the
+   * report line; `declaration` still says how THIS theme comes by the token.
+   */
+  readonly atTheme?: true;
 }
 
 /** Per theme, how many tokens the theme holds — the headline's denominator. */
@@ -189,6 +196,7 @@ export function unreadColorsReport(resolved: ResolvedStylesheet): readonly Unrea
         line: token.line,
         declaration: token.origin,
         ...(token.importOrigin !== undefined ? { importOrigin: token.importOrigin } : {}),
+        ...(token.atTheme ? { atTheme: true as const } : {}),
       });
     }
     // A registration no scope in this theme's view declares: its initial value
