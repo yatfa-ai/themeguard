@@ -46,8 +46,9 @@ describe("census of the vendored calibration stylesheet", () => {
     expect(new Set(names).size).toBe(CENSUS.winter);
   });
 
-  // REVERT PROBE — delete the `@theme` branch of `classify()` and this test fails
-  // on its own: the at-rule is then treated as a nesting at-rule, recursed into,
+  // REVERT PROBE — delete the `@theme` branch of `classify()` (the `inline`
+  // arm; plain `@theme` is pinned in plain-theme.test.ts) and this test fails on
+  // its own: the at-rule is then treated as a nesting at-rule, recursed into,
   // and its 64 declarations are never collected.
   it("counts 64 declarations in the @theme inline block, all names unique and all var() aliases", () => {
     const decls = inline[0].declarations;
