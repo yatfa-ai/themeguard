@@ -88,7 +88,8 @@
 
 import type { ResolvedStylesheet } from "../resolve.js";
 import { positionClause, siteFromToken, type Finding, type FindingSite } from "./finding.js";
-import { toCss } from "../color.js";
+import { lightDarkParts, toCss } from "../color.js";
+import { lightDarkArm } from "../resolve.js";
 import { TokenNames, surfaceCandidates } from "./tokens.js";
 
 /** A set of names that hold the same value in every theme. */
@@ -119,9 +120,29 @@ export function collisionRule(
   const declaresItself = (name: string, theme: string): boolean =>
     resolved.token(name, theme)?.origin === "declared";
 
-  // Two names are in lockstep when some OTHER theme declares BOTH of them and
-  // still gives them the same colour — the author restating the equality, which
-  // is the only positive evidence a stylesheet offers that it is deliberate.
+  // A theme also SPEAKS about a name, in a dark view, when the name's own
+  // declaration is a whole-value `light-dark(A, B)`: the dark arm B is written
+  // in that very declaration, so the view reading it (the minted implicit
+  // `dark` view, or a declared dark theme that merely inherits the token) is
+  // the author's statement about the dark palette even though the resolver
+  // marks the token `inherited` there. Used by the lockstep witness test ONLY;
+  // `declaresItself` stays the literal "declared in this theme" fact.
+  const speaksIn = (name: string, theme: string): boolean => {
+    if (declaresItself(name, theme)) return true;
+    const token = resolved.token(name, theme);
+    return (
+      token !== undefined &&
+      token.origin === "inherited" &&
+      lightDarkArm(theme) === "dark" &&
+      lightDarkParts(token.declaredValue) !== null
+    );
+  };
+
+  // Two names are in lockstep when some OTHER theme declares BOTH of them (a
+  // whole-value `light-dark()` declaration speaks in a dark view, see
+  // `speaksIn`) and still gives them the same colour — the author restating the
+  // equality, which is the only positive evidence a stylesheet offers that it
+  // is deliberate.
   // Non-colour and missing values compare equal only to each other, so a name
   // that is a colour in one theme and a length in another never pairs up.
   //
@@ -131,8 +152,8 @@ export function collisionRule(
     resolved.themes.some(
       (theme) =>
         theme !== here &&
-        declaresItself(a, theme) &&
-        declaresItself(b, theme) &&
+        speaksIn(a, theme) &&
+        speaksIn(b, theme) &&
         colorValue(a, theme) === colorValue(b, theme),
     );
 

@@ -270,6 +270,7 @@ Because `light-dark()` speaks for the dark view itself, a base palette that writ
 in the `@theme inline` alias layer — gains a theme when the sheet declares none named `dark`: the
 resolver mints an **implicit `dark` view** whose every token is inherited from `:root`, each
 `light-dark()` taking its dark arm, so a collision that exists only in the dark arm is reachable.
+A pair whose two declarations are both whole-value `light-dark()` calls with equal arms in both views counts as the author restating the equality, so the collision rule treats it as intended exactly as it does the hex-plus-dark-block twin; equal in only one arm, or written as `light-dark()` on only one of the two names, does not.
 Coverage marks the row `implicit: true` and the prose prints `dark (implicit)`, so it is never
 mistaken for a declared block; a finding measured in it carries `theme: "dark"` either way, and a
 suppression scoped to that theme aims at it exactly as at a declared block. Declaring a dark theme by

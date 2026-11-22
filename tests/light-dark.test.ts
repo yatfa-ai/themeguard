@@ -147,6 +147,57 @@ describe("the reproduction pair reaches one verdict", () => {
   });
 });
 
+describe("a whole-value light-dark() declaration witnesses a lockstep pair", () => {
+  const USE = "body{background:var(--page)}.card{background:var(--card)}";
+
+  it("twin parity: equal arms in both declarations read like the hex twin — no collision", () => {
+    const ld = run(sheet(`:root{--page:light-dark(#ffffff,#111111);--card:light-dark(#ffffff,#111111)}${USE}`));
+    const hex = run(
+      sheet(
+        `:root{--page:#ffffff;--card:#ffffff}@media (prefers-color-scheme: dark){:root{--page:#111111;--card:#111111}}${USE}`,
+      ),
+    );
+    expect(hex.code).toBe(EXIT_OK);
+    expect(hex.stdout).toContain("collision (0)");
+    expect(ld.code).toBe(EXIT_OK);
+    expect(ld.stdout).toContain("collision (0)");
+  });
+
+  it("witnesses in a declared dark theme that merely inherits the tokens", () => {
+    const result = run(
+      sheet(
+        `:root{--page:light-dark(#ffffff,#111111);--card:light-dark(#ffffff,#111111);--other:#abcdef}.dark{--other:#fedcba}${USE}.x{color:var(--other)}`,
+      ),
+    );
+    expect(result.stdout).toContain("collision (0)");
+    expect(result.code).toBe(EXIT_OK);
+  });
+
+  it("equal only in the light arm, different in the dark arm, is still reported as before", () => {
+    const result = run(sheet(`:root{--page:light-dark(#ffffff,#111111);--card:light-dark(#ffffff,#222222)}${USE}`));
+    expect(result.code).toBe(EXIT_FINDINGS);
+    expect(result.stdout).toContain("collision (1)");
+    expect(result.stdout).toContain('theme "dark" declares them apart');
+  });
+
+  it("equal in both arms but only ONE token written as light-dark() is not witnessed", () => {
+    const result = run(sheet(`:root{--page:light-dark(#ffffff,#111111);--card:#ffffff}${USE}`));
+    expect(result.code).toBe(EXIT_FINDINGS);
+    expect(result.stdout).toContain("collision (1)");
+  });
+
+  it("the surface / foreground exception still reports regardless of the restated equality", () => {
+    const result = run(
+      sheet(
+        `:root{--primary:light-dark(#336699,#99ccff);--primary-foreground:light-dark(#336699,#99ccff)}.b{background:var(--primary);color:var(--primary-foreground)}`,
+      ),
+    );
+    expect(result.code).toBe(EXIT_FINDINGS);
+    expect(result.stdout).toContain("collision (1)");
+    expect(result.stdout).toContain("foreground role");
+  });
+});
+
 describe("the implicit dark view", () => {
   it("exists only when the base palette writes a whole-value light-dark()", () => {
     // Byte stability for every sheet that never speaks light-dark: no theme
