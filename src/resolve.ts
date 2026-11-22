@@ -122,7 +122,7 @@ export const IMPLICIT_DARK_THEME = "dark";
  * does not retain non-custom properties — so the name is the only signal this
  * package has, and the README's Scope section says so.)
  */
-function lightDarkArm(theme: string): "light" | "dark" {
+export function lightDarkArm(theme: string): "light" | "dark" {
   return /^dark$/i.test(theme) ? "dark" : "light";
 }
 
