@@ -154,7 +154,10 @@ export interface Scope {
    *     override outranks it. The lowest rank, below `:where(html)`.
    *   - `0` — reached through a zero-specificity grouping: `:where(html)`.
    *   - `1` — the bare document element: `html { … }`, and `:is(html)` (a
-   *     grouping takes its argument's specificity, and the argument is `html`).
+   *     grouping takes its argument's specificity, and the argument is `html`);
+   *     also the bare shadow host `:host { … }` ({@link BASE_RANK_HOST}, a
+   *     documented judgement: a `:host` rule loses to outer-document styles, so
+   *     every `:root` spelling out-ranks it), and `:where(:host)` ranks `0`.
    *   - `2` — any spelling carrying the `:root` token: `:root`, `html:root`,
    *     `:root:hover`, … — specificity (0,1,0) and up.
    *
@@ -952,6 +955,13 @@ function classThemeSubject(selector: string): string | null {
  * (zero specificity), which is exactly the three-value key
  * {@link Scope.baseRank} carries — no general specificity calculator needed.
  *
+ * The shadow-DOM host classifies like the document element: a bare `:host` (the
+ * whole prelude, case-folded) is the base scope at {@link BASE_RANK_HOST}, and
+ * `:host(<compound>)` is read THROUGH its argument — the argument of `:host()` is
+ * the host element's own compound, so `:host(.dark)` and `:host([data-theme=dark])`
+ * are theme scopes exactly as `.dark` / `[data-theme=dark]` are. `:host-context()`,
+ * `::slotted()`, `:host .child` and `:host(.a) .b` stay `other`.
+ *
  * `solo` says whether this selector is the WHOLE prelude (one selector in the
  * list). The bare-element test requires it: `html, body { … }` declares on the
  * union, and body's half scopes a subtree, so the block is not the base — the
@@ -970,6 +980,19 @@ function classThemeSubject(selector: string): string | null {
 const BASE_RANK_WHERE = 0;
 /** The bare document element `html`, and `:is(html)` — specificity (0,0,1). */
 const BASE_RANK_ELEMENT = 1;
+/**
+ * The shadow-DOM host, bare `:host` (also `:is(:host)`) — the Lit / Shoelace /
+ * Stencil / Material-Web base-scope spelling. A DOCUMENTED JUDGEMENT, not a
+ * value the spec derives: `:host` is a pseudo-class (0,1,0), so by specificity
+ * alone it would tie `:root`, but a `:host` rule is an outer-tree-losing rule —
+ * styles written in the embedding document beat `:host` rules in the shadow
+ * tree's own stylesheet whatever their specificity — so a `:root` block must
+ * out-rank it. It shares the bare element's rank (1) rather than minting a
+ * fourth value: weaker than every `:root` spelling, stronger than the
+ * zero-specificity `:where(…)` forms, and tied with `html`, where document order
+ * decides. `:where(:host)` ranks {@link BASE_RANK_WHERE} like `:where(html)`.
+ */
+const BASE_RANK_HOST = 1;
 /**
  * Any spelling carrying the `:root` token — specificity (0,1,0) and up. ONE
  * value for the whole family on purpose: two `:root` blocks fold by document
@@ -1028,6 +1051,24 @@ function classifyOne(
   // (`:where(html)`), which is what lets a grouping argument carry the base
   // recognition below.
   const blanked = blankStrings(compounds[0]);
+
+  // `:host(<compound>)` — the ONE functional pseudo whose argument is the
+  // subject: the argument of `:host()` is the host element's own compound, so
+  // `:host(.dark)` is `.dark` on the host and reads through the class-theme
+  // path, `:host([data-theme=dark])` through the attribute-theme path.
+  // Everything else about the compound (`:host(.a):hover`, `:host(.a) .b` —
+  // already split off above) keeps the current `other` reading. Only THEMES
+  // come back from the argument: `:host(html)` / `:host(:root)` name no base.
+  const hostCall = blanked.trim().match(/^:host\s*\(/i);
+  if (hostCall) {
+    const text = compounds[0].trim();
+    const open = text.indexOf("(");
+    if (closingParen(text, open) !== text.length - 1) return [];
+    return classifyOne(text.slice(open + 1, -1), recognition, false, null)
+      .filter((f) => f.kind === "theme")
+      .map((f) => ({ ...f, matched: raw }));
+  }
+
   const { rest: leftover } = extractMatchesAny(blanked);
 
   const subject = stripNegations(compounds[0]);
@@ -1060,6 +1101,8 @@ function classifyOne(
   // (`solo`), and through a grouping the argument keeps that standing only
   // under `pureGrouping` — the recursion's `solo` below.
   const bareHtml = solo && /^html$/i.test(leftover.trim());
+  // `:host` is the shadow tree's base, under the same whole-prelude standing.
+  const bareHost = solo && /^:host$/i.test(leftover.trim());
 
   const found: { kind: Exclude<ScopeKind, "other">; theme: string | null; matched: string; baseRank?: number }[] = [];
   const themeMatch = rest.match(recognition.attributeTheme);
@@ -1067,12 +1110,14 @@ function classifyOne(
   if (themeMatch) found.push({ kind: "theme", theme: themeMatch[1].trim(), matched: raw });
   // BEFORE the `:root` test: `:root.dark` is the dark scope, not the base.
   else if (classTheme) found.push({ kind: "theme", theme: classTheme, matched: raw });
-  else if (/:root\b/.test(blankStrings(rest)) || bareHtml)
+  else if (/:root\b/.test(blankStrings(rest)) || bareHtml || bareHost)
     found.push({
       kind: "root",
       theme: null,
       matched: raw,
-      baseRank: inheritedRank ?? (bareHtml ? BASE_RANK_ELEMENT : BASE_RANK_ROOT),
+      baseRank:
+        inheritedRank ??
+        (bareHtml ? BASE_RANK_ELEMENT : bareHost ? BASE_RANK_HOST : BASE_RANK_ROOT),
     });
 
   for (const arg of args)

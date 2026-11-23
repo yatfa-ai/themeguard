@@ -153,6 +153,11 @@ the whole selector must be the bare element, case-folded — and the boundaries 
 - **A grouping follows the cascade's own rule for grouped selectors**: a `:where` anywhere in the
   wrapping chain zeroes the rank (`:where(:is(html))` and `:is(:where(html))` both lose to a bare
   `html` block), and an all-`:is` chain resolves to its argument.
+- **The shadow-DOM host is the base too**: a bare `:host { … }` (Lit, Shoelace, Stencil, Material Web)
+  files as the base scope, ranked below every `:root` spelling (a `:host` rule loses to the embedding
+  document's styles) and `:where(:host)` below it; `:host(.dark)` / `:host([data-theme=dark])` are read
+  through their argument as that theme. `:host-context()`, `::slotted()`, `:host .child` and `:host(.a) .b`
+  are **not** base — they keep their current reading. `:root, :host { … }` is still one base scope.
 
 An OS-preference palette is a theme of its own, not a shadow over the base. `@media
 (prefers-color-scheme: dark) { :root { … } }` — how GitHub Primer, shadcn and plain-vanilla dark mode
