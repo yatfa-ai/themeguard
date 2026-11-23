@@ -1033,6 +1033,7 @@ function classifyOne(
   recognition: Recognition,
   solo: boolean,
   inheritedRank: number | null,
+  scheme: "dark" | "light" | null,
 ): { kind: Exclude<ScopeKind, "other">; theme: string | null; matched: string; baseRank?: number }[] {
   const raw = selector.trim();
   const themeAt = themeAtRuleKind(raw);
@@ -1064,7 +1065,7 @@ function classifyOne(
     const text = compounds[0].trim();
     const open = text.indexOf("(");
     if (closingParen(text, open) !== text.length - 1) return [];
-    return classifyOne(text.slice(open + 1, -1), recognition, false, null)
+    return classifyOne(text.slice(open + 1, -1), recognition, false, null, scheme)
       .filter((f) => f.kind === "theme")
       .map((f) => ({ ...f, matched: raw }));
   }
@@ -1103,6 +1104,14 @@ function classifyOne(
   const bareHtml = solo && /^html$/i.test(leftover.trim());
   // `:host` is the shadow tree's base, under the same whole-prelude standing.
   const bareHost = solo && /^:host$/i.test(leftover.trim());
+  // Inside a `prefers-color-scheme` block the media query is itself the dark
+  // witness, so the document element carrying only NEGATIONS — `html:not(.light)`,
+  // the OS-dark spelling of the `:root:not(.light)` twin — is that palette's
+  // scope. Outside the condition the same shape stays `other` (the negation
+  // narrows the unconditional base to an unknown subset). Read on the compound
+  // with only its `:not()` groups removed: `html:is(.dark)`, `html:hover`,
+  // `html::before` and `html:has(…)` leave something behind and stay `other`.
+  const negatedHtml = !bareHtml && solo && scheme !== null && /^html$/i.test(stripNegations(blanked).trim());
 
   const found: { kind: Exclude<ScopeKind, "other">; theme: string | null; matched: string; baseRank?: number }[] = [];
   const themeMatch = rest.match(recognition.attributeTheme);
@@ -1110,7 +1119,7 @@ function classifyOne(
   if (themeMatch) found.push({ kind: "theme", theme: themeMatch[1].trim(), matched: raw });
   // BEFORE the `:root` test: `:root.dark` is the dark scope, not the base.
   else if (classTheme) found.push({ kind: "theme", theme: classTheme, matched: raw });
-  else if (/:root\b/.test(blankStrings(rest)) || bareHtml || bareHost)
+  else if (/:root\b/.test(blankStrings(rest)) || bareHtml || bareHost || negatedHtml)
     found.push({
       kind: "root",
       theme: null,
@@ -1122,7 +1131,7 @@ function classifyOne(
 
   for (const arg of args)
     found.push(
-      ...classifyOne(arg, recognition, solo && pureGrouping, groupRank).map((f) => ({
+      ...classifyOne(arg, recognition, solo && pureGrouping, groupRank, scheme).map((f) => ({
         ...f,
         matched: arg,
       })),
@@ -1153,13 +1162,14 @@ function classifyOne(
 function classifySelectors(
   prelude: string,
   recognition: Recognition,
+  scheme: "dark" | "light" | null = null,
 ): { kind: ScopeKind; theme: string | null; matchedSelector: string; baseRank?: number }[] {
   const selectors = splitSelectorList(prelude);
   const solo = selectors.length === 1;
   const matched: { kind: ScopeKind; theme: string | null; matchedSelector: string; baseRank?: number }[] = [];
   const seen = new Set<string>();
   for (const selector of selectors) {
-    for (const { kind, theme, matched: matchedSelector, baseRank } of classifyOne(selector, recognition, solo, null)) {
+    for (const { kind, theme, matched: matchedSelector, baseRank } of classifyOne(selector, recognition, solo, null, scheme)) {
       const key = `${kind}\u0000${theme ?? ""}`;
       if (seen.has(key)) continue;
       seen.add(key);
@@ -1505,7 +1515,7 @@ export function parseStylesheet(source: string, options?: ParseOptions): Stylesh
               : rawSelector;
           const bodyStart = blockStart + 1;
           const body = css.slice(bodyStart, i);
-          const matches = classifySelectors(selector, recognition);
+          const matches = classifySelectors(selector, recognition, scheme);
           // `@theme` is an at-rule that DECLARES (its body is custom
           // properties), so it takes the qualified-rule path below whatever
           // its options — `inline` or not.
@@ -1542,7 +1552,7 @@ export function parseStylesheet(source: string, options?: ParseOptions): Stylesh
             // this file's header promises against.
             if (parent !== null) {
               const conditional = readDeclarations(body, bodyStart, lines);
-              const parentMatches = classifySelectors(parent, recognition);
+              const parentMatches = classifySelectors(parent, recognition, ownScheme);
               references.push(
                 ...readReferences(
                   body,
