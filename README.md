@@ -152,7 +152,11 @@ the whole selector must be the bare element, case-folded — and the boundaries 
   is today's reading, unchanged.) The one exception is the negation spelling inside a
   `@media (prefers-color-scheme: dark)` block — flat or nested — where `html:not(.light)` is read as
   the dark theme exactly like `:root:not(.light)`, because the media query is itself the dark
-  witness; outside such a block it stays `other`.
+  witness; outside such a block it stays `other`. The body subject reads the same exception: a solo
+  `body:not(<negations>)` — `body:not(.light)` — inside the block is that theme scope too, named by
+  the block's scheme exactly like `body.dark` is, and never the base (the negation is required on
+  this arm; a bare `body` in the block keeps the component-override reading); outside such a block
+  `body:not(.light)` stays `other`.
 - **A grouping follows the cascade's own rule for grouped selectors**: a `:where` anywhere in the
   wrapping chain zeroes the rank (`:where(:is(html))` and `:is(:where(html))` both lose to a bare
   `html` block), and an all-`:is` chain resolves to its argument.
