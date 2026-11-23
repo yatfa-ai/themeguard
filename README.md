@@ -149,7 +149,10 @@ the whole selector must be the bare element, case-folded — and the boundaries 
   combinator — its subject is `.card`), `html:not(.dark)` (a negation), `html:hover`, `html::before`,
   `html:has(…)` — none of these is the bare element, and none enters the base. (Their `:root`-carrying
   cousins — `:root:hover`, `:root:not(.dark)` — read as base through the `:root` token itself; that
-  is today's reading, unchanged.)
+  is today's reading, unchanged.) The one exception is the negation spelling inside a
+  `@media (prefers-color-scheme: dark)` block — flat or nested — where `html:not(.light)` is read as
+  the dark theme exactly like `:root:not(.light)`, because the media query is itself the dark
+  witness; outside such a block it stays `other`.
 - **A grouping follows the cascade's own rule for grouped selectors**: a `:where` anywhere in the
   wrapping chain zeroes the rank (`:where(:is(html))` and `:is(:where(html))` both lose to a bare
   `html` block), and an all-`:is` chain resolves to its argument.

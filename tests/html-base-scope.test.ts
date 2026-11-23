@@ -97,6 +97,53 @@ describe("an OS-preference palette on the document element", () => {
   });
 });
 
+describe("a negated document element inside a prefers-color-scheme block", () => {
+  // Distinct in light, both #111111 in dark: the collision exists only in the dark theme.
+  const LIGHT = "\n  --bg: #ffffff;\n  --surface: #f5f5f5;\n";
+  const NIGHT = "\n  --bg: #111111;\n  --surface: #111111;\n";
+  const USE = ".a { color: var(--bg); background: var(--surface); }\n";
+  const flat = (sel: string) => `:root {${LIGHT}}\n@media (prefers-color-scheme: dark) { ${sel} {${NIGHT}} }\n${USE}`;
+  const nested = (sel: string) => `:root {${LIGHT}}\n${sel} { @media (prefers-color-scheme: dark) {${NIGHT}} }\n${USE}`;
+  const twin = summarise(flat(":root:not(.light)"));
+
+  it("the :root:not twin reports the dark collision", () => {
+    expect(twin.themes).toEqual(["root", "dark"]);
+    expect(twin.findings).toHaveLength(1);
+    expect(twin.findings[0]).toContain('collision: --bg and --surface both resolve to #111111 in theme "dark"');
+  });
+
+  for (const sel of ["html:not(.light)", 'html:not([data-theme="light"])', "html:not([data-theme=light])", "HTML:not(.light)", ":where(html:not(.light))", "html:not(.a):not(.b)"]) {
+    it(`flat @media { ${sel} } is byte-identical to its :root twin`, () => {
+      expect(summarise(flat(sel))).toEqual(twin);
+    });
+  }
+
+  for (const sel of ["html:not(.light)", 'html:not([data-theme="light"])']) {
+    it(`nested ${sel} { @media … } is byte-identical to its :root twin`, () => {
+      expect(summarise(nested(sel))).toEqual(summarise(nested(sel.replace("html", ":root"))));
+      expect(summarise(nested(sel))).toEqual(twin);
+    });
+  }
+
+  it("files as a root scope carrying the dark scheme at the :root rank", () => {
+    const s = rootScopeOf(flat("html:not(.light)")).find((x) => x.colorScheme === "dark");
+    expect(s?.baseRank).toBe(2);
+    expect(rootScopeOf(flat("html")).find((x) => x.colorScheme === "dark")?.baseRank).toBe(1);
+  });
+
+  it("without the media condition html:not(.light) is still other", () => {
+    const scopes = parseStylesheet(`html:not(.light) {${NIGHT}}`).scopes;
+    expect(scopes.map((x) => x.kind)).toEqual(["other"]);
+  });
+
+  for (const sel of ["html .card:not(.x)", "html:hover", "html:has(.dark)", "html::before", "html:not(.light):hover", "html:not(.light), body"]) {
+    it(`${sel} inside the media block stays other`, () => {
+      const scopes = parseStylesheet(`@media (prefers-color-scheme: dark) { ${sel} {${NIGHT}} }`).scopes;
+      expect(scopes.some((x) => x.kind === "root")).toBe(false);
+    });
+  }
+});
+
 describe("what is still NOT the base scope", () => {
   // body was the silent control before this slice; the pinned shapes must
   // stay exactly as silent as it is.
