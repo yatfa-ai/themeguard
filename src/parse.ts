@@ -1112,6 +1112,22 @@ function classifyOne(
   // with only its `:not()` groups removed: `html:is(.dark)`, `html:hover`,
   // `html::before` and `html:has(…)` leave something behind and stay `other`.
   const negatedHtml = !bareHtml && solo && scheme !== null && /^html$/i.test(stripNegations(blanked).trim());
+  // Same gates, body subject: a solo `body:not(<negations>)` — `body:not(.light)`,
+  // the OS-dark spelling apps that toggle `document.body` write — is that
+  // palette's scope too, as a THEME scope named by the block's scheme exactly
+  // like the `body.dark` affirmative spelling ({@link classThemeOf} accepts body
+  // as a theme carrier), never the base — body is deliberately not base, so
+  // this arm files kind `theme` where the html twin files `root`, and there is
+  // no `bareBody` guard to clear: body never carried a base read. The negation
+  // is REQUIRED here, unlike on the html arm: html carries its bare spelling
+  // (`bareHtml`) into the same conditioned read, while body's unconditional
+  // shape is the component-override shape and must stay `other` even inside the
+  // block. Read on the compound with only its `:not()` groups removed:
+  // `body:not(.light):hover`, `body::before` and `body:has(…)` leave something
+  // behind on that compound and stay `other` — the same narrowing the html arm
+  // reads past.
+  const negatedBody =
+    solo && scheme !== null && /:not\s*\(/i.test(blanked) && /^body$/i.test(stripNegations(blanked).trim());
 
   const found: { kind: Exclude<ScopeKind, "other">; theme: string | null; matched: string; baseRank?: number }[] = [];
   const themeMatch = rest.match(recognition.attributeTheme);
@@ -1119,6 +1135,9 @@ function classifyOne(
   if (themeMatch) found.push({ kind: "theme", theme: themeMatch[1].trim(), matched: raw });
   // BEFORE the `:root` test: `:root.dark` is the dark scope, not the base.
   else if (classTheme) found.push({ kind: "theme", theme: classTheme, matched: raw });
+  // And before it too: `body:not(.light)` under the scheme block is the scheme's
+  // theme scope, not the base (`negatedBody` implies `scheme` is a name).
+  else if (negatedBody) found.push({ kind: "theme", theme: scheme as string, matched: raw });
   else if (/:root\b/.test(blankStrings(rest)) || bareHtml || bareHost || negatedHtml)
     found.push({
       kind: "root",
